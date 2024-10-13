@@ -7,6 +7,7 @@ import { a as three } from "@react-spring/three";
 import { animated, a as web } from "@react-spring/web";
 import { TextureLoader } from "three";
 import { skills } from "@/data";
+import CanvasLoader from "./Loader";
 
 function Model({ open, hinge, logoUrl, ...props }) {
 	const group = useRef();
@@ -123,7 +124,7 @@ export default function Laptop() {
 	return (
 		<div className="w-full h-full justify-center z-100">
 			{!open && (
-				<h2 className="font-bold text-center text-white-100 absolute bottom-40 left-1/2 transform -translate-x-1/2">
+				<h2 className="font-bold text-center text-white-100 absolute top-1/2 left-1/2 transform -translate-x-1/2">
 					Click Me!
 				</h2>
 			)}
@@ -144,7 +145,7 @@ export default function Laptop() {
 						intensity={1.5}
 						color={props.open.to([0, 1], ["#000", "#d25578"])}
 					/>
-					<Suspense fallback={null}>
+					<Suspense fallback={<CanvasLoader />}>
 						<group
 							scale={[15, 15, 5]}
 							position={[0, 0, 0]}

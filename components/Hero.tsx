@@ -8,7 +8,7 @@ import { styles } from "./styles";
 
 const Hero = () => {
 	return (
-		<section className="relative w-full h-screen mx-auto bg-hero-pattern bg-cover bg-no-repeat bg-center">
+		<section className="w-full relative w-full h-screen mx-auto bg-hero-pattern bg-cover bg-no-repeat bg-center">
 			<div className="flex flex-col absolute inset-0 top-[120px] max-w-7xl mx-auto items-start gap-5">
 				<div
 					className={`${styles.paddingX} inset-0 top-[120px] max-w-7xl mx-auto flex flex-col items-start gap-5 `}

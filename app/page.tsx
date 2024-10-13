@@ -14,9 +14,9 @@ import Contact from "@/components/Contact";
 const Home = () => {
 	return (
 		<main className="relative w-full bg-black-100 flex justify-center items-center flex-col overflow-hidden">
+			<Hero />
 			<div className="max-w-7xl w-full mx-auto sm:px-10 px-0">
 				<FloatingNav navItems={navItems} />
-				<Hero />
 				<Grid />
 				<RecentProjects />
 				<Experience />
