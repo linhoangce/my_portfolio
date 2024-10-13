@@ -19,7 +19,7 @@ export const gridItems = [
 	},
 	{
 		id: 2,
-		title: "I'm currently in Burnaby, BC. However, I'm willing to relocate for Co-op.",
+		title: "I'm currently in Burnaby, BC. However, I'm willing to relocate.",
 		description: "",
 		className: "lg:col-span-2 md:col-span-3 md:row-span-2",
 		imgClassName: "",
@@ -60,7 +60,7 @@ export const gridItems = [
 	},
 	{
 		id: 6,
-		title: "If you find my portfolio intertesting, please send me an email.",
+		title: "If you find my portfolio a match with your company's roles, please send me an email.",
 		description: "",
 		className: "lg:col-span-2 md:col-span-3 md:row-span-1",
 		imgClassName: "",
@@ -81,11 +81,11 @@ export const projects = [
 	},
 	{
 		id: 2,
-		title: "Zoom Clone",
-		des: "Simplify your video conferencing experience with Yoom. Seamlessly connect with colleagues and friends.",
+		title: "Zooom",
+		des: "Simplify your video conferencing experience with Zooom. Seamlessly connect with colleagues and friends.",
 		img: "/p2.svg",
 		iconLists: ["/next.svg", "/tail.svg", "/ts.svg", "/stream.svg", "/c.svg"],
-		link: "/ui.yoom.com",
+		link: "zoom-clone-psi-bay.vercel.app",
 	},
 	{
 		id: 3,
@@ -93,66 +93,33 @@ export const projects = [
 		des: "A REAL Software-as-a-Service app with AI features and a payments and credits system using the latest tech stack.",
 		img: "/p3.svg",
 		iconLists: ["/re.svg", "/tail.svg", "/ts.svg", "/three.svg", "/c.svg"],
-		link: "/ui.aiimg.com",
+		link: "imaginify-gamma-neon.vercel.app",
 	},
 	{
 		id: 4,
-		title: "iPhone 15",
+		title: "iPhone15",
 		des: "Recreated the Apple iPhone 15 Pro website, combining GSAP animations and Three.js 3D effects..",
 		img: "/p4.svg",
 		iconLists: ["/next.svg", "/tail.svg", "/ts.svg", "/three.svg", "/gsap.svg"],
-		link: "/ui.apple.com",
+		link: "iphone15-clone-alpha.vercel.app",
 	},
 	{
 		id: 5,
 		title: "LiveDoc",
-		des: "A real-time collaborative editor with Next.js and TypeScript, integrating Lexical and Liveblocks for markdown support, real-time nested comments, and emoji integration.",
+		des: "A real-time collaborative editor with Lexical and Liveblocks for markdown support, real-time nested comments, and emoji integration.",
 		img: "/livedoc.png",
 		iconLists: ["/next.svg", "/tail.svg", "/ts.svg", "/socket-io.svg", "/liveblocks.svg"],
-		link: "/ui.apple.com",
+		link: "live-document-editor.vercel.app",
 	},
 	{
 		id: 6,
 		title: "Farmify",
-		des: " a commercial app that connects farmers directly with consumers to reduce the cost and time spent buying fresh and healthy produce while supporting local, small-scale farms that contributes to our community's sustainability and increase the farmers' profit share. Users can now create a post, write their reviews, bookmark their favorites, add items to their carts, and send a message to the farms. Users can also enjoy better experience using the app thanks to improved UI design, add items to cart with the price calculated and go to checkout page, review and leave star rating for each post, view their current location with Google map on our app, unsave bookmarks.",
+		des: "A commercial app that connects farmers directly with consumers to reduce the cost and time spent buying fresh and healthy produce while supporting local, small-scale farms that contributes to our community's sustainability and increase the farmers' profit share. Users can now create a post, write their reviews, bookmark their favorites, add items to their carts, and send a message to the farms. Users can also enjoy better experience using the app thanks to improved UI design, add items to cart with the price calculated and go to checkout page, review and leave star rating for each post, view their current location with Google map on our app, unsave bookmarks.",
 		img: "/farmify.png",
 		iconLists: ["/html.svg", "/css.svg", "/bootstrap.svg", "/firebase.svg", "/js.svg"],
-		link: "/ui.apple.com",
+		link: "https://comp1800-bby14-b87af.web.app/",
 	},
 ];
-
-// export const testimonials = [
-// 	{
-// 		quote:
-// 			"Collaborating with Adrian was an absolute pleasure. His professionalism, promptness, and dedication to delivering exceptional results were evident throughout our project. Adrian's enthusiasm for every facet of development truly stands out. If you're seeking to elevate your website and elevate your brand, Adrian is the ideal partner.",
-// 		name: "Michael Johnson",
-// 		title: "Director of AlphaStream Technologies",
-// 	},
-// 	{
-// 		quote:
-// 			"Collaborating with Adrian was an absolute pleasure. His professionalism, promptness, and dedication to delivering exceptional results were evident throughout our project. Adrian's enthusiasm for every facet of development truly stands out. If you're seeking to elevate your website and elevate your brand, Adrian is the ideal partner.",
-// 		name: "Michael Johnson",
-// 		title: "Director of AlphaStream Technologies",
-// 	},
-// 	{
-// 		quote:
-// 			"Collaborating with Adrian was an absolute pleasure. His professionalism, promptness, and dedication to delivering exceptional results were evident throughout our project. Adrian's enthusiasm for every facet of development truly stands out. If you're seeking to elevate your website and elevate your brand, Adrian is the ideal partner.",
-// 		name: "Michael Johnson",
-// 		title: "Director of AlphaStream Technologies",
-// 	},
-// 	{
-// 		quote:
-// 			"Collaborating with Adrian was an absolute pleasure. His professionalism, promptness, and dedication to delivering exceptional results were evident throughout our project. Adrian's enthusiasm for every facet of development truly stands out. If you're seeking to elevate your website and elevate your brand, Adrian is the ideal partner.",
-// 		name: "Michael Johnson",
-// 		title: "Director of AlphaStream Technologies",
-// 	},
-// 	{
-// 		quote:
-// 			"Collaborating with Adrian was an absolute pleasure. His professionalism, promptness, and dedication to delivering exceptional results were evident throughout our project. Adrian's enthusiasm for every facet of development truly stands out. If you're seeking to elevate your website and elevate your brand, Adrian is the ideal partner.",
-// 		name: "Michael Johnson",
-// 		title: "Director of AlphaStream Technologies",
-// 	},
-// ];
 
 export const companies = [
 	{

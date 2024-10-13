@@ -7,30 +7,37 @@ import { ThemeProvider } from "./provider";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Linh's Portfolio",
-  description: "Modern & Minimal JS Mastery Portfolio",
+	title: "Linh's Portfolio",
+	description: "Modern & Creative Portfolio",
 };
 
 export default function RootLayout({
-  children,
+	children,
 }: Readonly<{
-  children: React.ReactNode;
+	children: React.ReactNode;
 }>) {
-  return (
-    <html lang="en" suppressHydrationWarning>
-      <head>
-        <link rel="icon" href="/logo.png" sizes="any" />
-      </head>
-      <body className={inter.className}>
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="dark"
-          enableSystem
-          disableTransitionOnChange
-        >
-          {children}
-        </ThemeProvider>
-      </body>
-    </html>
-  );
+	return (
+		<html
+			lang="en"
+			suppressHydrationWarning
+		>
+			<head>
+				<link
+					rel="icon"
+					href="/logo.png"
+					sizes="any"
+				/>
+			</head>
+			<body className={inter.className}>
+				<ThemeProvider
+					attribute="class"
+					defaultTheme="dark"
+					enableSystem
+					disableTransitionOnChange
+				>
+					{children}
+				</ThemeProvider>
+			</body>
+		</html>
+	);
 }
