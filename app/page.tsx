@@ -10,6 +10,7 @@ import Experience from "@/components/Experience";
 import RecentProjects from "@/components/RecentProjects";
 import { FloatingNav } from "@/components/ui/FloatingNavbar";
 import Contact from "@/components/Contact";
+import Development from "@/components/Development";
 
 const Home = () => {
 	return (
@@ -19,7 +20,8 @@ const Home = () => {
 				<FloatingNav navItems={navItems} />
 				<Grid />
 				<RecentProjects />
-				<Experience />
+				{/* <Experience /> */}
+				<Development />
 				<Approach />
 			</div>
 			<Contact />

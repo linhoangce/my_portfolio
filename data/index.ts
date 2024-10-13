@@ -19,8 +19,8 @@ export const gridItems = [
 	},
 	{
 		id: 2,
-		title: "I'm currently in Burnaby, BC. However, I'm willing to relocate.",
-		description: "",
+		title: "",
+		description: "I'm currently in Burnaby, BC. However, I'm willing to relocate.",
 		className: "lg:col-span-2 md:col-span-3 md:row-span-2",
 		imgClassName: "",
 		titleClassName: "justify-start",
@@ -157,29 +157,37 @@ export const companies = [
 export const workExperience = [
 	{
 		id: 1,
+		time: "2021-2023",
 		title: "Medical Interpreter L4",
-		desc: "Ensured 100% accuracy in English-Vietnamese conversations by actively listening, analyzing nuanced meanings, and applying correct industry terminology across healthcare, insurance, finance, and other technical sectors.",
+		content:
+			"Ensured 100% accuracy in English-Vietnamese conversations by actively listening, analyzing nuanced meanings, and applying correct industry terminology across healthcare, insurance, finance, and other technical sectors.",
 		className: "md:col-span-2 overflow-hidden",
 		thumbnail: "/exp1.svg",
 	},
 	{
 		id: 2,
+		time: "2019-2020",
 		title: "Project Manager",
-		desc: "Designed and developed a new cafe concept that result in a 166% sales increase, expenses below 25% of budget, and monthly profits exceeding targets by 320%. ",
+		content:
+			"Designed and developed a new cafe concept that result in a 166% sales increase, expenses below 25% of budget, and monthly profits exceeding targets by 320%. ",
 		className: "md:col-span-2 overflow-hidden", // change to md:col-span-2
 		thumbnail: "/exp2.svg",
 	},
 	{
 		id: 3,
+		time: "2018-2019",
 		title: "Training & Development Specialist",
-		desc: " improve workflow while developing and delivering training programs that boosted sales by 198%, reduced labor costs by 130% and customer wait times by 5 times.",
+		content:
+			" improve workflow while developing and delivering training programs that boosted sales by 198%, reduced labor costs by 130% and customer wait times by 5 times.",
 		className: "md:col-span-2 overflow-hidden", // change to md:col-span-2
 		thumbnail: "/exp3.svg",
 	},
 	{
 		id: 4,
+		time: "2014-2016",
 		title: "Operation Supervisor",
-		desc: "Optimized team operations, ensuring efficiency and hygiene, driving significant sales growth: 150% increase in merchandise sales, 600% increase in whole coffee package sales, 175% increase in food sales",
+		content:
+			"Optimized team operations, ensuring efficiency and hygiene, driving significant sales growth: 150% increase in merchandise sales, 600% increase in whole coffee package sales, 175% increase in food sales",
 		className: "md:col-span-2",
 		thumbnail: "/exp4.svg",
 	},
@@ -211,8 +219,10 @@ export const skills = [
 	{ name: "MySQL", logoUrl: "mysql.png" },
 	{ name: "NodeJS", logoUrl: "nodejs.png" },
 	{ name: "OpenAI", logoUrl: "openai.png" },
-	{ name: "TensorflowJS", logoUrl: "/tensorflowjs.png" },
+	{ name: "TensorflowJS", logoUrl: "tensorflow.png" },
 	{ name: "THREE.js", logoUrl: "three.png" },
 	{ name: "Figma", logoUrl: "/figma.png" },
 	{ name: "Git", logoUrl: "git.png" },
+	{ name: "GCP", logoUrl: "google-cloud.png" },
+	{ name: "Blender", logoUrl: "blender.png" },
 ];
