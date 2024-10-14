@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 	description: "Learn more about Linh's skills and experience",
 	openGraph: {
 		title: "Linh's Portfolio",
-		description: "Modern & Creative Portfolio",
+		description: "Learn more about Linh's skills and experience through this modern and creative portfolio.",
 		url: "https://linh-hoang.vercel.app",
 		type: "website",
 		images: [
