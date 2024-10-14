@@ -10,13 +10,13 @@ import Image from "next/image";
 const RecentProjects = () => {
 	return (
 		<div
-			className=" max-w-7xl w-full mx-auto sm:px-10 px-0 py-20"
+			className=" w-full mx-auto sm:px-10 px-0 py-20"
 			id="projects"
 		>
 			<h1 className="heading">
-				A selection of <span className="text-purple">personal projects</span>
+				A selection of <span className="text-[#915eff]">personal projects</span>
 			</h1>
-			<div className="flex flex-wrap items-center justify-center p-4 gap-16 mt-10">
+			<div className="flex flex-wrap items-center justify-center p-5 gap-32 mt-10">
 				{projects.map((item) => (
 					<div
 						className="lg:min-h-[32.5rem] h-[25rem] flex items-center justify-center sm:w-96 w-[80vw]"

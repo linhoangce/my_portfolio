@@ -178,7 +178,7 @@ export const workExperience = [
 		time: "2018-2019",
 		title: "Training & Development Specialist",
 		content:
-			" improve workflow while developing and delivering training programs that boosted sales by 198%, reduced labor costs by 130% and customer wait times by 5 times.",
+			"Applied lean thinking and operational excellence methodologies to improve workflow while developing and delivering training programs that boosted sales by 198%, reduced labor costs by 130% and customer wait times by 5 times.",
 		className: "md:col-span-2 overflow-hidden", // change to md:col-span-2
 		thumbnail: "/christina.jpg",
 	},

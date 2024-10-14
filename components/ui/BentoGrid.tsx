@@ -93,7 +93,7 @@ export const BentoGridItem = ({
 						/>
 					)}
 				</div>
-				<div className={`absolute right-0 -bottom-5 ${id === 5 && "w-full h-full z-50" }`}>
+				<div className={`absolute right-0 ${id === 5 && "w-full h-full z-50" }`}>
 					{id === 5 && <Laptop />}
 				</div>
 
