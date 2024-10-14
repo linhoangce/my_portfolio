@@ -8,10 +8,12 @@ const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
 	title: "Linh's Portfolio",
-	description: "Learn more about Linh's skills and experience",
+	description:
+		"Explore Linh's modern and creative portfolio, showcasing innovative web development projects, design skills, and expertise in building responsive, high-performance applications using cutting-edge technologies like Next.js, TypeScript, and AI-powered tools",
 	openGraph: {
 		title: "Linh's Portfolio",
-		description: "Learn more about Linh's skills and experience through this modern and creative portfolio.",
+		description:
+			"Explore Linh's modern and creative portfolio, showcasing innovative web development projects, design skills, and expertise in building responsive, high-performance applications using cutting-edge technologies like Next.js, TypeScript, and AI-powered tools",
 		url: "https://linh-hoang.vercel.app",
 		type: "website",
 		images: [
