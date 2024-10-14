@@ -13,7 +13,7 @@ const Footer = () => {
 			>
 				<div className="absolute inset-0 w-full h-full bg-slate-900 z-20 [mask-image:radial-gradient(transparent,white)] pointer-events-none" />
 				<Boxes />
-				<div className="flex mt-16 md:flex-row flex-col justify-between items-center">
+				<div className="flex mt-16 md:flex-row flex-col justify-between items-center z-50">
 					<p className="md:text-base text-sm md:font-normal font-light ml-5">
 						Copyright © 2024 Linh Hoang
 					</p>

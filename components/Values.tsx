@@ -10,15 +10,16 @@ const Approach = () => {
 				My <span className="text-purple">Values</span>
 			</h1>
 			{/* remove bg-white dark:bg-black */}
-			<div className="my-20 flex flex-col lg:flex-row items-center justify-center w-full gap-4">
+			<div className="my-20 flex flex-col lg:flex-row items-center justify-center w-full gap-10">
 				{/* add des prop */}
 				<Card
 					title="Problem Solving and Improvement"
-					icon={<AceternityIcon order="Phase 1" />}
-					des="Creative Problem-Solving: Demonstrated proactive and creative approaches to overcoming challenges, particularly in scalability, optimization, and providing impactful solutions. </br>
-          Curiosity and Passion for Learning: Constantly expanding skills through self-directed learning and experiences, such as completing a Machine Learning course and hands-on technical training in web development. <br>
-          Continuous Improvement: Driven by a desire for constant learning and skill development, aligning with teams that prioritize growth, both individually and collectively. <br>
-          Innovative Mindset: Demonstrates curiosity and openness to experimenting with new ideas and technologies to push boundaries, resulting in impactful solutions."
+					icon={<AceternityIcon order="Value 1" />}
+					des={[
+						"Proactive and creative in problem solving",
+						"Curiosity and Passion for Learning: Constantly expanding skills through self-directed learning and experiences.",
+						"Curious and open to experimenting with new ideas and technologies to push boundaries",
+					]}
 				>
 					<CanvasRevealEffect
 						animationSpeed={5.1}
@@ -27,10 +28,11 @@ const Approach = () => {
 					/>
 				</Card>
 				<Card
-					title="Collaboration and Empathy"
-					icon={<AceternityIcon order="Phase 2" />}
-					des="Team-Oriented: Valued collaboration and feedback, seeking to contribute and grow within a dynamic environment, reflected in the inquiry about mentorship at Spare. <br>
-          Empathy and Social Impact: Deeply connected to solving real-world problems, particularly in helping individuals with mobility challenges through accessible transportation solutions. Their personal experience working with vulnerable populations adds a layer of understanding and compassion."
+					title="Collaboration"
+					icon={<AceternityIcon order="Value 2" />}
+					des={[
+						"Value collaboration and seek to contribute and grow within a dynamic environment.",
+					]}
 				>
 					<CanvasRevealEffect
 						animationSpeed={3}
@@ -49,10 +51,12 @@ const Approach = () => {
 				</Card>
 				<Card
 					title="Expertise and Learning Agility"
-					icon={<AceternityIcon order="Phase 3" />}
-					des="Full-Stack Development: Proficiency in TypeScript, Next.js, React, and API integration, demonstrating a solid foundation in building scalable, maintainable, and performant web applications. <br>
-          Adaptability: Enthusiastic about embracing new technologies, including GCP services and learning functional programming.
-          Adaptability in Dynamic Environments: Thrives in evolving environments where ambiguity and rapid changes are expected. Capable of quickly adjusting to new challenges, contributing actively from day one."
+					icon={<AceternityIcon order="Value 3" />}
+					des={[
+						"Strong foundation in Java, TypeScript, Next.js, React, and API integration",
+						"Enthusiastic about embracing new technologies",
+						"Thrives in evolving environments where ambiguity and rapid changes are expected.",
+					]}
 				>
 					<CanvasRevealEffect
 						animationSpeed={3}
@@ -77,7 +81,7 @@ const Card = ({
 	title: string;
 	icon: React.ReactNode;
 	children?: React.ReactNode;
-	des: string;
+	des: string[];
 }) => {
 	const [hovered, setHovered] = React.useState(false);
 	return (
@@ -94,12 +98,6 @@ const Card = ({
 				backgroundColor: "linear-gradient(90deg, rgba(4,7,29,1) 0%, rgba(12,14,35,1) 100%)",
 			}}
 		>
-			{/* change to h-10 w-10 , add opacity-30  */}
-			<Icon className="absolute h-10 w-10 -top-3 -left-3 dark:text-white text-black opacity-30" />
-			<Icon className="absolute h-10 w-10 -bottom-3 -left-3 dark:text-white text-black opacity-30" />
-			<Icon className="absolute h-10 w-10 -top-3 -right-3 dark:text-white text-black opacity-30" />
-			<Icon className="absolute h-10 w-10 -bottom-3 -right-3 dark:text-white text-black opacity-30" />
-
 			<AnimatePresence>
 				{hovered && (
 					<motion.div
@@ -114,8 +112,6 @@ const Card = ({
 
 			<div className="relative z-20 px-10">
 				<div
-					// add this for making it center
-					// absolute top-[50%] left-[50%] translate-x-[-50%] translate-y-[-50%]
 					className="text-center group-hover/canvas-card:-translate-y-4 absolute top-[50%] left-[50%] translate-x-[-50%] translate-y-[-50%] 
         group-hover/canvas-card:opacity-0 transition duration-200 min-w-40 mx-auto flex items-center justify-center"
 				>
@@ -130,14 +126,16 @@ const Card = ({
 					{title}
 				</h2>
 				{/* add this one for the description */}
-				<p
+				<ul
 					className="text-sm opacity-0 group-hover/canvas-card:opacity-100
          relative z-10 mt-4 group-hover/canvas-card:text-white text-center
          group-hover/canvas-card:-translate-y-2 transition duration-200"
 					style={{ color: "#E4ECFF" }}
 				>
-					{des}
-				</p>
+					{des.map((value, index) => (
+						<li key={index} className="mt-5 mb-5">{value}</li>
+					))}
+				</ul>
 			</div>
 		</div>
 	);
@@ -163,24 +161,6 @@ const AceternityIcon = ({ order }: { order: string }) => {
 				</span>
 			</button>
 		</div>
-		// remove the svg and add the button
-		// <svg
-		//   width="66"
-		//   height="65"
-		//   viewBox="0 0 66 65"
-		//   fill="none"
-		//   xmlns="http://www.w3.org/2000/svg"
-		//   className="h-10 w-10 text-black dark:text-white group-hover/canvas-card:text-white "
-		// >
-		//   <path
-		//     d="M8 8.05571C8 8.05571 54.9009 18.1782 57.8687 30.062C60.8365 41.9458 9.05432 57.4696 9.05432 57.4696"
-		//     stroke="currentColor"
-		//     strokeWidth="15"
-		//     strokeMiterlimit="3.86874"
-		//     strokeLinecap="round"
-		//     style={{ mixBlendMode: "darken" }}
-		//   />
-		// </svg>
 	);
 };
 

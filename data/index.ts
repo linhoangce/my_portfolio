@@ -162,7 +162,7 @@ export const workExperience = [
 		content:
 			"Ensured 100% accuracy in English-Vietnamese conversations by actively listening, analyzing nuanced meanings, and applying correct industry terminology across healthcare, insurance, finance, and other technical sectors.",
 		className: "md:col-span-2 overflow-hidden",
-		thumbnail: "/exp1.svg",
+		thumbnail: "/lls.png",
 	},
 	{
 		id: 2,
@@ -171,7 +171,7 @@ export const workExperience = [
 		content:
 			"Designed and developed a new cafe concept that result in a 166% sales increase, expenses below 25% of budget, and monthly profits exceeding targets by 320%. ",
 		className: "md:col-span-2 overflow-hidden", // change to md:col-span-2
-		thumbnail: "/exp2.svg",
+		thumbnail: "/haviland.jpg",
 	},
 	{
 		id: 3,
@@ -180,7 +180,7 @@ export const workExperience = [
 		content:
 			" improve workflow while developing and delivering training programs that boosted sales by 198%, reduced labor costs by 130% and customer wait times by 5 times.",
 		className: "md:col-span-2 overflow-hidden", // change to md:col-span-2
-		thumbnail: "/exp3.svg",
+		thumbnail: "/christina.jpg",
 	},
 	{
 		id: 4,
@@ -189,7 +189,7 @@ export const workExperience = [
 		content:
 			"Optimized team operations, ensuring efficiency and hygiene, driving significant sales growth: 150% increase in merchandise sales, 600% increase in whole coffee package sales, 175% increase in food sales",
 		className: "md:col-span-2",
-		thumbnail: "/exp4.svg",
+		thumbnail: "/starbucks.jpg",
 	},
 ];
 
