@@ -6,7 +6,7 @@ const Grid = () => {
 	return (
 		<section
 			id="about"
-			className=""
+			className="max-w-7xl w-full mx-auto sm:px-10 px-0"
 		>
 			<BentoGrid className="w-full p-20">
 				{gridItems.map((item, i) => (
@@ -25,7 +25,6 @@ const Grid = () => {
 					/>
 				))}
 			</BentoGrid>
-
 		</section>
 	);
 };

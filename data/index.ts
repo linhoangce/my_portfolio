@@ -85,7 +85,7 @@ export const projects = [
 		des: "Simplify your video conferencing experience with Zooom. Seamlessly connect with colleagues and friends.",
 		img: "/p2.svg",
 		iconLists: ["/next.svg", "/tail.svg", "/ts.svg", "/stream.svg", "/c.svg"],
-		link: "zoom-clone-psi-bay.vercel.app",
+		link: "https://zoom-clone-psi-bay.vercel.app",
 	},
 	{
 		id: 3,
@@ -93,7 +93,7 @@ export const projects = [
 		des: "A REAL Software-as-a-Service app with AI features and a payments and credits system using the latest tech stack.",
 		img: "/p3.svg",
 		iconLists: ["/re.svg", "/tail.svg", "/ts.svg", "/three.svg", "/c.svg"],
-		link: "imaginify-gamma-neon.vercel.app",
+		link: "https://imaginify-gamma-neon.vercel.app",
 	},
 	{
 		id: 4,
@@ -101,7 +101,7 @@ export const projects = [
 		des: "Recreated the Apple iPhone 15 Pro website, combining GSAP animations and Three.js 3D effects..",
 		img: "/p4.svg",
 		iconLists: ["/next.svg", "/tail.svg", "/ts.svg", "/three.svg", "/gsap.svg"],
-		link: "iphone15-clone-alpha.vercel.app",
+		link: "https://iphone15-clone-alpha.vercel.app",
 	},
 	{
 		id: 5,
@@ -109,7 +109,7 @@ export const projects = [
 		des: "A real-time collaborative editor with Lexical and Liveblocks for markdown support, real-time nested comments, and emoji integration.",
 		img: "/livedoc.png",
 		iconLists: ["/next.svg", "/tail.svg", "/ts.svg", "/socket-io.svg", "/liveblocks.svg"],
-		link: "live-document-editor.vercel.app",
+		link: "https://live-document-editor.vercel.app",
 	},
 	{
 		id: 6,
