@@ -9,6 +9,7 @@ import { TextureLoader } from "three";
 import { skills } from "@/data";
 import CanvasLoader from "./Loader";
 import { motion } from "framer-motion";
+import { BackgroundGradientAnimation } from "@/components/ui/GradientBg";
 
 function Model({ open, hinge, logoUrl, ...props }) {
 	const group = useRef();
@@ -202,10 +203,26 @@ export default function Laptop() {
 			)}
 			<animated.section
 				style={{
-					background: props.open.to([0, 1], ["#8A2BE2", "#000319"]),
+					// Preserves the transition from dark blue to deep purple
+					background: props.open.to([0, 1], ["#000319", "#38017d"]),
 				}}
-				className={`h-full`}
+				className="h-full relative overflow-hidden"
 			>
+				{/* The Gradient Animation Layer */}
+				<animated.div
+					style={{
+						opacity: props.open, // Fades from 0 to 1
+						position: "absolute",
+						inset: 0,
+						zIndex: 0,
+					}}
+				>
+					<BackgroundGradientAnimation>
+						<div className="absolute z-50 inset-0 flex items-center justify-center text-white font-bold px-4 pointer-events-none text-3xl text-center md:text-4xl lg:text-7xl">
+							{/* Your content here */}
+						</div>
+					</BackgroundGradientAnimation>
+				</animated.div>
 				<Canvas
 					className="w-full h-full z-100"
 					dpr={[1, 2]}
