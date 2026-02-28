@@ -38,9 +38,12 @@ export const Timeline = ({ data }: { data: TimelineEntry[] }) => {
 			<div className="max-w-7xl mx-auto py-10 px-4 md:px-8 lg:px-10 flex flex-col items-center gap-5">
 				<h2 className="heading text-[#915eff]">Professional Development</h2>
 				<p className="text-neutral-700 dark:text-neutral-300 text-sm md:text-base ">
-					With 10 years of diverse experience, I specialized in client service, team management and
-					training development across industries. These experiences highlight my adaptability,
-					leadership, and problem-solving abilities in dynamically international environments.
+					With over 10 years of experience in leadership and client service, I combine a proven
+					track record in team management with technical expertise in <b>Predictive Analytics</b>{" "}
+					and
+					<b> Distributed Systems</b>. I specialize in bridging the gap between complex software
+					architecture and
+					high-level business objectives in fast-paced, international environments.
 				</p>
 			</div>
 

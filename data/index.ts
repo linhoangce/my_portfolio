@@ -8,9 +8,9 @@ export const navItems = [
 export const gridItems = [
 	{
 		id: 1,
-		title:
-			"I am passionate, creative, and currently looking for an internship starting in January 2025.",
-		description: "",
+		title: "I am passionate, creative, and analytic. ",
+		description:
+			"A 2026 BCIT CST graduate looking to leverage data-driven insights in a full-time Junior Developer or Machine Learning Engineer capacity.",
 		className: "lg:col-span-3 md:col-span-6 md:row-span-4 lg:min-h-[60vh]",
 		imgClassName: "w-full h-full",
 		titleClassName: "justify-end",
@@ -29,7 +29,7 @@ export const gridItems = [
 	},
 	{
 		id: 3,
-		title: "My tech stack",
+		title: "My latest tech stack",
 		description: "I constantly try to improve",
 		className: "lg:col-span-2 md:col-span-3 md:row-span-2",
 		imgClassName: "",
@@ -73,11 +73,11 @@ export const gridItems = [
 export const projects = [
 	{
 		id: 1,
-		title: "FitUp",
-		des: "Empower your fitness journey with FitUp, a smart AI-driven app, offering personalized tasks, real-time progress updates, and nutrition recommendations to achieve your goals alongside friends, so join FitUp today!",
-		img: "/fitup.png",
-		iconLists: ["/nodejs.svg", "/ggspeech.svg", "/three.svg", "/mongo.svg", "/tf.svg", "groq.svg"],
-		link: "https://fitupapp.onrender.com/",
+		title: "Zentry Replica",
+		des: "A high-performance replica of the award-winning Zentry website, featuring immersive 3D scroll animations, seamless page transitions, and a gaming-inspired UI built with React and GSAP",
+		img: "/zentry.png",
+		iconLists: ["/next.svg", "/tail.svg", "/ts.svg", "/gsap.svg"],
+		link: "https://animated-website-zentry.vercel.app/",
 	},
 	{
 		id: 2,
@@ -92,7 +92,7 @@ export const projects = [
 		title: "Imaginify",
 		des: "A REAL Software-as-a-Service app with AI features and a payments and credits system using the latest tech stack.",
 		img: "/p3.svg",
-		iconLists: ["/re.svg", "/tail.svg", "/ts.svg", "/three.svg", "/c.svg"],
+		iconLists: ["/re.svg", "/tail.svg", "/ts.svg", "/c.svg"],
 		link: "https://imaginify-gamma-neon.vercel.app",
 	},
 	{
@@ -113,6 +113,14 @@ export const projects = [
 	},
 	{
 		id: 6,
+		title: "FitUp",
+		des: "Empower your fitness journey with FitUp, a smart AI-driven app, offering personalized tasks, real-time progress updates, and nutrition recommendations to achieve your goals alongside friends, so join FitUp today!",
+		img: "/fitup.png",
+		iconLists: ["/nodejs.svg", "/ggspeech.svg", "/three.svg", "/mongo.svg", "/tf.svg", "groq.svg"],
+		link: "https://fit-up-hy4k.onrender.com",
+	},
+	{
+		id: 7,
 		title: "Farmify",
 		des: "A commercial app that connects farmers directly with consumers to reduce the cost and time spent buying fresh and healthy produce while supporting local, small-scale farms that contributes to our community's sustainability and increase the farmers' profit share. Users can now create a post, write their reviews, bookmark their favorites, add items to their carts, and send a message to the farms. Users can also enjoy better experience using the app thanks to improved UI design, add items to cart with the price calculated and go to checkout page, review and leave star rating for each post, view their current location with Google map on our app, unsave bookmarks.",
 		img: "/farmify.png",
@@ -121,42 +129,18 @@ export const projects = [
 	},
 ];
 
-export const companies = [
-	{
-		id: 1,
-		name: "cloudinary",
-		img: "/cloud.svg",
-		nameImg: "/cloudName.svg",
-	},
-	{
-		id: 2,
-		name: "appwrite",
-		img: "/app.svg",
-		nameImg: "/appName.svg",
-	},
-	{
-		id: 3,
-		name: "HOSTINGER",
-		img: "/host.svg",
-		nameImg: "/hostName.svg",
-	},
-	{
-		id: 4,
-		name: "stream",
-		img: "/s.svg",
-		nameImg: "/streamName.svg",
-	},
-	{
-		id: 5,
-		name: "docker.",
-		img: "/dock.svg",
-		nameImg: "/dockerName.svg",
-	},
-];
-
 export const workExperience = [
 	{
 		id: 1,
+		time: "2025-Present",
+		title: "Software QA Engineer - Internship",
+		content:
+			"Technical QA Intern with hands-on experience in automating distributed systems using Playwright, Java, and Jenkins, specifically focusing on high-throughput telecom and messaging platforms. I specialize in the configuration and troubleshooting of multi-VM Linux environments, ensuring seamless service-to-service communication across protocols like Kafka, MQTT, and TR-069",
+		className: "md:col-span-2 overflow-hidden",
+		thumbnail: "/incognito.jpg",
+	},
+	{
+		id: 2,
 		time: "2021-2023",
 		title: "Medical Interpreter L4",
 		content:
@@ -165,7 +149,7 @@ export const workExperience = [
 		thumbnail: "/lls.png",
 	},
 	{
-		id: 2,
+		id: 3,
 		time: "2019-2020",
 		title: "Project Manager",
 		content:
@@ -174,7 +158,7 @@ export const workExperience = [
 		thumbnail: "/haviland.jpg",
 	},
 	{
-		id: 3,
+		id: 4,
 		time: "2018-2019",
 		title: "Training & Development Specialist",
 		content:
@@ -183,7 +167,7 @@ export const workExperience = [
 		thumbnail: "/christina.jpg",
 	},
 	{
-		id: 4,
+		id: 5,
 		time: "2014-2016",
 		title: "Operation Supervisor",
 		content:
@@ -207,6 +191,9 @@ export const socialMedia = [
 ];
 
 export const skills = [
+	{ name: "Python", logoUrl: "python.png" },
+	{ name: "Pytorch", logoUrl: "pytorch.png" },
+	{ name: "ScikitLearn", logoUrl: "sklearn.png" },
 	{ name: "Java", logoUrl: "/java.png" },
 	{ name: "C", logoUrl: "/c.png" },
 	{ name: "TypeScript", logoUrl: "/typescript.png" },

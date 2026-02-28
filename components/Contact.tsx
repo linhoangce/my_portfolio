@@ -6,10 +6,6 @@ import { styles } from "./styles";
 import { EarthCanvas, StarsCanvas } from "./canvas";
 import { SectionWrapper } from "../hoc";
 import { slideIn } from "@/lib/motion";
-import MagicButton from "./MagicButton";
-import { FaLocationArrow } from "react-icons/fa6";
-import { socialMedia } from "@/data";
-
 const Contact = () => {
 	const [form, setForm] = useState({
 		name: "",
@@ -41,7 +37,7 @@ const Contact = () => {
 					to_email: "linhoang.ce@gmail.com",
 					message: form.message,
 				},
-				"6Y19uZYNwmTBMVtD0"
+				"6Y19uZYNwmTBMVtD0",
 			)
 			.then(
 				() => {
@@ -60,7 +56,7 @@ const Contact = () => {
 					console.log("Error sending contact information!", error);
 
 					alert("Something went wrong, please try again!");
-				}
+				},
 			);
 	};
 

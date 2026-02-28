@@ -1,6 +1,7 @@
+"use client";
+
 import { gridItems } from "@/data";
 import { BentoGrid, BentoGridItem } from "./ui/BentoGrid";
-import Laptop from "./canvas/Laptop";
 
 const Grid = () => {
 	return (

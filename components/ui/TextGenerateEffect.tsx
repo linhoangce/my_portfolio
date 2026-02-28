@@ -15,26 +15,30 @@ export const TextGenerateEffect = ({ words, className }: { words: string; classN
 			},
 			{
 				duration: 2,
-				delay: stagger(0.2),
-			}
+				delay: stagger(0.1),
+			},
 		);
 	}, [scope.current]);
 
 	const renderWords = () => {
-		
 		return (
 			<motion.div ref={scope}>
 				{wordsArray.map((word, idx) => {
-					 let className = "";
+					let className = "";
 
-						// Apply conditional color logic
-						if (idx === 6 || idx > 8) {
-							className = "text-[#915eff]"; // Change to the specified color
-						} else if (idx > 5 && idx < 8) {
-							className = "text-white"; // Set to white between 5 and 8
-						} else {
-							className = "dark:text-white text-black"; // Default color
-						}
+					// Apply conditional color logic
+					if (
+						(idx > 4 && idx < 8) ||
+						idx === 10 ||
+						(idx > 12 && idx < 15) ||
+						(idx > 21 && idx < 24)
+					) {
+						className = "text-[#915eff]"; // Change to the specified color
+					} else if (idx > 5 && idx < 8) {
+						className = "text-white"; // Set to white between 5 and 8
+					} else {
+						className = "dark:text-white text-black"; // Default color
+					}
 
 					return (
 						<motion.span
