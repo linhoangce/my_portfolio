@@ -72,9 +72,18 @@ export const gridItems = [
 
 export const projects = [
 	{
+		id: 7,
+		title: "Vessel Vision",
+		des: "High-performance marine surveillance system developed for Ocean Hackathon Victoria 2025, leveraging state-of-the-art YOLO models and SAHI-enhanced inference to detect multi-scale vessels in high-resolution imagery with production-ready deployment for maritime security and monitoring.",
+		img: "/vessel.png",
+		iconLists: ["/python.png", "/ultralytics.svg", "/hf-logo.svg", "/pytorch.svg"],
+		link: "https://huggingface.co/spaces/linhoang/yolo_boat_detector",
+	},
+
+	{
 		id: 1,
 		title: "Zentry Replica",
-		des: "A high-performance replica of the award-winning Zentry website, featuring immersive 3D scroll animations, seamless page transitions, and a gaming-inspired UI built with React and GSAP",
+		des: "A high-performance replica of the Awwward-winning Zentry website, featuring immersive 3D scroll animations, seamless page transitions, and a gaming-inspired UI built with React and GSAP",
 		img: "/zentry.png",
 		iconLists: ["/next.svg", "/tail.svg", "/ts.svg", "/gsap.svg"],
 		link: "https://animated-website-zentry.vercel.app/",
