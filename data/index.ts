@@ -9,8 +9,8 @@ export const gridItems = [
 	{
 		id: 1,
 		title: "I am passionate, creative, and analytic. ",
-		description:
-			"A 2026 BCIT CST graduate looking to leverage data-driven insights in a full-time Junior Developer or Machine Learning Engineer capacity.",
+		// description:
+		// 	"A 2026 BCIT CST graduate looking to leverage data-driven insights in a full-time Junior Developer or Machine Learning Engineer capacity.",
 		className: "lg:col-span-3 md:col-span-6 md:row-span-4 lg:min-h-[60vh]",
 		imgClassName: "w-full h-full",
 		titleClassName: "justify-end",
@@ -20,7 +20,7 @@ export const gridItems = [
 	{
 		id: 2,
 		title: "",
-		description: "I'm currently in Burnaby, BC. However, I'm willing to relocate.",
+		description: "Building in Vancouver, Canada",
 		className: "lg:col-span-2 md:col-span-3 md:row-span-2",
 		imgClassName: "",
 		titleClassName: "justify-start",
@@ -60,7 +60,7 @@ export const gridItems = [
 	},
 	{
 		id: 6,
-		title: "If you find my portfolio a match with your company's roles, please send me an email.",
+		title: "If you are curious about what we're building, please reach out.",
 		description: "",
 		className: "lg:col-span-2 md:col-span-3 md:row-span-1",
 		imgClassName: "",
@@ -71,6 +71,42 @@ export const gridItems = [
 ];
 
 export const projects = [
+	{
+		id: 8,
+		title: "Mini OpenClaw",
+		des: "An AI assistant gateway with Telegram support, persistent memory, filesystem/shell/cron tools, and automated monitoring using Python, asynchronous architecture, and the OpenAI API.",
+		img: "/miniclaw.png",
+		iconLists: ["/python.png", "/openai-logo.svg", "/telegram.png"],
+		link: "https://github.com/linhoangce/mini_openclaw",
+	},
+
+	{
+		id: 9,
+		title: "LEXMind",
+		des: "An AI legal assistant with OpenAI Realtime voice interaction, specialized agents, and an Obsidian-compatible knowledge vault.",
+		img: "/vibe_code_hack.png",
+		iconLists: ["/typescript.png", "/openai-logo.svg", "/react.png"],
+		link: "https://github.com/linhoangce/law-hacks",
+	},
+
+	{
+		id: 10,
+		title: "AI Weed Detector",
+		des: "For an industry-sponsored project, collected and labelled a custom blueberry-field dataset, then built and evaluated an RF-DETR detection pipeline with Roboflow, Google Colab, and Weights & Biases. It achieved 0.6354 mAP@50 and 0.6782 F1.",
+		img: "/weed.png",
+		iconLists: ["/python.png", "/roboflow.png", "/wandb.png"],
+		link: "https://colab.research.google.com/drive/17qp86__5waQNhgb6oadyiIXPdealv-4C#scrollTo=1c04f3b7&uniqifier=8",
+	},
+
+	{
+		id: 10,
+		title: "ABCKidz Website",
+		des: "Built a REST API backend for a children’s learning platform, including role-based access control, PostgreSQL/Prisma data models, Azure GPT-4o chatbot integration with prompt caching, and streamed Azure Blob Storage uploads/downloads up to 100 MB.",
+		img: "/abckidz.png",
+		iconLists: ["/typescript.png", "/azure.jpg", "/postgres.png"],
+		link: "https://www.abckidz.org/",
+	},
+
 	{
 		id: 7,
 		title: "Vessel Vision",

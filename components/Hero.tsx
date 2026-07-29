@@ -19,7 +19,7 @@ const Hero = () => {
 					{/* text-[#915eff] */}
 					<div className="flex flex-col items-center justify-center z-10">
 						<TextGenerateEffect
-							words={`I'm Linh. I am a Computer Systems Technology student at BCIT, specializing in Predictive Analytics. I focus on leveraging data-driven insights and Machine Learning to solve complex technical challenges.`}
+							words={`I'm Linh. I build reliable AI systems and workflow software. Currently building Awdon for project teams.`}
 							className="text-center text-[25px] md:text-2xl lg:text-3xl"
 						/>
 

@@ -27,12 +27,7 @@ export const TextGenerateEffect = ({ words, className }: { words: string; classN
 					let className = "";
 
 					// Apply conditional color logic
-					if (
-						(idx > 4 && idx < 8) ||
-						idx === 10 ||
-						(idx > 12 && idx < 15) ||
-						(idx > 21 && idx < 24)
-					) {
+					if ((idx > 4 && idx < 7) || (idx > 4 && idx < 7) || idx === 12) {
 						className = "text-[#915eff]"; // Change to the specified color
 					} else if (idx > 5 && idx < 8) {
 						className = "text-white"; // Set to white between 5 and 8
