@@ -13,6 +13,8 @@ import {
   world,
 } from "@/data";
 
+import { terrainHeight } from "./world/terrainHeight";
+
 export type Mode = "loading" | "start" | "play" | "focus" | "menu";
 export type MoveMode = "walk" | "slide" | "swim";
 export type MissionStatus = "locked" | "active" | "done";
@@ -91,13 +93,16 @@ let teleportSeq = 0;
 /** Camera yaw that puts the camera behind a penguin facing `penguinYaw`. */
 export const cameraYawFor = (penguinYaw: number) => penguinYaw + Math.PI;
 
-/** Standing spot in front of a screen: 2.6 m along the screen normal. */
+/** Standing spot in front of a screen: 2.6 m along the screen normal, dropped from just above the ground. */
 export function standingSpotFor(section: SectionId): { pos: Vec3; yaw: number } {
   const screen = screenById[section];
   const nx = Math.sin(screen.yaw);
   const nz = Math.cos(screen.yaw);
   const d = 2.6;
-  const pos: Vec3 = [screen.position[0] + nx * d, world.iceTop + 1.2, screen.position[2] + nz * d];
+  const x = screen.position[0] + nx * d;
+  const z = screen.position[2] + nz * d;
+  const ground = Math.max(terrainHeight(x, z), world.waterLevel - 0.3);
+  const pos: Vec3 = [x, ground + 1.2, z];
   // Face the screen: forward = -normal; model faces +z at yaw 0, so yaw = atan2(fx, fz).
   const yaw = Math.atan2(-nx, -nz);
   return { pos, yaw };

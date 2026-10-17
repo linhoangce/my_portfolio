@@ -212,7 +212,7 @@ export type ZoneDef = {
 
 export type ScreenDef = {
   id: SectionId;
-  /** Where the panel is mounted (centre of the panel). */
+  /** Panel centre: x, z in world space; y is the height above the local ground. */
   position: Vec3;
   /** Rotation about Y. 0 faces south (+z), PI faces north (-z), PI/2 faces east (+x). */
   yaw: number;
@@ -275,15 +275,15 @@ export const zones: ZoneDef[] = [
 ];
 
 export const screens: ScreenDef[] = [
-  { id: "about", position: [-32, 1.9, -8], yaw: 0, size: [3.4, 2.1], zone: "colony-board", mount: "Colony board" },
-  { id: "planktoneer", position: [10.5, 1.6, -16], yaw: -Math.PI / 2, size: [3.2, 2.0], zone: "bay-shore", mount: "Holographic buoy" },
-  { id: "awdon", position: [46, 1.9, 21.5], yaw: Math.PI, size: [3.4, 2.1], zone: "dock-board", mount: "Planning board" },
-  { id: "vessel-vision", position: [-8, 1.9, -14.5], yaw: 0, size: [3.2, 2.0], zone: "lookout", mount: "Telescope display" },
-  { id: "weed-detector", position: [-30.85, 1.9, 12], yaw: Math.PI / 2, size: [3.2, 2.0], zone: "lab-east", mount: "Sorting table screen" },
-  { id: "more-projects", position: [-38, 1.9, 15.15], yaw: 0, size: [3.6, 2.2], zone: "lab-south", mount: "Project shelf" },
-  { id: "experience", position: [-36, 1.9, 8.85], yaw: Math.PI, size: [3.6, 2.2], zone: "lab-north", mount: "Timeline wall" },
-  { id: "abckidz", position: [-45, 1.9, -19], yaw: 0, size: [3.2, 2.0], zone: "school-rock", mount: "School rock signboard" },
-  { id: "contact", position: [-12, 1.9, 26.15], yaw: 0, size: [3.2, 2.0], zone: "radio", mount: "Radio shack screen" },
+  { id: "about", position: [-32, 1.5, -8], yaw: 0, size: [3.4, 2.1], zone: "colony-board", mount: "Colony board" },
+  { id: "planktoneer", position: [10.5, 1.5, -16], yaw: -Math.PI / 2, size: [3.2, 2.0], zone: "bay-shore", mount: "Holographic buoy" },
+  { id: "awdon", position: [46, 1.5, 21.5], yaw: Math.PI, size: [3.4, 2.1], zone: "dock-board", mount: "Planning board" },
+  { id: "vessel-vision", position: [-8, 1.5, -14.5], yaw: 0, size: [3.2, 2.0], zone: "lookout", mount: "Telescope display" },
+  { id: "weed-detector", position: [-30.85, 1.5, 12], yaw: Math.PI / 2, size: [3.2, 2.0], zone: "lab-east", mount: "Sorting table screen" },
+  { id: "more-projects", position: [-38, 1.5, 15.15], yaw: 0, size: [3.6, 2.2], zone: "lab-south", mount: "Project shelf" },
+  { id: "experience", position: [-36, 1.5, 8.85], yaw: Math.PI, size: [3.6, 2.2], zone: "lab-north", mount: "Timeline wall" },
+  { id: "abckidz", position: [-45, 1.5, -19], yaw: 0, size: [3.2, 2.0], zone: "school-rock", mount: "School rock signboard" },
+  { id: "contact", position: [-12, 1.5, 26.15], yaw: 0, size: [3.2, 2.0], zone: "radio", mount: "Radio shack screen" },
 ];
 
 export const missions: Mission[] = [
