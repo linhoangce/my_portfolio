@@ -135,7 +135,8 @@ export default function Game({ onReady, onContextLost }: GameProps) {
         className="pointer-events-none absolute inset-0 bg-[#0b1a2b]/60 opacity-0 transition-opacity duration-300 [html[data-underwater]_&]:opacity-100"
       />
 
-      <div className="pointer-events-none absolute inset-0">
+      {/* z above drei's Html panels (zIndexRange tops out at 20) so the HUD always paints over screens */}
+      <div className="pointer-events-none absolute inset-0 z-[25]">
         <Hud />
         <Toasts />
         <FocusController />
