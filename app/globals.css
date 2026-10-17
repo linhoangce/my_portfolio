@@ -4,82 +4,117 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
-
-    --card: 0 0% 100%;
-    --card-foreground: 240 10% 3.9%;
-
-    --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 3.9%;
-
-    --primary: 240 5.9% 10%;
-    --primary-foreground: 0 0% 98%;
-
-    --secondary: 240 4.8% 95.9%;
-    --secondary-foreground: 240 5.9% 10%;
-
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
-
-    --accent: 240 4.8% 95.9%;
-    --accent-foreground: 240 5.9% 10%;
-
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --ring: 240 10% 3.9%;
-
-    --radius: 0.5rem;
+    /* RGB channels so Tailwind can apply alpha: rgb(var(--x) / a) */
+    --bg: 5 7 15; /* #05070f night sky */
+    --surface: 14 20 34;
+    --fg: 234 239 247;
+    --muted: 148 163 184;
+    --border: 170 190 220;
+    --accent: 167 139 250; /* #a78bfa */
+    --cyan: 94 242 255; /* #5ef2ff */
+    --lamp: 255 184 92; /* #ffb85c */
+    --ice: 223 233 243; /* #dfe9f3 */
+    color-scheme: dark;
   }
 
-  .dark {
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
+  .light {
+    --bg: 245 247 251;
+    --surface: 255 255 255;
+    --fg: 16 22 36;
+    --muted: 92 104 124;
+    --border: 40 60 90;
+    --accent: 109 76 224;
+    --cyan: 0 150 170;
+    --lamp: 196 120 20;
+    color-scheme: light;
+  }
 
-    --card: 240 10% 3.9%;
-    --card-foreground: 0 0% 98%;
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
 
-    --popover: 240 10% 3.9%;
-    --popover-foreground: 0 0% 98%;
+  body {
+    @apply bg-bg text-fg antialiased;
+    font-feature-settings: "ss01", "cv11";
+  }
 
-    --primary: 0 0% 98%;
-    --primary-foreground: 240 5.9% 10%;
+  :focus-visible {
+    outline: 2px solid rgb(var(--cyan));
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
 
-    --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 0 0% 98%;
+  ::selection {
+    background: rgb(var(--accent) / 0.35);
+  }
 
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
+  /* The game page locks page scroll and zoom; /flat keeps normal scrolling. */
+  html[data-game] {
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+  html[data-game] body {
+    overflow: hidden;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
 
-    --accent: 240 3.7% 15.9%;
-    --accent-foreground: 0 0% 98%;
-
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
-
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 240 4.9% 83.9%;
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 }
 
-@layer base {
-  * {
-    @apply border-border !scroll-smooth;
+@layer components {
+  .glass {
+    @apply rounded-2xl border border-border/15 bg-surface/70 shadow-[0_20px_60px_-20px_rgba(0,0,0,0.7)] backdrop-blur-md;
   }
-  body {
-    @apply bg-background text-foreground;
+
+  .eyebrow {
+    @apply text-xs font-medium uppercase tracking-[0.18em] text-muted;
   }
-  button {
-    @apply active:outline-none;
+
+  .chip {
+    @apply inline-flex items-center rounded-full border border-border/20 bg-surface/60 px-2.5 py-0.5 text-xs text-fg/85;
+  }
+
+  .btn {
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-full px-5 text-sm font-medium transition-colors;
+  }
+  .btn-primary {
+    @apply btn bg-accent text-bg hover:bg-accent/90;
+  }
+  .btn-ghost {
+    @apply btn border border-border/25 bg-surface/50 text-fg hover:border-border/50 hover:bg-surface;
+  }
+
+  .link-pill {
+    @apply inline-flex min-h-10 items-center gap-1.5 rounded-full border border-border/25 bg-surface/50 px-3.5 text-sm text-fg transition-colors hover:border-cyan/60 hover:text-cyan;
+  }
+
+  .prose-panel p {
+    @apply text-[15px] leading-relaxed text-fg/90;
   }
 }
 
 @layer utilities {
-  .heading {
-    @apply font-bold text-4xl md:text-5xl text-center;
+  .text-balance {
+    text-wrap: balance;
+  }
+  .text-pretty {
+    text-wrap: pretty;
+  }
+  .safe-bottom {
+    padding-bottom: max(env(safe-area-inset-bottom), 12px);
   }
 }

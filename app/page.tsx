@@ -1,30 +1,16 @@
-"use client";
+import Link from "next/link";
 
-import { navItems } from "@/data";
+import { person } from "@/data";
 
-import Hero from "@/components/Hero";
-import Grid from "@/components/Grid";
-import Footer from "@/components/Footer";
-import Approach from "@/components/Values";
-import Experience from "@/components/Experience";
-import RecentProjects from "@/components/RecentProjects";
-import { FloatingNav } from "@/components/ui/FloatingNavbar";
-import Contact from "@/components/Contact";
-import Development from "@/components/Development";
-
-const Home = () => {
-	return (
-		<main className="relative w-full bg-black-400 flex justify-center items-center flex-col overflow-hidden">
-			<Hero />
-				<FloatingNav navItems={navItems} />
-				<Grid />
-				<RecentProjects />
-				<Development />
-				<Approach />
-			<Contact />
-			<Footer />
-		</main>
-	);
-};
-
-export default Home;
+// Placeholder until the game gate lands in the next step.
+export default function Home() {
+  return (
+    <main className="mx-auto flex min-h-screen max-w-3xl flex-col items-start justify-center gap-6 px-6">
+      <h1 className="font-serif text-5xl text-fg">{person.name}</h1>
+      <p className="text-muted">{person.tagline}</p>
+      <Link href="/flat" className="btn-primary">
+        See the portfolio
+      </Link>
+    </main>
+  );
+}
