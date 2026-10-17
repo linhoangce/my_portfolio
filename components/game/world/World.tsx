@@ -2,6 +2,9 @@
 
 import { FollowCam } from "../camera/FollowCam";
 import { Pointer } from "../controller/Pointer";
+import { FishSchools } from "../entities/FishSchool";
+import { Zones } from "../missions/Zone";
+import { Screens } from "../screens/WorldScreen";
 import { Cottage } from "../outpost/Cottage";
 import { Dock } from "../outpost/Dock";
 import { LabHut } from "../outpost/LabHut";
@@ -34,6 +37,10 @@ export function World({ shadows, lowDetail }: { shadows: boolean; lowDetail: boo
       <Dock />
       <LookoutRock />
       <Props />
+
+      <Zones />
+      <FishSchools />
+      <Screens />
 
       <Penguin />
       <FollowCam />

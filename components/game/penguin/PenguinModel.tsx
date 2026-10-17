@@ -23,8 +23,9 @@ export function PenguinModel() {
 
   const materials = useMemo(
     () => ({
-      black: new THREE.MeshStandardMaterial({ color: "#14161c", flatShading: true, roughness: 0.8 }),
-      white: new THREE.MeshStandardMaterial({ color: "#eef2f6", flatShading: true, roughness: 0.75 }),
+      // Lifted blacks with a faint self-glow so the penguin never vanishes against dark water.
+      black: new THREE.MeshStandardMaterial({ color: "#232733", emissive: "#0d1018", emissiveIntensity: 1, flatShading: true, roughness: 0.8 }),
+      white: new THREE.MeshStandardMaterial({ color: "#f2f5f9", emissive: "#2a2e38", emissiveIntensity: 0.6, flatShading: true, roughness: 0.75 }),
       orange: new THREE.MeshStandardMaterial({ color: "#ff8c2a", flatShading: true, roughness: 0.7 }),
       eye: new THREE.MeshStandardMaterial({ color: "#f6f8fb", roughness: 0.4 }),
       pupil: new THREE.MeshStandardMaterial({ color: "#05070f", roughness: 0.4 }),

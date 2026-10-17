@@ -135,13 +135,14 @@ export function Penguin() {
     const gap = hit ? hit.timeOfImpact - CAP : Number.POSITIVE_INFINITY;
 
     // Water membership by height; every body of water sits at the same level.
-    const submerged = pos.y < WATER + PENGUIN.swimEnterDepth;
-    const deep = !grounded || ctl.groundY < WATER - 0.9;
-    if (ctl.move !== "swim" && submerged && deep) {
+    // Hysteresis: wading (grounded, centre above -0.6) stays in walk mode; swimming
+    // starts once the centre drops below -0.7 on the ground, or -0.12 when unsupported.
+    const swimEnter = grounded ? pos.y < WATER - 0.7 : pos.y < WATER + PENGUIN.swimEnterDepth;
+    if (ctl.move !== "swim" && swimEnter) {
       ctl.move = "swim";
       ctl.diving = false;
       rb.setGravityScale(0, true);
-    } else if (ctl.move === "swim" && grounded && ctl.groundY > WATER - 0.9) {
+    } else if (ctl.move === "swim" && grounded && pos.y > WATER - 0.6) {
       ctl.move = "walk";
       rb.setGravityScale(1, true);
     } else if (ctl.move === "swim" && pos.y > WATER + 0.35) {
@@ -189,7 +190,9 @@ export function Penguin() {
         const edge = world.castRayAndGetNormal(edgeRay, 2.6, true, undefined, undefined, undefined, rb, (c) => !c.isSensor());
         if (edge && Math.abs(edge.normal.y) >= SLOPE_COS) {
           const hy = origin.y - edge.timeOfImpact;
-          if (hy > WATER - 0.15 && hy < pos.y + 1.25) {
+          const feet = pos.y - CAP;
+          // Ground ahead is a step up (edge or shore) that is near or above the surface.
+          if (hy > feet + 0.25 && hy > WATER - 0.5 && hy < pos.y + 1.25) {
             vy = PENGUIN.hopSpeed;
             vx = ux * PENGUIN.hopForward;
             vz = uz * PENGUIN.hopForward;
@@ -301,7 +304,7 @@ export function Penguin() {
     penguinState.grounded = grounded;
     penguinState.diving = ctl.move === "swim" && ctl.diving;
     penguinState.airborne = !grounded && ctl.move !== "swim";
-    state.setMove(ctl.move);
+    state.setMove(ctl.move, ctl.move === "swim" && ctl.diving);
   });
 
   useFrame(() => {
@@ -330,6 +333,11 @@ export function Penguin() {
       <CapsuleCollider args={[PENGUIN.halfHeight, PENGUIN.radius]} friction={0} restitution={0} mass={1} />
       <group ref={visual}>
         <PenguinModel />
+        {/* blob shadow: cheap grounding cue on every device */}
+        <mesh position={[0, -CAP + 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={2}>
+          <circleGeometry args={[0.42, 12]} />
+          <meshBasicMaterial color="#000000" transparent opacity={0.35} depthWrite={false} polygonOffset polygonOffsetFactor={-2} />
+        </mesh>
       </group>
     </RigidBody>
   );

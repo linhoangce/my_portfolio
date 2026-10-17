@@ -8,7 +8,7 @@ const X = 46;
 const Z = 18;
 const W = 6;
 const L = 16;
-const TOP = 0.95;
+const TOP = 0.8;
 
 /** Wooden dock reaching from the spit into the channel. The planning board (Awdon) stands on it. */
 export function Dock() {
@@ -23,6 +23,11 @@ export function Dock() {
         <CuboidCollider args={[W / 2, 0.15, L / 2]} position={[0, TOP - 0.15, 0]} />
         <mesh position={[0, TOP - 0.15, 0]} material={mats.wood} castShadow receiveShadow>
           <boxGeometry args={[W, 0.3, L]} />
+        </mesh>
+        {/* ramp from the ice onto the planks at the south end */}
+        <CuboidCollider args={[W / 2, 0.08, 1.1]} position={[0, TOP - 0.22, L / 2 + 0.9]} rotation={[0.26, 0, 0]} />
+        <mesh position={[0, TOP - 0.22, L / 2 + 0.9]} rotation={[0.26, 0, 0]} material={mats.woodLight} receiveShadow>
+          <boxGeometry args={[W, 0.16, 2.2]} />
         </mesh>
       </RigidBody>
       {posts.map(([px, pz]) => (

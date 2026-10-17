@@ -93,8 +93,8 @@ export const MOUNDS = {
 export function terrainHeight(x: number, z: number): number {
   const t = waterFraction(x, z);
   let h = lerp(ICE_TOP, SEABED, t);
-  // Faceted ice detail.
-  h += (1 - t) * (noise2(x * 0.35 + 2, z * 0.35 + 9) - 0.5) * 0.22;
+  // Faceted ice detail: gentle (about 4 degree) undulation so slides stay smooth.
+  h += (1 - t) * (noise2(x * 0.22 + 2, z * 0.22 + 9) - 0.5) * 0.12;
   // Deeper open water toward the north.
   h -= t * smoothstep(-26, -46, z) * 3;
   // Seabed ripples.

@@ -78,7 +78,7 @@ export function Props() {
       {/* radio shack screen frame */}
       <BoardFrame position={[-12, terrainHeight(-12, 26.3) - 0.1, 26.3]} yaw={0} width={3.6} height={2.3} />
       {/* buoy for the Planktoneer screen */}
-      <Buoy x={11.8} z={-16} />
+      <Buoy x={7.5} z={-16} />
       {/* crates near the spawn */}
       <Crate position={[-31, 1.3, 32]} />
       <Crate position={[-30, 1.3, 33.1]} />

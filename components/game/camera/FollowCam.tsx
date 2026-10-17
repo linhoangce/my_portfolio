@@ -126,8 +126,10 @@ export function FollowCam() {
       camera.position.copy(refs.desired);
       refs.wasFocus = false;
     }
-    // Keep the lens above the water when the penguin is at the surface.
-    if (penguinState.move !== "swim" || !penguinState.diving) {
+    // Keep the lens above the water at the surface, and under it on a dive so the dive reads.
+    if (penguinState.move === "swim" && penguinState.diving) {
+      camera.position.y = Math.min(camera.position.y, world.waterLevel - 0.45);
+    } else {
       camera.position.y = Math.max(camera.position.y, world.waterLevel + 0.25);
     }
     camera.lookAt(refs.target);

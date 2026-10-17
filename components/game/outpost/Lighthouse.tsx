@@ -69,16 +69,16 @@ export function Lighthouse() {
       <group ref={sweep} position={[0, LANTERN_Y, 0]}>
         <group rotation={[0, 0, -0.08]}>
           <mesh position={[36, 0, 0]} rotation={[0, 0, Math.PI / 2]} material={beamMaterial}>
-            <coneGeometry args={[6, 72, 14, 1, true]} />
+            <coneGeometry args={[4.5, 72, 14, 1, true]} />
           </mesh>
           <primitive object={target} position={[70, -4, 0]} />
           <spotLight
             target={target}
             color="#ffb85c"
-            intensity={900}
+            intensity={420}
             distance={95}
-            angle={0.2}
-            penumbra={0.6}
+            angle={0.15}
+            penumbra={0.7}
             decay={1.3}
           />
         </group>

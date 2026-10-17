@@ -26,17 +26,17 @@ export const PENGUIN = {
   // Belly slide (ice only)
   slideMaxSpeed: 12,
   /** Speed added when the slide starts; feels like a push-off. */
-  slideKick: 3.5,
+  slideKick: 4,
   /** Minimum speed before a slide can start. */
-  slideStartSpeed: 2,
+  slideStartSpeed: 1.5,
   /** Steering rate while sliding (rad/s). */
   slideSteer: 1.5,
   /** Fraction of speed lost per second on flat ice. */
-  slideDecay: 0.32,
+  slideDecay: 0.22,
   /** The slide ends below this speed. */
   slideExitSpeed: 1.6,
-  /** Forward push while holding W during a slide (m/s^2). */
-  slideThrust: 2.5,
+  /** Forward push while holding W during a slide (m/s^2). Cruise speed = thrust / decay. */
+  slideThrust: 2.6,
 
   // Swimming
   swimSpeed: 3.6,
@@ -101,6 +101,15 @@ export const SCREENS = {
   focusFill: 0.7,
   /** Throttle for the distance check, in Hz. */
   checkHz: 4,
+  /** CSS pixels per world metre for in-world panels (drei Html transform maps px -> distanceFactor / 400 m). */
+  pxPerMetre: 170,
+  /** Viewports narrower than this show focus mode as a full-screen overlay. */
+  overlayBelowPx: 768,
+};
+
+export const MISSIONS = {
+  /** Missions that can start in the current milestone. M2 adds 3-7. */
+  enabled: ["first-waddle", "fishing-lesson"] as const,
 };
 
 export const PHYSICS = {

@@ -133,7 +133,7 @@ function MoonLight({ shadows }: { shadows: boolean }) {
         ref={light}
         target={target}
         color="#b7c4ff"
-        intensity={1.25}
+        intensity={1.5}
         castShadow={shadows}
         shadow-mapSize={[RENDER.shadowMapSize, RENDER.shadowMapSize]}
         shadow-camera-left={-32}
@@ -154,7 +154,7 @@ export function Sky({ shadows, starCount = 2600 }: { shadows: boolean; starCount
   return (
     <>
       <fog attach="fog" args={["#070b18", 70, 260]} />
-      <hemisphereLight args={["#2a3a66", "#0b1a2b", 1.1]} />
+      <hemisphereLight args={["#3b4d80", "#1a2738", 1.35]} />
       <MoonLight shadows={shadows} />
       <Stars radius={250} depth={80} count={starCount} factor={5} saturation={0} fade speed={0.4} />
       <SkyDome />

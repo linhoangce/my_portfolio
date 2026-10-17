@@ -39,6 +39,10 @@ export type TeleportRequest = { pos: Vec3; yaw: number; nonce: number };
 type GameState = {
   mode: Mode;
   move: MoveMode;
+  /** True while swimming below the surface; for the HUD label. */
+  diving: boolean;
+  /** Focus mode is shown as a full-screen overlay (narrow viewports). */
+  focusOverlay: boolean;
   score: number;
   missions: Record<MissionId, MissionState>;
   activeMissionId: MissionId | null;
@@ -57,7 +61,8 @@ type GameState = {
   returnFocusTo: HTMLElement | null;
 
   setMode: (mode: Mode) => void;
-  setMove: (move: MoveMode) => void;
+  setMove: (move: MoveMode, diving?: boolean) => void;
+  teleportToSpawn: () => void;
   addScore: (delta: number) => void;
   startMission: (id: MissionId) => void;
   advance: (id: MissionId, by?: number) => void;
@@ -119,6 +124,8 @@ export const useGame = create<GameState>()(
     (set, get) => ({
       mode: "loading",
       move: "walk",
+      diving: false,
+      focusOverlay: false,
       score: 0,
       missions: initialMissions(),
       activeMissionId: null,
@@ -134,8 +141,18 @@ export const useGame = create<GameState>()(
       returnFocusTo: null,
 
       setMode: (mode) => set({ mode }),
-      setMove: (move) => {
-        if (get().move !== move) set({ move });
+      setMove: (move, diving = false) => {
+        const s = get();
+        if (s.move !== move || s.diving !== diving) set({ move, diving });
+      },
+      teleportToSpawn: () => {
+        teleportSeq += 1;
+        set({
+          teleportRequest: { pos: world.spawn.position, yaw: world.spawn.yaw, nonce: teleportSeq },
+          mode: "play",
+          focusedScreen: null,
+          liveMessage: "Back at the spawn.",
+        });
       },
       addScore: (delta) => set((s) => ({ score: Math.max(0, s.score + delta) })),
 

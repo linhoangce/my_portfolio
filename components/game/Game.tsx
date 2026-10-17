@@ -1,14 +1,20 @@
 "use client";
 
 import { PerformanceMonitor } from "@react-three/drei";
-import { Canvas } from "@react-three/fiber";
+import { Canvas, useThree } from "@react-three/fiber";
 import { Physics } from "@react-three/rapier";
 import { Suspense, useEffect, useState } from "react";
+import type { WebGLRenderer } from "three";
 
 import type { Vec3 } from "@/data";
 import { cameraState } from "./camera/cameraState";
 import { CAMERA, GRAVITY, PHYSICS, RENDER } from "./constants";
 import { Keyboard } from "./controller/Keyboard";
+import { Hud } from "./hud/Hud";
+import { Toasts } from "./hud/Toasts";
+import { PortfolioMenu } from "./menu/PortfolioMenu";
+import { MissionRunner } from "./missions/MissionRunner";
+import { FocusController } from "./screens/FocusController";
 import { StartPrompt } from "./StartPrompt";
 import { useIsTouch } from "./mobile/useIsTouch";
 import { penguinState } from "./penguin/penguinState";
@@ -22,7 +28,18 @@ type DebugHandle = {
   game: typeof useGame;
   floePosition: typeof floePosition;
   teleportRaw: (pos: Vec3, yaw: number) => void;
+  renderer?: WebGLRenderer;
 };
+
+/** Exposes the renderer on the debug handle (draw-call counts for the performance checks). */
+function RendererHandle() {
+  const gl = useThree((s) => s.gl);
+  useEffect(() => {
+    const w = window as Window & { __tideLab?: DebugHandle };
+    if (w.__tideLab) w.__tideLab.renderer = gl;
+  }, [gl]);
+  return null;
+}
 
 function Ready({ onReady }: { onReady: () => void }) {
   const setMode = useGame((s) => s.setMode);
@@ -85,6 +102,7 @@ export default function Game({ onReady, onContextLost }: GameProps) {
         }}
       >
         <color attach="background" args={["#05070f"]} />
+        <RendererHandle />
         <PerformanceMonitor
           onDecline={() => {
             setDprScale((s) => (s > 0.75 ? 0.75 : s));
@@ -102,6 +120,7 @@ export default function Game({ onReady, onContextLost }: GameProps) {
       </Canvas>
 
       <Keyboard />
+      <MissionRunner />
 
       {/* Underwater tint, toggled by the camera via a data attribute (no re-render). */}
       <div
@@ -110,7 +129,13 @@ export default function Game({ onReady, onContextLost }: GameProps) {
       />
 
       <div className="pointer-events-none absolute inset-0">
-        <div className="pointer-events-auto">{mode === "start" ? <StartPrompt /> : null}</div>
+        <Hud />
+        <Toasts />
+        <FocusController />
+        <div className="pointer-events-auto">
+          {mode === "start" ? <StartPrompt /> : null}
+          {mode === "menu" ? <PortfolioMenu /> : null}
+        </div>
       </div>
     </div>
   );

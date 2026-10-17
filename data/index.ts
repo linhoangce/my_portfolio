@@ -276,7 +276,7 @@ export const zones: ZoneDef[] = [
 
 export const screens: ScreenDef[] = [
   { id: "about", position: [-32, 1.5, -8], yaw: 0, size: [3.4, 2.1], zone: "colony-board", mount: "Colony board" },
-  { id: "planktoneer", position: [10.5, 1.5, -16], yaw: -Math.PI / 2, size: [3.2, 2.0], zone: "bay-shore", mount: "Holographic buoy" },
+  { id: "planktoneer", position: [6.2, 1.5, -16], yaw: -Math.PI / 2, size: [3.2, 2.0], zone: "bay-shore", mount: "Holographic buoy" },
   { id: "awdon", position: [46, 1.5, 21.5], yaw: Math.PI, size: [3.4, 2.1], zone: "dock-board", mount: "Planning board" },
   { id: "vessel-vision", position: [-8, 1.5, -14.5], yaw: 0, size: [3.2, 2.0], zone: "lookout", mount: "Telescope display" },
   { id: "weed-detector", position: [-30.85, 1.5, 12], yaw: Math.PI / 2, size: [3.2, 2.0], zone: "lab-east", mount: "Sorting table screen" },

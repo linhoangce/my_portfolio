@@ -52,11 +52,12 @@ const fragmentShader = /* glsl */ `
     float spec = pow(max(dot(n, h), 0.0), 140.0);
     col += vec3(0.75, 0.82, 1.0) * spec * 0.9;
 
-    float s = sin(vWorldPos.x * 0.9 + uTime * 0.8) * sin(vWorldPos.z * 0.7 - uTime * 0.6);
-    float streak = smoothstep(0.86, 1.0, s) * 0.16;
+    float s1 = sin(vWorldPos.x * 2.1 + uTime * 0.9) * sin(vWorldPos.z * 1.7 - uTime * 0.7);
+    float s2 = sin(vWorldPos.x * 3.7 - uTime * 0.5 + vWorldPos.z * 0.8) * sin(vWorldPos.z * 3.1 + uTime * 0.8);
+    float streak = smoothstep(0.93, 1.0, s1) * 0.2 + smoothstep(0.95, 1.0, s2) * 0.14;
     col += vec3(0.6, 0.85, 1.0) * streak;
 
-    float alpha = 0.9 - fres * 0.12;
+    float alpha = 0.82 - fres * 0.12;
     gl_FragColor = vec4(col, alpha);
     #include <fog_fragment>
     #include <colorspace_fragment>
