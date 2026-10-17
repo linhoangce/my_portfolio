@@ -8,7 +8,7 @@ import * as THREE from "three";
 import { world as worldData } from "@/data";
 import { cameraState } from "../camera/cameraState";
 import { GRAVITY, PENGUIN, PHYSICS } from "../constants";
-import { consumeJump, input } from "../controller/input";
+import { consumeJump, input, sim } from "../controller/input";
 import type { MoveMode } from "../store";
 import { useGame } from "../store";
 import { PenguinModel } from "./PenguinModel";
@@ -18,6 +18,10 @@ const CAP = PENGUIN.halfHeight + PENGUIN.radius;
 const SLOPE_COS = Math.cos((PENGUIN.slopeMaxDeg * Math.PI) / 180);
 const WATER = worldData.waterLevel;
 const DOWN = { x: 0, y: -1, z: 0 };
+const STEPS_PER_MS = 1 / (PHYSICS.timeStep * 1000);
+const JUMP_BUFFER_STEPS = Math.round(PENGUIN.jumpBufferMs * STEPS_PER_MS);
+const COYOTE_STEPS = Math.round(PENGUIN.coyoteMs * STEPS_PER_MS);
+const RECENT_JUMP_STEPS = 7;
 
 type Controller = {
   move: MoveMode;
@@ -76,7 +80,7 @@ export function Penguin() {
     if (!rb) return;
     const dt = PHYSICS.timeStep;
     const state = useGame.getState();
-    const now = performance.now();
+    sim.step += 1;
 
     // Teleport requests from the menu.
     const tr = state.teleportRequest;
@@ -112,7 +116,7 @@ export function Penguin() {
     ctl.platform.x = 0;
     ctl.platform.y = 0;
     ctl.platform.z = 0;
-    const recentlyJumped = now - ctl.jumpedAt < 120;
+    const recentlyJumped = sim.step - ctl.jumpedAt < RECENT_JUMP_STEPS;
     if (hit && vel.y <= 1.5 && !recentlyJumped) {
       const n = hit.normal.y < 0 ? { x: -hit.normal.x, y: -hit.normal.y, z: -hit.normal.z } : hit.normal;
       if (n.y >= SLOPE_COS) {
@@ -130,7 +134,7 @@ export function Penguin() {
         }
       }
     }
-    if (grounded) ctl.lastGroundedAt = now;
+    if (grounded) ctl.lastGroundedAt = sim.step;
     ctl.grounded = grounded;
     const gap = hit ? hit.timeOfImpact - CAP : Number.POSITIVE_INFINITY;
 
@@ -175,7 +179,7 @@ export function Penguin() {
     const hSpeed = Math.hypot(relVx, relVz);
 
     if (ctl.move === "swim") {
-      if (consumeJump(PENGUIN.jumpBufferMs)) ctl.diving = !ctl.diving;
+      if (consumeJump(JUMP_BUFFER_STEPS)) ctl.diving = !ctl.diving;
       const k = 1 - Math.exp(-PENGUIN.swimAccel * dt);
       vx += (wx * PENGUIN.swimSpeed - vx) * k;
       vz += (wz * PENGUIN.swimSpeed - vz) * k;
@@ -199,7 +203,7 @@ export function Penguin() {
             ctl.move = "walk";
             ctl.diving = false;
             rb.setGravityScale(1, true);
-            ctl.jumpedAt = now;
+            ctl.jumpedAt = sim.step;
             ctl.lastGroundedAt = Number.NEGATIVE_INFINITY;
           }
         }
@@ -238,10 +242,10 @@ export function Penguin() {
         }
         vx = dx * speed + ctl.platform.x;
         vz = dz * speed + ctl.platform.z;
-        if (consumeJump(PENGUIN.jumpBufferMs)) {
+        if (consumeJump(JUMP_BUFFER_STEPS)) {
           vy = PENGUIN.jumpSpeed;
           rb.setGravityScale(1, true);
-          ctl.jumpedAt = now;
+          ctl.jumpedAt = sim.step;
           ctl.lastGroundedAt = Number.NEGATIVE_INFINITY;
         } else {
           rb.setGravityScale(0, true);
@@ -272,11 +276,11 @@ export function Penguin() {
         vx += (wx * PENGUIN.walkSpeed + ctl.platform.x - vx) * k;
         vz += (wz * PENGUIN.walkSpeed + ctl.platform.z - vz) * k;
 
-        const canJump = grounded || now - ctl.lastGroundedAt <= PENGUIN.coyoteMs;
-        if (canJump && consumeJump(PENGUIN.jumpBufferMs)) {
+        const canJump = grounded || sim.step - ctl.lastGroundedAt <= COYOTE_STEPS;
+        if (canJump && consumeJump(JUMP_BUFFER_STEPS)) {
           vy = PENGUIN.jumpSpeed;
           rb.setGravityScale(1, true);
-          ctl.jumpedAt = now;
+          ctl.jumpedAt = sim.step;
           ctl.lastGroundedAt = Number.NEGATIVE_INFINITY;
           grounded = false;
           ctl.grounded = false;

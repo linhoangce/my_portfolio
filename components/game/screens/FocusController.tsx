@@ -53,7 +53,7 @@ function OverlayPanel({ id, onClose }: { id: Parameters<typeof PanelFor>[0]["id"
   const done = useGame((s) => missionsDone(s));
   useFocusTrap(ref, true, { onEscape: onClose });
   return (
-    <div className="pointer-events-auto fixed inset-0 z-30 flex flex-col bg-bg/95">
+    <div className="pointer-events-auto fixed inset-0 z-30 flex flex-col bg-bg">
       <div
         ref={ref}
         role="dialog"

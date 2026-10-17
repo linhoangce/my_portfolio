@@ -8,14 +8,17 @@ export const input = {
   move: { x: 0, y: 0 },
   joystick: { x: 0, y: 0, active: false },
   slide: false,
-  /** performance.now() of the last jump press, for buffering. */
-  jumpQueuedAt: Number.NEGATIVE_INFINITY,
+  /** Physics step at which jump was last pressed; buffered in simulation steps so a frame hitch never eats a press. */
+  jumpQueuedAtStep: Number.NEGATIVE_INFINITY,
   /** Accumulated pointer drag, consumed by the camera every frame. */
   look: { dx: 0, dy: 0 },
   /** Accumulated wheel delta, consumed by the camera every frame. */
   zoom: 0,
   dragging: false,
 };
+
+/** Simulation step counter, advanced by the penguin controller every physics step. */
+export const sim = { step: 0 };
 
 const FORWARD = ["KeyW", "ArrowUp"];
 const BACK = ["KeyS", "ArrowDown"];
@@ -46,13 +49,13 @@ export function recomputeMove() {
 }
 
 export function queueJump() {
-  input.jumpQueuedAt = performance.now();
+  input.jumpQueuedAtStep = sim.step;
 }
 
-/** Returns true once if a jump was pressed within `bufferMs`. */
-export function consumeJump(bufferMs: number): boolean {
-  if (performance.now() - input.jumpQueuedAt <= bufferMs) {
-    input.jumpQueuedAt = Number.NEGATIVE_INFINITY;
+/** Returns true once if a jump was pressed within the last `bufferSteps` physics steps. */
+export function consumeJump(bufferSteps: number): boolean {
+  if (sim.step - input.jumpQueuedAtStep <= bufferSteps) {
+    input.jumpQueuedAtStep = Number.NEGATIVE_INFINITY;
     return true;
   }
   return false;
@@ -66,7 +69,7 @@ export function clearInput() {
   input.move.x = 0;
   input.move.y = 0;
   input.slide = false;
-  input.jumpQueuedAt = Number.NEGATIVE_INFINITY;
+  input.jumpQueuedAtStep = Number.NEGATIVE_INFINITY;
   input.look.dx = 0;
   input.look.dy = 0;
   input.zoom = 0;

@@ -51,7 +51,7 @@ export function PortfolioMenu() {
               Score {score} · {done} of {missions.length} missions done. Teleporting unlocks a section without points.
             </p>
           </div>
-          <button type="button" className="btn-ghost min-h-10 px-4 text-sm" onClick={closeMenu}>
+          <button type="button" className="btn-ghost min-h-10 shrink-0 whitespace-nowrap px-4 text-sm" onClick={closeMenu}>
             Resume · Esc
           </button>
         </header>

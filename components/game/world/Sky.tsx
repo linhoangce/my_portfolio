@@ -156,6 +156,8 @@ export function Sky({ shadows, starCount = 2600 }: { shadows: boolean; starCount
       <fog attach="fog" args={["#070b18", 70, 260]} />
       <hemisphereLight args={["#3b4d80", "#1a2738", 1.35]} />
       <MoonLight shadows={shadows} />
+      {/* cool fill from the south-east so walls facing away from the moon still read */}
+      <directionalLight color="#2f3f6a" intensity={0.55} position={[40, 30, 60]} />
       <Stars radius={250} depth={80} count={starCount} factor={5} saturation={0} fade speed={0.4} />
       <SkyDome />
       <Aurora />

@@ -19,7 +19,7 @@ export function Toasts() {
 
   if (!toast) return null;
   return (
-    <div className="pointer-events-none absolute inset-x-0 top-24 flex justify-center px-4 sm:top-6">
+    <div className="pointer-events-none absolute inset-x-0 top-36 flex justify-center px-4 sm:top-6">
       <div
         key={toast.id}
         aria-hidden="true"

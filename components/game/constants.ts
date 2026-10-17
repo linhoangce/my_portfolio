@@ -102,7 +102,7 @@ export const SCREENS = {
   /** Throttle for the distance check, in Hz. */
   checkHz: 4,
   /** CSS pixels per world metre for in-world panels (drei Html transform maps px -> distanceFactor / 400 m). */
-  pxPerMetre: 170,
+  pxPerMetre: 210,
   /** Viewports narrower than this show focus mode as a full-screen overlay. */
   overlayBelowPx: 768,
 };

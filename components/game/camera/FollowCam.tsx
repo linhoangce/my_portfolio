@@ -44,7 +44,7 @@ export function FollowCam() {
   }).current;
 
   useFrame((_, rawDt) => {
-    const dt = Math.min(rawDt, 0.05);
+    const dt = Math.min(rawDt, 0.1);
     const state = useGame.getState();
 
     const tr = state.teleportRequest;

@@ -5,13 +5,14 @@ import * as THREE from "three";
 
 /** Shared flat-shaded materials for the outpost so buildings batch by material. */
 export const mats = {
-  rock: new THREE.MeshStandardMaterial({ color: "#2b2f3a", flatShading: true, roughness: 0.95 }),
-  dark: new THREE.MeshStandardMaterial({ color: "#1c2030", flatShading: true, roughness: 0.9 }),
-  wood: new THREE.MeshStandardMaterial({ color: "#5a3d2b", flatShading: true, roughness: 0.9 }),
-  woodLight: new THREE.MeshStandardMaterial({ color: "#7a573d", flatShading: true, roughness: 0.9 }),
-  panel: new THREE.MeshStandardMaterial({ color: "#9fb3c8", flatShading: true, roughness: 0.8 }),
+  // A faint emissive floor keeps unlit walls readable at night without washing out the moonlight.
+  rock: new THREE.MeshStandardMaterial({ color: "#2b2f3a", emissive: "#0b0d14", emissiveIntensity: 1, flatShading: true, roughness: 0.95 }),
+  dark: new THREE.MeshStandardMaterial({ color: "#1c2030", emissive: "#0c1020", emissiveIntensity: 1, flatShading: true, roughness: 0.9 }),
+  wood: new THREE.MeshStandardMaterial({ color: "#5a3d2b", emissive: "#1a110a", emissiveIntensity: 1, flatShading: true, roughness: 0.9 }),
+  woodLight: new THREE.MeshStandardMaterial({ color: "#7a573d", emissive: "#1e150d", emissiveIntensity: 1, flatShading: true, roughness: 0.9 }),
+  panel: new THREE.MeshStandardMaterial({ color: "#9fb3c8", emissive: "#1f2a3c", emissiveIntensity: 1, flatShading: true, roughness: 0.8 }),
   ice: new THREE.MeshStandardMaterial({ color: "#dfe9f3", flatShading: true, roughness: 0.85 }),
-  tower: new THREE.MeshStandardMaterial({ color: "#e4e9f0", flatShading: true, roughness: 0.8 }),
+  tower: new THREE.MeshStandardMaterial({ color: "#e4e9f0", emissive: "#232a3a", emissiveIntensity: 1, flatShading: true, roughness: 0.8 }),
   lamp: new THREE.MeshStandardMaterial({ color: "#ffb85c", emissive: "#ffb85c", emissiveIntensity: 2.6 }),
   window: new THREE.MeshStandardMaterial({ color: "#ffd9a0", emissive: "#ffb85c", emissiveIntensity: 1.5 }),
   cyan: new THREE.MeshStandardMaterial({ color: "#5ef2ff", emissive: "#5ef2ff", emissiveIntensity: 2 }),

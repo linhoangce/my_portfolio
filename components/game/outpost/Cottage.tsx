@@ -2,6 +2,7 @@
 
 import { CuboidCollider, RigidBody } from "@react-three/rapier";
 
+import { registerOccluder } from "../screens/occluders";
 import { GableRoof, WindowPane, mats } from "./materials";
 
 const X = -40;
@@ -17,7 +18,7 @@ export function Cottage() {
     <group position={[X, 0, Z]}>
       <RigidBody type="fixed" colliders={false} userData={{ surface: "rock" }}>
         <CuboidCollider args={[W / 2, H / 2 + 1, D / 2]} position={[0, BASE + H / 2 + 0.5, 0]} />
-        <mesh position={[0, BASE + H / 2, 0]} material={mats.wood} castShadow receiveShadow>
+        <mesh ref={registerOccluder} position={[0, BASE + H / 2, 0]} material={mats.wood} castShadow receiveShadow>
           <boxGeometry args={[W, H, D]} />
         </mesh>
         <GableRoof width={D + 0.8} length={W + 0.8} height={2} position={[0, BASE + H, 0]} />

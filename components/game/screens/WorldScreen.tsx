@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { SCREENS } from "../constants";
 import { penguinState } from "../penguin/penguinState";
 import { missionsDone, useGame } from "../store";
+import { occluderRefs } from "./occluders";
 import { screenAnchor } from "./screenRegistry";
 
 const DISTANCE_FACTOR = 400 / SCREENS.pxPerMetre;
@@ -87,7 +88,7 @@ function WorldScreen({ def, mounted }: { def: ScreenDef; mounted: boolean }) {
         <meshStandardMaterial
           color="#0e1424"
           emissive={unlocked ? "#5ef2ff" : "#a78bfa"}
-          emissiveIntensity={near ? 0.55 : 0.2}
+          emissiveIntensity={near ? 0.38 : 0.16}
           roughness={0.4}
         />
       </mesh>
@@ -99,6 +100,7 @@ function WorldScreen({ def, mounted }: { def: ScreenDef; mounted: boolean }) {
       {mounted ? (
         <Html
           transform
+          occlude={occluderRefs}
           distanceFactor={DISTANCE_FACTOR}
           position={[0, 0, 0.01]}
           zIndexRange={[20, 0]}
@@ -109,6 +111,7 @@ function WorldScreen({ def, mounted }: { def: ScreenDef; mounted: boolean }) {
             role={interactive ? "dialog" : undefined}
             aria-modal={interactive ? true : undefined}
             aria-label={section.title}
+            inert={!interactive}
             tabIndex={-1}
             onClick={() => {
               if (!focused && near) enterFocus(def.id);

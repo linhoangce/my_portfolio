@@ -5,6 +5,7 @@ import { CylinderCollider, RigidBody } from "@react-three/rapier";
 import { useMemo, useRef } from "react";
 import * as THREE from "three";
 
+import { registerOccluder } from "../screens/occluders";
 import { mats } from "./materials";
 
 const X = -12;
@@ -43,7 +44,7 @@ export function Lighthouse() {
         <mesh position={[0, BASE_Y + 0.6, 0]} material={mats.rock} castShadow receiveShadow>
           <cylinderGeometry args={[2.4, 2.8, 1.2, 8]} />
         </mesh>
-        <mesh position={[0, BASE_Y + 1.2 + TOWER_H / 2, 0]} material={mats.tower} castShadow>
+        <mesh ref={registerOccluder} position={[0, BASE_Y + 1.2 + TOWER_H / 2, 0]} material={mats.tower} castShadow>
           <cylinderGeometry args={[1.1, 1.5, TOWER_H, 10]} />
         </mesh>
         <mesh position={[0, BASE_Y + 4.5, 0]} material={mats.dark}>

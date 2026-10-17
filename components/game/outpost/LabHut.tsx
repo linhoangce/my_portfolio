@@ -2,6 +2,7 @@
 
 import { CuboidCollider, RigidBody } from "@react-three/rapier";
 
+import { registerOccluder } from "../screens/occluders";
 import { WindowPane, mats } from "./materials";
 
 const X = -36;
@@ -17,7 +18,7 @@ export function LabHut() {
     <group position={[X, 0, Z]}>
       <RigidBody type="fixed" colliders={false} userData={{ surface: "rock" }}>
         <CuboidCollider args={[W / 2, H / 2, D / 2]} position={[0, BASE + H / 2, 0]} />
-        <mesh position={[0, BASE + H / 2, 0]} material={mats.panel} castShadow receiveShadow>
+        <mesh ref={registerOccluder} position={[0, BASE + H / 2, 0]} material={mats.panel} castShadow receiveShadow>
           <boxGeometry args={[W, H, D]} />
         </mesh>
         <mesh position={[0, BASE + H + 0.2, 0]} material={mats.dark} castShadow>
