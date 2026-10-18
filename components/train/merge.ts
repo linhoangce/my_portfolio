@@ -17,7 +17,11 @@ export function merged(parts: Part[]): BufferGeometry {
     geo.applyMatrix4(m4);
     return geo;
   });
-  const out = mergeGeometries(geos, false);
+  // an extruded body is non-indexed while spheres and boxes are indexed: merge needs one or the other
+  const mixed = geos.some((g) => !g.index) && geos.some((g) => g.index);
+  const same = mixed ? geos.map((g) => (g.index ? g.toNonIndexed() : g)) : geos;
+  const out = mergeGeometries(same, false);
   for (const g of geos) g.dispose();
+  if (mixed) for (const g of same) if (!geos.includes(g)) g.dispose();
   return out;
 }
