@@ -7,7 +7,9 @@ import { stations } from "@/data";
 
 import type { Season, Weather } from "./lookTypes";
 import { useTrain } from "./store";
-import { CROSSOVERS, LEN, stationS } from "./track";
+import { BLOCKERS } from "./cityModel";
+import { getCityData } from "./cityData";
+import { CROSSOVERS, LEN, samples, STATION_XZ, stationS } from "./track";
 
 export type TrainDebug = {
   ready: boolean;
@@ -21,6 +23,15 @@ export type TrainDebug = {
   jump: (i: number) => void;
   look: (season?: Season, weather?: Weather) => void;
   state: () => Record<string, unknown>;
+  /** Static geometry for the headless checks: track samples, footprints, blockers, station points. */
+  geometry: () => {
+    samples: [number, number, number, number, number, number, number][];
+    lots: { x: number; z: number; w: number; d: number; h: number }[];
+    houses: { x: number; z: number; w: number; d: number }[];
+    blockers: { x: number; z: number; r: number; h: number }[];
+    stationXZ: [number, number][];
+    stationPts: [number, number][];
+  };
 };
 
 declare global {
@@ -47,6 +58,20 @@ export function Debug() {
       driveTo: (i) => st().driveTo(i),
       jump: (i) => st().jump(i),
       look: (season, weather) => st().setLook({ season, weather, auto: false }),
+      geometry: () => {
+        const city = getCityData(st().env.lowEnd);
+        return {
+          samples: samples.map((f) => [f.p.x, f.p.y, f.p.z, f.t.x, f.t.z, f.r.x, f.r.z]),
+          lots: city.lots,
+          houses: city.houses.map((h) => ({ x: h.x, z: h.z, w: h.w, d: h.d })),
+          blockers: BLOCKERS,
+          stationXZ: STATION_XZ,
+          stationPts: stationS.map((s) => {
+            const i = Math.round((s / LEN) * (samples.length - 1));
+            return [samples[i].p.x, samples[i].p.z];
+          }),
+        };
+      },
       state: () => {
         const s = st();
         return {

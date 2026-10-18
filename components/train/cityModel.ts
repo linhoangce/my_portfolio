@@ -286,10 +286,13 @@ function buildingGeo(x: number, z: number, w: number, hgt: number, d: number, co
 
 export type House = { x: number; z: number; w: number; d: number; h: number; rot: number; body: number; roof: number };
 export type Tree = { x: number; z: number; ever: boolean; s: number; cidx: number };
+export type Lot = { x: number; z: number; w: number; d: number; h: number };
 export type CityData = {
   geos: Record<Facade, BufferGeometry | null>;
   houses: House[];
   trees: Tree[];
+  /** Building footprints, kept for the geometry checks. */
+  lots: Lot[];
 };
 
 /** Lots inside blocks between the painted streets, merged per facade family; houses and trees as instance lists. */
@@ -297,6 +300,7 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityData {
   const geosBy: Record<Facade, BufferGeometry[]> = { glass: [], balcony: [], brick: [], concrete: [] };
   const houses: House[] = [];
   const trees: Tree[] = [];
+  const lots: Lot[] = [];
 
   const push = (kind: Facade, col: Color, x: number, z: number, bw: number, bh: number, bd: number, rot: number, yOff = 0) =>
     geosBy[kind].push(buildingGeo(x, z, bw, bh, bd, col, rot, yOff));
@@ -379,6 +383,7 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityData {
               type = type === "heritage" ? "heritage" : "low";
             }
             if (hgt < 3) continue;
+            lots.push({ x, z, w, d, h: hgt });
             addBuilding(type, x, z, w, d, hgt, 0, name);
           } else if (zone.house && rng.next() < zone.house + 0.2) {
             houses.push({
@@ -447,7 +452,7 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityData {
       for (const g of geosBy[k]) g.dispose();
     }
   }
-  return { geos, houses, trees };
+  return { geos, houses, trees, lots };
 }
 
 /* ------------------------------------------------------------------ traffic */

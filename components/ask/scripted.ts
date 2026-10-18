@@ -1,0 +1,69 @@
+/** Scripted attendant: keyword matching over the station notes, used when no API key is configured. No three.js here. */
+import { type Season, SEASONS, type Weather } from "@/components/train/lookTypes";
+
+export type SceneChange = { weather?: Weather; season?: Season; time?: "day" | "night" };
+export type ScriptedReply = { answer: string | null; go: number | null; scene: SceneChange | null };
+
+/** Returns the answer, the station index to drive to and any scene change the visitor asked for. */
+export function scripted(q: string): ScriptedReply {
+  const t = q.toLowerCase();
+  const has = (...w: string[]) => w.some((x) => t.includes(x));
+  const scene: SceneChange = {};
+  if (has("rain")) scene.weather = "rain";
+  else if (has("snow")) scene.weather = "snow";
+  else if (has("sunny", "clear sky", "sunshine")) scene.weather = "clear";
+  else if (has("cloud", "overcast", "grey")) scene.weather = "overcast";
+  for (const se of SEASONS) if (has(se, se === "fall" ? "autumn" : se)) scene.season = se;
+  if (has("night", "dark mode", "evening")) scene.time = "night";
+  else if (has("daytime", "day mode", "morning", "light mode")) scene.time = "day";
+  if (Object.keys(scene).length) return { answer: null, go: null, scene };
+
+  const reply = (answer: string, go: number | null): ScriptedReply => ({ answer, go, scene: null });
+  if (has("cursor", "awdon", "transcript", "jira"))
+    return reply(
+      "Awdon came out of the Cursor Hackathon Vancouver 2026 and won Best Use of CLōD. It turns meeting transcripts into sprint tasks and team documents, and a PM approves everything before it is sent. Taking you to Awdon.",
+      3,
+    );
+  if (has("dinov2", "plankton", "algae", "ocean"))
+    return reply(
+      "Planktoneer uses frozen DINOv2 features with gradient-boosted heads to count four harmful algae in flow-cytometer data, with held-out AP up to 0.99. Built in four days at OceanHackWeek 2026. Taking you to Planktoneer.",
+      4,
+    );
+  if (has("pytorch", "torch", "ml ", "machine learning", "model"))
+    return reply("Three stops use PyTorch: Planktoneer, Vessel Vision and the AI Weed Detector. Starting with Planktoneer.", 4);
+  if (has("vessel", "boat", "yolo", "sahi"))
+    return reply(
+      "Vessel Vision detects vessels in high-resolution coastal imagery with YOLO and SAHI slicing, and it runs as a public Hugging Face Space. Taking you to Vessel Vision.",
+      5,
+    );
+  if (has("weed", "blueberry", "detr", "farm"))
+    return reply(
+      "The AI Weed Detector is an industry-sponsored BCIT project: a custom blueberry-field dataset and an RF-DETR pipeline at 0.64 mAP@50 and 0.68 F1. Taking you to the AI Weed Detector.",
+      6,
+    );
+  if (has("abckidz", "backend", "prisma", "azure", "production"))
+    return reply(
+      "ABCKidz is a production REST backend with role-based access control, Prisma and Postgres, an Azure GPT-4o chatbot and streamed uploads up to 100 MB. Taking you to ABCKidz.",
+      7,
+    );
+  if (has("contact", "email", "reach", "hire", "linkedin", "resume"))
+    return reply("Email is fastest: linhoang.ce@gmail.com, replies within a day. GitHub, LinkedIn and the one-page resume are at the last stop, Contact.", 9);
+  if (has("experience", "work", "job", "intern", "qa", "interpreter", "manager"))
+    return reply(
+      "Linh is a Software QA Engineer intern now (Playwright, Java, Jenkins; Kafka and MQTT on multi-VM Linux), after ten years in leadership roles and medical interpreting. Taking you to Experience.",
+      2,
+    );
+  if (has("skill", "stack", "about", "who", "background", "bcit"))
+    return reply(
+      "Linh is a 2026 BCIT Computer Systems Technology graduate who likes systems with deterministic cores, LLMs at the edges and a human approving what goes out. Skills span PyTorch, FastAPI, Node, Postgres, TypeScript and React. Taking you to About.",
+      1,
+    );
+  return reply("That is not something this line covers. For anything beyond the projects, skills and experience shown here, email linhoang.ce@gmail.com.", null);
+}
+
+export const SUGGESTIONS = [
+  "What did Linh build at the Cursor hackathon?",
+  "Take me to the project that uses DINOv2",
+  "Which projects use PyTorch?",
+  "How do I contact Linh?",
+];
