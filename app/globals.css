@@ -2,69 +2,103 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Tokens are RGB channels so Tailwind can apply alpha: rgb(var(--x) / a).
+   Night is the default; day lives under .light (next-themes, class strategy)
+   and under the system preference when no class has been set yet (no JS). */
 @layer base {
   :root {
-    /* RGB channels so Tailwind can apply alpha: rgb(var(--x) / a) */
-    --bg: 5 7 15; /* #05070f night sky */
-    --surface: 14 20 34;
-    --fg: 234 239 247;
-    --muted: 148 163 184;
-    --border: 170 190 220;
+    --bg: 7 10 18; /* #070a12 */
+    --surface: 15 21 34; /* #0f1522 */
+    --surface-2: 12 17 28; /* #0c111c */
+    --fg: 234 239 247; /* #eaeff7 */
+    --fg-2: 213 220 232; /* #d5dce8 */
+    --fg-3: 195 204 219; /* #c3ccdb */
+    --muted: 154 167 187; /* #9aa7bb */
+    --border: 36 48 71; /* #243047 */
     --accent: 167 139 250; /* #a78bfa */
-    --cyan: 94 242 255; /* #5ef2ff */
-    --lamp: 255 184 92; /* #ffb85c */
-    --ice: 223 233 243; /* #dfe9f3 */
+    --accent-ink: 11 7 22; /* #0b0716 */
+    --glass-a: 0.94;
+    --bar-a: 0.72;
+    --shadow: 0 30px 80px -30px rgba(0, 0, 0, 0.9);
+    --scrim: rgba(7, 10, 18, 0.3);
     color-scheme: dark;
   }
 
   .light {
-    --bg: 245 247 251;
+    --bg: 243 245 249; /* #f3f5f9 */
     --surface: 255 255 255;
-    --fg: 16 22 36;
-    --muted: 92 104 124;
-    --border: 40 60 90;
-    --accent: 109 76 224;
-    --cyan: 0 150 170;
-    --lamp: 196 120 20;
+    --surface-2: 238 241 246; /* #eef1f6 */
+    --fg: 17 24 39; /* #111827 */
+    --fg-2: 42 52 68; /* #2a3444 */
+    --fg-3: 59 69 86; /* #3b4556 */
+    --muted: 91 102 120; /* #5b6678 */
+    --border: 207 214 226; /* #cfd6e2 */
+    --accent: 91 63 209; /* #5b3fd1 */
+    --accent-ink: 255 255 255;
+    --glass-a: 0.93;
+    --bar-a: 0.8;
+    --shadow: 0 30px 80px -40px rgba(20, 30, 60, 0.35);
+    --scrim: rgba(243, 245, 249, 0.25);
     color-scheme: light;
   }
 
+  @media (prefers-color-scheme: light) {
+    :root:not(.dark) {
+      --bg: 243 245 249;
+      --surface: 255 255 255;
+      --surface-2: 238 241 246;
+      --fg: 17 24 39;
+      --fg-2: 42 52 68;
+      --fg-3: 59 69 86;
+      --muted: 91 102 120;
+      --border: 207 214 226;
+      --accent: 91 63 209;
+      --accent-ink: 255 255 255;
+      --glass-a: 0.93;
+      --bar-a: 0.8;
+      --shadow: 0 30px 80px -40px rgba(20, 30, 60, 0.35);
+      --scrim: rgba(243, 245, 249, 0.25);
+      color-scheme: light;
+    }
+  }
+
   html {
-    scroll-behavior: smooth;
     -webkit-text-size-adjust: 100%;
   }
 
   body {
     @apply bg-bg text-fg antialiased;
-    font-feature-settings: "ss01", "cv11";
+    font-size: 15px;
+    line-height: 1.5;
+  }
+
+  button {
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
   }
 
   :focus-visible {
-    outline: 2px solid rgb(var(--cyan));
+    outline: 2px solid rgb(var(--accent));
     outline-offset: 2px;
-    border-radius: 4px;
+    border-radius: 6px;
   }
 
   ::selection {
     background: rgb(var(--accent) / 0.35);
   }
 
-  /* The game page locks page scroll and zoom; /flat keeps normal scrolling. */
-  html[data-game] {
+  /* The train page locks page scroll and zoom; /text keeps normal scrolling. */
+  html[data-train] {
     overflow: hidden;
     overscroll-behavior: none;
   }
-  html[data-game] body {
+  html[data-train] body {
     overflow: hidden;
     touch-action: none;
-    -webkit-user-select: none;
-    user-select: none;
   }
 
   @media (prefers-reduced-motion: reduce) {
-    html {
-      scroll-behavior: auto;
-    }
     *,
     *::before,
     *::after {
@@ -77,44 +111,153 @@
 
 @layer components {
   .glass {
-    @apply rounded-2xl border border-border/15 bg-surface/70 shadow-[0_20px_60px_-20px_rgba(0,0,0,0.7)] backdrop-blur-md;
+    background: rgb(var(--surface) / var(--glass-a));
+    border: 1px solid rgb(var(--border));
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
   }
 
-  .eyebrow {
-    @apply text-xs font-medium uppercase tracking-[0.18em] text-muted;
-  }
-
-  .chip {
-    @apply inline-flex items-center rounded-full border border-border/20 bg-surface/60 px-2.5 py-0.5 text-xs text-fg/85;
+  .kicker {
+    @apply font-mono text-[11px] uppercase tracking-[0.16em] text-muted;
   }
 
   .btn {
-    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-full px-5 text-sm font-medium transition-colors;
+    @apply inline-flex h-10 items-center justify-center gap-2 rounded-full border border-border bg-surface px-4 text-sm font-medium text-fg transition-colors;
+  }
+  .btn:hover {
+    border-color: rgb(var(--accent));
   }
   .btn-primary {
-    @apply btn bg-accent text-bg hover:bg-accent/90;
+    @apply btn border-accent bg-accent font-semibold text-accentInk;
   }
-  .btn-ghost {
-    @apply btn border border-border/25 bg-surface/50 text-fg hover:border-border/50 hover:bg-surface;
+  .btn-primary:hover {
+    filter: brightness(1.08);
+  }
+  .btn-icon {
+    @apply w-10 px-0;
+  }
+  .chipbtn {
+    @apply font-mono text-[11px] tracking-[0.12em] text-muted;
+    padding: 0 12px;
+  }
+  .chipbtn:hover {
+    color: rgb(var(--fg));
   }
 
-  .link-pill {
-    @apply inline-flex min-h-10 items-center gap-1.5 rounded-full border border-border/25 bg-surface/50 px-3.5 text-sm text-fg transition-colors hover:border-cyan/60 hover:text-cyan;
+  kbd {
+    @apply rounded border border-border bg-surface2 px-[5px] py-[1px] font-mono text-fg;
+    font-size: inherit;
   }
 
-  .prose-panel p {
-    @apply text-[15px] leading-relaxed text-fg/90;
+  /* Content panels, shared by the dock and /text */
+  .panel h2,
+  .panel h1 {
+    @apply m-0 font-serif text-[40px] leading-[1.02] tracking-[-0.01em];
   }
-}
-
-@keyframes toast-in {
-  from {
-    opacity: 0;
-    transform: translateY(-8px);
+  .panel .lead {
+    @apply mt-2.5 text-base text-fg2;
   }
-  to {
-    opacity: 1;
-    transform: translateY(0);
+  .panel p {
+    @apply mt-2.5 text-fg3;
+  }
+  .panel .meta {
+    @apply mt-3 font-mono text-xs uppercase leading-[1.7] tracking-[0.06em] text-muted;
+  }
+  .par {
+    @apply mt-[18px] grid gap-x-3 gap-y-2;
+    grid-template-columns: 84px minmax(0, 1fr);
+  }
+  .par dt {
+    @apply pt-[3px] font-mono text-[11px] uppercase tracking-[0.12em] text-accent;
+  }
+  .par dd {
+    @apply m-0 text-sm text-fg2;
+  }
+  .metrics {
+    @apply mt-[18px] grid grid-cols-3 gap-2;
+  }
+  .metric {
+    @apply min-w-0 rounded-xl border border-border bg-surface2 p-3;
+  }
+  .metric .v {
+    @apply overflow-hidden text-ellipsis whitespace-nowrap font-mono text-lg leading-[1.1];
+  }
+  .metric .k {
+    @apply mt-[5px] text-[11px] uppercase tracking-[0.05em] text-muted;
+  }
+  .tags {
+    @apply mt-4 flex flex-wrap gap-1.5;
+  }
+  .chip {
+    @apply inline-flex h-[26px] items-center rounded-full border border-border bg-surface px-2.5 text-xs text-fg2;
+  }
+  .links {
+    @apply mt-4 flex flex-wrap gap-2;
+  }
+  .pill {
+    @apply inline-flex h-[38px] items-center gap-1.5 rounded-full border border-border bg-surface px-3.5 text-[13px] font-medium text-fg transition-colors;
+  }
+  .pill:hover {
+    border-color: rgb(var(--accent));
+  }
+  .shot {
+    @apply mt-[18px] overflow-hidden rounded-xl border border-border bg-surface2;
+  }
+  .shot .bar {
+    @apply flex h-7 items-center gap-1.5 border-b border-border px-2.5;
+  }
+  .shot .bar i {
+    @apply h-[7px] w-[7px] rounded-full bg-border;
+  }
+  .shot .bar span {
+    @apply ml-1.5 font-mono text-[10px] text-muted;
+  }
+  .skills {
+    @apply mt-[18px] grid grid-cols-2 gap-2;
+  }
+  .skills > div {
+    @apply flex flex-col gap-2 rounded-xl border border-border bg-surface2 p-3;
+  }
+  .skills .tags {
+    @apply mt-0;
+  }
+  .role {
+    @apply grid gap-x-3 gap-y-1.5 border-t border-border py-3;
+    grid-template-columns: 96px minmax(0, 1fr);
+  }
+  .role .when {
+    @apply pt-0.5 font-mono text-xs text-muted;
+  }
+  .role b {
+    @apply font-semibold;
+  }
+  .role span {
+    @apply text-sm text-fg3;
+  }
+  .more {
+    @apply mt-2 flex flex-col;
+  }
+  .more > a,
+  .more > div {
+    @apply grid items-start gap-2 border-t border-border py-2.5 text-sm;
+    grid-template-columns: minmax(0, 1fr) 20px;
+  }
+  .more small {
+    @apply mt-0.5 block text-[13px] text-muted;
+  }
+  .email {
+    @apply mt-2.5 inline-block font-serif text-[28px] text-accent underline underline-offset-[7px];
+    text-decoration-color: rgb(var(--accent) / 0.45);
+  }
+  @media (max-width: 860px) {
+    .panel h2,
+    .panel h1 {
+      font-size: 32px;
+    }
+    .metric .v {
+      font-size: 15px;
+    }
   }
 }
 

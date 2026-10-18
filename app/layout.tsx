@@ -1,35 +1,44 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, Instrument_Serif } from "next/font/google";
+import { IBM_Plex_Mono, Instrument_Sans, Instrument_Serif } from "next/font/google";
 
 import "./globals.css";
 import { ThemeProvider } from "./provider";
 
-const inter = Inter({
+const sans = Instrument_Sans({
   subsets: ["latin"],
-  variable: "--font-inter",
+  weight: "variable",
+  style: ["normal", "italic"],
+  variable: "--font-sans",
   display: "swap",
 });
 
-const instrument = Instrument_Serif({
+const serif = Instrument_Serif({
   subsets: ["latin"],
   weight: "400",
   style: ["normal", "italic"],
-  variable: "--font-instrument",
+  variable: "--font-serif",
+  display: "swap",
+});
+
+const mono = IBM_Plex_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  variable: "--font-mono",
   display: "swap",
 });
 
 const description =
-  "Linh Hoang's portfolio, playable as a penguin exploring the Tide Lab outpost. Projects in machine learning, backend systems and LLM agents: Awdon, Planktoneer, Vessel Vision, AI Weed Detector and ABCKidz.";
+  "Linh Hoang's portfolio as a ride on the Expo Line through a stylized Vancouver: ten stops, one per section. Projects in machine learning, backend systems and LLM agents: Awdon, Planktoneer, Vessel Vision, AI Weed Detector and ABCKidz.";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://linh-hoang.vercel.app"),
   title: {
-    default: "Linh Hoang — Tide Lab",
+    default: "Linh Hoang — Expo Line",
     template: "%s · Linh Hoang",
   },
   description,
   openGraph: {
-    title: "Linh Hoang — Tide Lab",
+    title: "Linh Hoang — Expo Line",
     description,
     url: "/",
     siteName: "Linh Hoang",
@@ -40,7 +49,10 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#05070f",
+  themeColor: [
+    { media: "(prefers-color-scheme: dark)", color: "#070a12" },
+    { media: "(prefers-color-scheme: light)", color: "#f3f5f9" },
+  ],
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
@@ -48,9 +60,9 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" suppressHydrationWarning className={`${inter.variable} ${instrument.variable}`}>
+    <html lang="en" suppressHydrationWarning className={`${sans.variable} ${serif.variable} ${mono.variable}`}>
       <body className="font-sans">
-        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false} disableTransitionOnChange>
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           {children}
         </ThemeProvider>
       </body>

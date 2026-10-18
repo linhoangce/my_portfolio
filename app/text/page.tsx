@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 
-import { FlatPage } from "@/components/flat/FlatPage";
+import { TextPage } from "@/components/text/TextPage";
 import { about, contact, person } from "@/data";
 
 export const metadata: Metadata = {
-  title: "Portfolio",
+  title: "Text version",
   description: `${person.tagline}. ${about.bio}`,
-  alternates: { canonical: "/flat" },
+  alternates: { canonical: "/text" },
 };
 
 const jsonLd = {
@@ -20,11 +20,11 @@ const jsonLd = {
   sameAs: [contact.github, contact.linkedin],
 };
 
-export default function Flat() {
+export default function Text() {
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
-      <FlatPage />
+      <TextPage />
     </>
   );
 }

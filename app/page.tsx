@@ -1,20 +1,20 @@
 import Link from "next/link";
 
-import { GameGate } from "@/components/game/GameGate";
+import { TrainGate } from "@/components/train/TrainGate";
 import { about, contact, featured, person } from "@/data";
 
 export default function Home() {
   return (
     <>
-      <GameGate />
-      {/* Crawlable summary of the content that lives inside the game. Visually hidden; /flat is the readable page. */}
+      <TrainGate />
+      {/* Crawlable summary of the content that lives along the line. Visually hidden; /text is the readable page. */}
       <main className="sr-only" aria-label="Portfolio summary">
         <h1>{person.name}</h1>
         <p>{person.tagline}</p>
         <p>{about.bio}</p>
         <p>
-          This page is an interactive portfolio: a small penguin game set in the Tide Lab outpost. The same content is on{" "}
-          <Link href="/flat">the flat version</Link>.
+          This page is an interactive portfolio: a ride on the Expo Line through a stylized Vancouver, one stop per
+          section. The same content is on <Link href="/text">the text version</Link>.
         </p>
         <h2>Projects</h2>
         <ul>
