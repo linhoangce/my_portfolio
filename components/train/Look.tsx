@@ -31,8 +31,8 @@ export function Look() {
   }, [world, theme, season, weather]);
 
   useFrame((state, delta) => {
-    const dt = Math.min(delta, 0.05);
     const st = useTrain.getState();
+    const dt = Math.min(delta, 0.05) * st.sim.warp;
     if (st.autoLook) {
       autoT.current += dt;
       if (autoT.current > AUTO_LOOK_PERIOD) {

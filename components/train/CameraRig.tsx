@@ -32,10 +32,10 @@ export function CameraRig() {
   const relLook = useRef(new Vector3());
 
   useFrame((state, delta) => {
-    const dt = Math.min(delta, 0.05);
     const st = useTrain.getState();
     const { sim, env } = st;
     if (!sim.stationS.length) return;
+    const dt = Math.min(delta, 0.05) * sim.warp; // the damp is a stable lerp, so warp only shortens the easing
     const camera = state.camera;
     frameAt(sim.s, fA, laneAt(sim, sim.s));
     const head = fA.p;
@@ -75,12 +75,13 @@ export function CameraRig() {
     camLook.copy(head).add(relLook.current);
     const gy = groundAt(camPos.x, camPos.z) + 2;
     if (camPos.y < gy) camPos.y = gy;
+    // keep clear of the landmarks (8 units beyond their radius, so Science World's sphere never fills the frame)
     for (const b of BLOCKERS) {
       const dx = camPos.x - b.x;
       const dz = camPos.z - b.z;
       const d = Math.hypot(dx, dz);
-      if (d < b.r + 3 && camPos.y < b.h + 2) {
-        const k = (b.r + 3) / Math.max(d, 0.01);
+      if (d < b.r + CAM.blockerMargin && camPos.y < b.h + 2) {
+        const k = (b.r + CAM.blockerMargin) / Math.max(d, 0.01);
         camPos.x = b.x + dx * k;
         camPos.z = b.z + dz * k;
       }

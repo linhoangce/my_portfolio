@@ -46,6 +46,7 @@ export const CAM = {
   pitchMin: -0.22,
   pitchMax: 0.4,
   yawDecay: 0.6,
+  blockerMargin: 8,
   fov: 40,
   near: 0.5,
   far: 5200,

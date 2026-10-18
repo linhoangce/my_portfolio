@@ -10,6 +10,7 @@ import { useTrain } from "./store";
 import { BLOCKERS } from "./cityModel";
 import { getCityData } from "./cityData";
 import { CROSSOVERS, LEN, samples, STATION_XZ, stationS } from "./track";
+import { useWorld } from "./world";
 
 export type TrainDebug = {
   ready: boolean;
@@ -22,6 +23,9 @@ export type TrainDebug = {
   driveTo: (i: number) => void;
   jump: (i: number) => void;
   look: (season?: Season, weather?: Weather) => void;
+  warp: (k: number) => void;
+  /** Current eased scene background as a hex string (theme and weather checks). */
+  bg: () => string;
   state: () => Record<string, unknown>;
   /** Static geometry for the headless checks: track samples, footprints, blockers, station points. */
   geometry: () => {
@@ -43,6 +47,7 @@ declare global {
 /** `window.__train`: a debug handle for the headless checks (frames, draw calls, simulation state, jumps). */
 export function Debug() {
   const gl = useThree((s) => s.gl);
+  const world = useWorld();
 
   useEffect(() => {
     gl.info.autoReset = false;
@@ -58,6 +63,10 @@ export function Debug() {
       driveTo: (i) => st().driveTo(i),
       jump: (i) => st().jump(i),
       look: (season, weather) => st().setLook({ season, weather, auto: false }),
+      warp: (k) => {
+        st().sim.warp = Math.max(0.1, Math.min(40, k));
+      },
+      bg: () => world.scene.background.getHexString(),
       geometry: () => {
         const city = getCityData(st().env.lowEnd);
         return {
@@ -90,6 +99,9 @@ export function Debug() {
           cab: s.cab,
           introDone: s.introDone,
           lowEnd: s.env.lowEnd,
+          reduced: s.env.reduced,
+          phone: s.env.phone,
+          warp: s.sim.warp,
           quality: s.quality,
         };
       },
@@ -100,7 +112,7 @@ export function Debug() {
       delete window.__train;
       useTrain.getState().setReady(false);
     };
-  }, [gl]);
+  }, [gl, world]);
 
   // first every frame: read last frame's draw-call total, then reset the counter
   useFrame(() => {

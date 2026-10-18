@@ -27,6 +27,8 @@ export type Sim = {
   dragging: boolean;
   dragAxis: "drive" | "look" | null;
   camInit: boolean;
+  /** Simulated seconds per real second; the headless checks raise it, the physics is sub-stepped so it stays exact. */
+  warp: number;
   /** Registered by the scene once the curve exists. */
   stationS: number[];
   LEN: number;
@@ -111,6 +113,7 @@ export const useTrain = create<TrainState>((set, get) => ({
     dragging: false,
     dragAxis: null,
     camInit: false,
+    warp: 1,
     stationS: [],
     LEN: 0,
   },

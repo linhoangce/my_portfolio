@@ -108,12 +108,17 @@ export function Drive() {
   const lastDistAt = useRef(0);
 
   useFrame((state, delta) => {
-    const dt = Math.min(delta, 0.05);
     const st = useTrain.getState();
     const { sim } = st;
     if (!sim.stationS.length) return;
-    updateDrive(sim, dt);
-    updateOncoming(sim, dt);
+    // one 50 ms step per frame normally; under warp the same step repeats so the model never sees a bigger dt
+    let remaining = Math.min(delta * sim.warp, 2);
+    do {
+      const dt = Math.min(remaining, 0.05);
+      updateDrive(sim, dt);
+      updateOncoming(sim, dt);
+      remaining -= dt;
+    } while (remaining > 1e-6);
 
     const ni = nearestStation(sim.s);
     const d = stationS[ni] - sim.s;
