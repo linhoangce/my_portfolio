@@ -75,14 +75,16 @@ export function CameraRig() {
     camLook.copy(head).add(relLook.current);
     const gy = groundAt(camPos.x, camPos.z) + 2;
     if (camPos.y < gy) camPos.y = gy;
-    // keep clear of the landmarks: rise over a low one (stadium roof, the sphere), slide around a tall one (Harbour Centre)
+    // keep clear of the landmarks: on the move, rise over a low one (stadium roof, Science World) and slide around a
+    // tall one (Harbour Centre); at a station, slide, so the platform view is not seen through the stadium's cables
+    const stationView = st.dockedIdx !== null && !st.cab;
     for (const b of BLOCKERS) {
       const dx = camPos.x - b.x;
       const dz = camPos.z - b.z;
       const d = Math.hypot(dx, dz);
       if (d < b.r + CAM.blockerMargin && camPos.y < b.h + 3) {
         const rise = b.h + 3 - camPos.y;
-        if (rise < CAM.blockerRise) camPos.y = b.h + 3;
+        if (!stationView && rise < CAM.blockerRise) camPos.y = b.h + 3;
         else {
           const k = (b.r + CAM.blockerMargin) / Math.max(d, 0.01);
           camPos.x = b.x + dx * k;
