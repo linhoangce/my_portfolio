@@ -315,6 +315,6 @@ export function tickLook(world: World, dt: number, instant: boolean, dockedIdx: 
   mats.lamp.emissiveIntensity = c.lamp;
   lights.stationLight.intensity = c.stationLight;
   mats.edge.forEach((m, i) => {
-    m.emissiveIntensity = i >> 1 === dockedIdx ? c.edge * 2.4 : c.edge;
+    m.emissiveIntensity = i === dockedIdx ? c.edge * 2.4 : c.edge;
   });
 }

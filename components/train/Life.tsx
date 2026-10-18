@@ -23,6 +23,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import { inLandmark, inPark, inWater, Rng } from "./cityModel";
 import { getLifeData } from "./cityData";
 import { PEOPLE_VARIANTS } from "./constants";
+import { merged } from "./merge";
 import { groundAt, UP } from "./track";
 import { useWorld } from "./world";
 
@@ -33,7 +34,7 @@ const q = new Quaternion();
 const one = new Vector3(1, 1, 1);
 const p = new Vector3();
 
-type Boat = { m: Mesh; x: number; z: number; dir: 1 | -1; speed: number };
+type Boat = { x: number; z: number; dir: 1 | -1; speed: number };
 
 /** Traffic on the street grid, people on platforms and sidewalks, boats on the inlet, a floatplane over the harbour. */
 export function Life() {
@@ -92,36 +93,31 @@ export function Life() {
       return m;
     });
 
-    // boats on the inlet
+    // six boats on the inlet, one instanced mesh
     const bg = new BoxGeometry(6, 1.6, 2.2);
     bg.translate(0, 0.8, 0);
-    const bm = new MeshStandardMaterial({ color: 0xf1f1f1, roughness: 0.6 });
+    const boatMesh = new InstancedMesh(bg, new MeshStandardMaterial({ color: 0xf1f1f1, roughness: 0.6 }), 6);
+    boatMesh.frustumCulled = false;
     const boats: Boat[] = [];
-    for (let i = 0; i < 6; i++) {
-      const m = new Mesh(bg, bm);
-      const b: Boat = { m, x: -150 + rng.next() * 700, z: -130 - rng.next() * 180, dir: rng.next() < 0.5 ? 1 : -1, speed: 3 + rng.next() * 3 };
-      m.rotation.y = b.dir > 0 ? 0 : Math.PI;
-      boats.push(b);
-    }
+    for (let i = 0; i < 6; i++) boats.push({ x: -150 + rng.next() * 700, z: -130 - rng.next() * 180, dir: rng.next() < 0.5 ? 1 : -1, speed: 3 + rng.next() * 3 });
 
-    // a floatplane circling the harbour
+    // a floatplane circling the harbour: fuselage and floats, wing and tail, three meshes
     const plane = new Group();
-    const fus = new Mesh(new CylinderGeometry(0.5, 0.35, 7, 10), new MeshStandardMaterial({ color: 0xf4f4f4, roughness: 0.5 }));
-    fus.rotation.z = Math.PI / 2;
-    plane.add(fus);
-    const wing = new Mesh(new BoxGeometry(1.6, 0.12, 10), new MeshStandardMaterial({ color: 0xe8b23a, roughness: 0.6 }));
-    wing.position.set(0.2, 0.7, 0);
-    plane.add(wing);
-    const tail = new Mesh(new BoxGeometry(1.2, 1.2, 0.1), new MeshStandardMaterial({ color: 0xe8b23a }));
-    tail.position.set(-3.2, 0.7, 0);
-    plane.add(tail);
-    for (const z of [-1.1, 1.1]) {
-      const f = new Mesh(new CylinderGeometry(0.25, 0.25, 5, 8), new MeshStandardMaterial({ color: 0x9aa3ad }));
-      f.rotation.z = Math.PI / 2;
-      f.position.set(0, -1.1, z);
-      plane.add(f);
-    }
-    return { carMesh, carTrim, peopleMeshes, boats, plane, planeT: 0 };
+    plane.add(
+      new Mesh(merged([{ geo: new CylinderGeometry(0.5, 0.35, 7, 10), rotation: [0, 0, Math.PI / 2] }]), new MeshStandardMaterial({ color: 0xf4f4f4, roughness: 0.5 })),
+      new Mesh(
+        merged([
+          { geo: new BoxGeometry(1.6, 0.12, 10), position: [0.2, 0.7, 0] },
+          { geo: new BoxGeometry(1.2, 1.2, 0.1), position: [-3.2, 0.7, 0] },
+        ]),
+        new MeshStandardMaterial({ color: 0xe8b23a, roughness: 0.6 }),
+      ),
+      new Mesh(
+        merged([-1.1, 1.1].map((z) => ({ geo: new CylinderGeometry(0.25, 0.25, 5, 8), position: [0, -1.1, z] as [number, number, number], rotation: [0, 0, Math.PI / 2] as [number, number, number] }))),
+        new MeshStandardMaterial({ color: 0x9aa3ad }),
+      ),
+    );
+    return { carMesh, carTrim, peopleMeshes, boats, boatMesh, plane, planeT: 0 };
   }, [data, mats, lowEnd]);
 
   useEffect(
@@ -132,7 +128,8 @@ export function Life() {
       built.carTrim.dispose();
       built.peopleMeshes[0].geometry.dispose();
       for (const m of built.peopleMeshes) m.dispose();
-      built.boats[0].m.geometry.dispose();
+      built.boatMesh.geometry.dispose();
+      built.boatMesh.dispose();
       built.plane.traverse((o) => {
         if (o instanceof Mesh) o.geometry.dispose();
       });
@@ -177,12 +174,16 @@ export function Life() {
     }
     for (const m of built.peopleMeshes) m.instanceMatrix.needsUpdate = true;
     const t = state.clock.elapsedTime;
-    for (const b of built.boats) {
+    built.boats.forEach((b, i) => {
       b.x += b.dir * b.speed * dt;
       if (b.x > 700) b.x = -250;
       if (b.x < -250) b.x = 700;
-      b.m.position.set(b.x, -0.3 + Math.sin(t * 1.3 + b.z) * 0.15, b.z);
-    }
+      p.set(b.x, -0.3 + Math.sin(t * 1.3 + b.z) * 0.15, b.z);
+      q.setFromAxisAngle(UP, b.dir > 0 ? 0 : Math.PI);
+      m4.compose(p, q, one);
+      built.boatMesh.setMatrixAt(i, m4);
+    });
+    built.boatMesh.instanceMatrix.needsUpdate = true;
     built.planeT += dt * 0.12;
     const R = 190;
     const cx = 120;
@@ -199,9 +200,7 @@ export function Life() {
       {built.peopleMeshes.map((m, v) => (
         <primitive key={`people${v}`} object={m} />
       ))}
-      {built.boats.map((b, i) => (
-        <primitive key={`boat${i}`} object={b.m} />
-      ))}
+      <primitive object={built.boatMesh} />
       <primitive object={built.plane} />
     </>
   );

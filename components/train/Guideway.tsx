@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo } from "react";
 import { BoxGeometry, BufferAttribute, BufferGeometry, CatmullRomCurve3, InstancedMesh, Matrix4, Quaternion, TubeGeometry, Vector3 } from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
 import { CROSS_LEN, LANE } from "./constants";
 import { CROSSOVERS, frameAt, groundAt, LEN, makeFrame, SAMPLES, samples, smoothstep01, UP } from "./track";
@@ -35,9 +36,15 @@ function ribbon(profile: [number, number][], closed = true): BufferGeometry {
   return g;
 }
 
+const mergeAll = (geos: BufferGeometry[]): BufferGeometry => {
+  const out = mergeGeometries(geos, false);
+  for (const g of geos) g.dispose();
+  return out;
+};
+
 /**
  * Double-track guideway like the real line: box girder with parapets, a central emergency walkway, two reaction
- * plates, two rail pairs, scissors crossovers and T piers every 24 units scaled to the ground.
+ * plates, two rail pairs, scissors crossovers and T piers every 24 units scaled to the ground. Six draw calls.
  */
 export function Guideway() {
   const world = useWorld();
@@ -62,23 +69,25 @@ export function Guideway() {
       [0.9, 1.04],
       [-0.9, 1.04],
     ]);
-    const plates = [-LANE, LANE].map((lane) =>
-      ribbon([
-        [lane - 0.3, 0.96],
-        [lane + 0.3, 0.96],
-        [lane + 0.3, 1.02],
-        [lane - 0.3, 1.02],
-      ]),
+    const plates = mergeAll(
+      [-LANE, LANE].map((lane) =>
+        ribbon([
+          [lane - 0.3, 0.96],
+          [lane + 0.3, 0.96],
+          [lane + 0.3, 1.02],
+          [lane - 0.3, 1.02],
+        ]),
+      ),
     );
-    const rails: TubeGeometry[] = [];
+    // two rail pairs plus every crossover diagonal, all one rust-brown mesh
+    const tubes: BufferGeometry[] = [];
     for (const lane of [-LANE, LANE]) {
       for (const side of [-1, 1]) {
         const pts = samples.map((f) => f.p.clone().addScaledVector(f.r, lane + side * 0.72).addScaledVector(UP, 0.98));
-        rails.push(new TubeGeometry(new CatmullRomCurve3(pts, false, "catmullrom", 0), SAMPLES, 0.07, 5, false));
+        tubes.push(new TubeGeometry(new CatmullRomCurve3(pts, false, "catmullrom", 0), SAMPLES, 0.07, 5, false));
       }
     }
     const f = makeFrame();
-    const cross: TubeGeometry[] = [];
     for (const c0 of CROSSOVERS) {
       for (const [from, to] of [
         [LANE, -LANE],
@@ -91,10 +100,11 @@ export function Guideway() {
             frameAt(c0 + u * CROSS_LEN, f);
             pts.push(f.p.clone().addScaledVector(f.r, from + (to - from) * smoothstep01(u) + side * 0.72).addScaledVector(UP, 0.985));
           }
-          cross.push(new TubeGeometry(new CatmullRomCurve3(pts, false, "catmullrom", 0), 60, 0.07, 5, false));
+          tubes.push(new TubeGeometry(new CatmullRomCurve3(pts, false, "catmullrom", 0), 60, 0.07, 5, false));
         }
       }
     }
+    const rails = mergeAll(tubes);
     // piers: column + cap every 24 units, scaled per instance to reach the ground
     const count = Math.floor(LEN / 24);
     const col = new InstancedMesh(new BoxGeometry(1, 1, 1), mats.concrete, count);
@@ -123,14 +133,15 @@ export function Guideway() {
     }
     col.castShadow = cap.castShadow = !lowEnd;
     col.receiveShadow = cap.receiveShadow = true;
-    return { deck, walk, plates, rails, cross, col, cap };
+    return { deck, walk, plates, rails, col, cap };
   }, [mats, lowEnd]);
 
   useEffect(
     () => () => {
       built.deck.dispose();
       built.walk.dispose();
-      for (const g of [...built.plates, ...built.rails, ...built.cross]) g.dispose();
+      built.plates.dispose();
+      built.rails.dispose();
       built.col.geometry.dispose();
       built.cap.geometry.dispose();
       built.col.dispose();
@@ -143,15 +154,8 @@ export function Guideway() {
     <>
       <mesh geometry={built.deck} material={mats.concrete} receiveShadow />
       <mesh geometry={built.walk} material={mats.walk} receiveShadow />
-      {built.plates.map((g, i) => (
-        <mesh key={`plate${i}`} geometry={g} material={mats.plate} receiveShadow />
-      ))}
-      {built.rails.map((g, i) => (
-        <mesh key={`rail${i}`} geometry={g} material={mats.rail} receiveShadow />
-      ))}
-      {built.cross.map((g, i) => (
-        <mesh key={`cross${i}`} geometry={g} material={mats.rail} />
-      ))}
+      <mesh geometry={built.plates} material={mats.plate} receiveShadow />
+      <mesh geometry={built.rails} material={mats.rail} receiveShadow />
       <primitive object={built.col} />
       <primitive object={built.cap} />
     </>

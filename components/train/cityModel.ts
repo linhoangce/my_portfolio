@@ -8,7 +8,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import { stations } from "@/data";
 
 import { PEOPLE_VARIANTS } from "./constants";
-import { frameAt, groundAt, makeFrame, nearStation, stationS, trackDist, trackNearest } from "./track";
+import { frameAt, groundAt, makeFrame, nearStation, samples, stationS, trackDist } from "./track";
 
 /* ------------------------------------------------------------------ random */
 /** Seeded so the same city is built on every visit (and in every screenshot). */
@@ -110,15 +110,23 @@ export const LANDMARK_DEFS: LandmarkDef[] = [
   { key: "scienceWorld", x: 68.3, z: 155.7, r: 12, h: 24, margin: 8, lotR: 13 },
 ];
 
-/** Nudge a landmark out of the guideway corridor so the train never clips it. */
+/** Nudge a landmark out of the guideway corridor so the train never clips it (measured against every curve sample). */
 function pushOut(x: number, z: number, r: number, margin: number): [number, number] {
-  const f = trackNearest(x, z);
-  const dx = x - f.p.x;
-  const dz = z - f.p.z;
-  const d = Math.hypot(dx, dz);
-  if (d < r + margin) {
-    const k = (r + margin) / Math.max(d, 0.01);
-    return [f.p.x + dx * k, f.p.z + dz * k];
+  let best = samples[0];
+  let bd = 1e9;
+  for (const f of samples) {
+    const d = (f.p.x - x) ** 2 + (f.p.z - z) ** 2;
+    if (d < bd) {
+      bd = d;
+      best = f;
+    }
+  }
+  const dx = x - best.p.x;
+  const dz = z - best.p.z;
+  const d = Math.sqrt(bd);
+  if (d < r + margin + 0.5) {
+    const k = (r + margin + 0.5) / Math.max(d, 0.01);
+    return [best.p.x + dx * k, best.p.z + dz * k];
   }
   return [x, z];
 }
@@ -368,7 +376,14 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityData {
           const w = lw - gap;
           const d = ld - gap;
           if (!lotOK(x, z, w, d)) continue;
-          const ldist = trackDist(x, z);
+          // the corridor rule applies to the nearest corner, so no part of a tall building leans into the view
+          const ldist = Math.min(
+            trackDist(x, z),
+            trackDist(x - w / 2, z - d / 2),
+            trackDist(x + w / 2, z - d / 2),
+            trackDist(x - w / 2, z + d / 2),
+            trackDist(x + w / 2, z + d / 2),
+          );
           if (zone.build > 0 && rng.next() < zone.build) {
             const hmax = MathUtils.lerp(zone.h[0] + 2, zone.h[1], taper);
             let hgt = zone.h[0] + Math.pow(rng.next(), 1.5) * Math.max(0, hmax - zone.h[0]);

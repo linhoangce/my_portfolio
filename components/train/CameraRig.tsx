@@ -75,15 +75,19 @@ export function CameraRig() {
     camLook.copy(head).add(relLook.current);
     const gy = groundAt(camPos.x, camPos.z) + 2;
     if (camPos.y < gy) camPos.y = gy;
-    // keep clear of the landmarks (8 units beyond their radius, so Science World's sphere never fills the frame)
+    // keep clear of the landmarks: rise over a low one (stadium roof, the sphere), slide around a tall one (Harbour Centre)
     for (const b of BLOCKERS) {
       const dx = camPos.x - b.x;
       const dz = camPos.z - b.z;
       const d = Math.hypot(dx, dz);
-      if (d < b.r + CAM.blockerMargin && camPos.y < b.h + 2) {
-        const k = (b.r + CAM.blockerMargin) / Math.max(d, 0.01);
-        camPos.x = b.x + dx * k;
-        camPos.z = b.z + dz * k;
+      if (d < b.r + CAM.blockerMargin && camPos.y < b.h + 3) {
+        const rise = b.h + 3 - camPos.y;
+        if (rise < CAM.blockerRise) camPos.y = b.h + 3;
+        else {
+          const k = (b.r + CAM.blockerMargin) / Math.max(d, 0.01);
+          camPos.x = b.x + dx * k;
+          camPos.z = b.z + dz * k;
+        }
       }
     }
     camera.position.copy(camPos);
