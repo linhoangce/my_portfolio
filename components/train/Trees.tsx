@@ -42,7 +42,7 @@ export function Trees() {
     const c = new Color();
     const place = (mesh: InstancedMesh, list: typeof evers) =>
       list.forEach((t, i) => {
-        p.set(t.x, groundAt(t.x, t.z), t.z);
+        p.set(t.x, groundAt(t.x, t.z) - 0.2, t.z);
         q.setFromAxisAngle(UP, rng.next() * 6.28);
         sc.set(t.s, t.s * (0.9 + rng.next() * 0.4), t.s);
         m4.compose(p, q, sc);

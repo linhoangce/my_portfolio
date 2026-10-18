@@ -24,6 +24,7 @@ import { inLandmark, inPark, inWater, Rng } from "./cityModel";
 import { getLifeData } from "./cityData";
 import { PEOPLE_VARIANTS } from "./constants";
 import { merged } from "./merge";
+import { sdfAt } from "./terrain";
 import { groundAt, UP } from "./track";
 import { useWorld } from "./world";
 
@@ -99,7 +100,12 @@ export function Life() {
     const boatMesh = new InstancedMesh(bg, new MeshStandardMaterial({ color: 0xf1f1f1, roughness: 0.6 }), 6);
     boatMesh.frustumCulled = false;
     const boats: Boat[] = [];
-    for (let i = 0; i < 6; i++) boats.push({ x: -150 + rng.next() * 700, z: -130 - rng.next() * 180, dir: rng.next() < 0.5 ? 1 : -1, speed: 3 + rng.next() * 3 });
+    // boat lanes come from the real coastline: only spots well out in Burrard Inlet
+    for (let tries = 0; boats.length < 6 && tries < 400; tries++) {
+      const x = -150 + rng.next() * 700;
+      const z = -60 - rng.next() * 200;
+      if (sdfAt(x, z) < -10 && sdfAt(x + 30, z) < -8 && sdfAt(x - 30, z) < -8) boats.push({ x, z, dir: rng.next() < 0.5 ? 1 : -1, speed: 3 + rng.next() * 3 });
+    }
 
     // a floatplane circling the harbour: fuselage and floats, wing and tail, three meshes
     const plane = new Group();
@@ -175,9 +181,9 @@ export function Life() {
     for (const m of built.peopleMeshes) m.instanceMatrix.needsUpdate = true;
     const t = state.clock.elapsedTime;
     built.boats.forEach((b, i) => {
+      // turn around before the shore
+      if (sdfAt(b.x + b.dir * 12, b.z) > -6) b.dir = b.dir > 0 ? -1 : 1;
       b.x += b.dir * b.speed * dt;
-      if (b.x > 700) b.x = -250;
-      if (b.x < -250) b.x = 700;
       p.set(b.x, -0.3 + Math.sin(t * 1.3 + b.z) * 0.15, b.z);
       q.setFromAxisAngle(UP, b.dir > 0 ? 0 : Math.PI);
       m4.compose(p, q, one);

@@ -2,11 +2,12 @@ import { CatmullRomCurve3, MathUtils, Vector3 } from "three";
 
 import { stations } from "@/data";
 
-import { CROSS_LEN, DECK, K } from "./constants";
+import { CROSS_LEN, CUT, DECK, K } from "./constants";
+import { addModifier, lerp, rectPad } from "./terrain";
 import { TRACK_RAW } from "./trackData";
+import { solveProfile } from "./trackProfile";
 
-/** The city rises gently to the south-east like the real one. */
-export const groundAt = (x: number, z: number): number => Math.max(0, 0.014 * z + 0.004 * x);
+export { groundAt, inWater, slopeAt } from "./terrain";
 
 export const UP = new Vector3(0, 1, 0);
 
@@ -28,7 +29,17 @@ for (let pass = 0; pass < 3; pass++) {
   for (let i = 1; i <= 16; i++) TRACK.unshift([a[0] + (dx / L) * 4 * i, a[1] + (dz / L) * 4 * i]);
 }
 
-export const controlPoints: Vector3[] = TRACK.map(([x, z]) => new Vector3(x, groundAt(x, z) + DECK, z));
+export const STATION_XZ: [number, number][] = stations.map((st) => [st.km[0] * K, st.km[1] * K]);
+const nearestPoint = ([sx, sz]: [number, number]) => TRACK.reduce((b, [x, z], i) => ((x - sx) ** 2 + (z - sz) ** 2 < (TRACK[b][0] - sx) ** 2 + (TRACK[b][1] - sz) ** 2 ? i : b), 0);
+const stationIdx = STATION_XZ.map(nearestPoint);
+
+// deck heights over the real terrain, with the Grandview Cut between Main Street and Commercial–Broadway
+const iMain = stationIdx[stations.findIndex((s) => s.id === "mainstreet")];
+const iComm = stationIdx[stations.findIndex((s) => s.id === "commercial")];
+const sAt = (i: number) => { let s = 0; for (let k = 1; k <= i; k++) s += Math.hypot(TRACK[k][0] - TRACK[k - 1][0], TRACK[k][1] - TRACK[k - 1][1]); return s; };
+export const profile = solveProfile(TRACK, stationIdx, sAt(iMain) + CUT.afterMain, sAt(iComm) + CUT.afterCommercial);
+
+export const controlPoints: Vector3[] = TRACK.map(([x, z], i) => new Vector3(x, profile.y[i], z));
 export const curve = new CatmullRomCurve3(controlPoints, false, "centripetal", 0.5);
 curve.arcLengthDivisions = 6000;
 export const LEN = curve.getLength();
@@ -37,7 +48,7 @@ export const S_MAX = LEN - 6;
 export type Frame = { p: Vector3; t: Vector3; r: Vector3 };
 export const makeFrame = (): Frame => ({ p: new Vector3(), t: new Vector3(), r: new Vector3() });
 
-/** Position, unit tangent and right vector at arc length s, optionally offset laterally. */
+/** Position, unit tangent and right vector at arc length s, optionally offset laterally. The right vector stays horizontal. */
 export function frameAt(s: number, out: Frame, lat = 0): Frame {
   const u = MathUtils.clamp(s / LEN, 0, 1);
   curve.getPointAt(u, out.p);
@@ -55,6 +66,9 @@ for (let i = 0; i <= SAMPLES; i++) {
   samples.push(f);
 }
 const coarse = samples.filter((_, i) => i % 4 === 0);
+
+/** Deck height at arc length s. */
+export const deckY = (s: number): number => samples[Math.round(MathUtils.clamp(s / LEN, 0, 1) * SAMPLES)].p.y;
 
 /** Horizontal distance from (x, z) to the nearest coarse track sample. */
 export function trackDist(x: number, z: number): number {
@@ -99,7 +113,6 @@ export const stationS: number[] = stations.map((st) => {
   return (bi / SAMPLES) * LEN;
 });
 
-export const STATION_XZ: [number, number][] = stations.map((st) => [st.km[0] * K, st.km[1] * K]);
 export const nearStation = (x: number, z: number, r: number): boolean =>
   STATION_XZ.some(([sx, sz]) => Math.hypot(x - sx, z - sz) < r);
 
@@ -125,3 +138,52 @@ export const smoothstep01 = (u: number): number => {
   const c = MathUtils.clamp(u, 0, 1);
   return c * c * (3 - 2 * c);
 };
+
+// ---------------------------------------------------------------- ground the track asks for
+// station pads: the ground under each station sits DECK below its level deck (or just under the girder in the cut)
+{
+  const f = makeFrame();
+  for (const ss of stationS) {
+    frameAt(ss, f);
+    const tx = f.t.x / Math.hypot(f.t.x, f.t.z);
+    const tz = f.t.z / Math.hypot(f.t.x, f.t.z);
+    const inCut = profileCutAt(ss) > 0.5;
+    addModifier(rectPad(f.p.x, f.p.z, tx, tz, 34, inCut ? 13 : 22, inCut ? 6 : 26, f.p.y - (inCut ? 2.4 : DECK)));
+  }
+}
+// the Grandview Cut: a floor just under the girder within 14 units, wooded banks rising to floor + CUT.bank by 40, back to the DEM by 55
+{
+  const cutPts = samples
+    .map((f, i) => ({ x: f.p.x, z: f.p.z, floor: f.p.y - 2.4, w: profileCutAt((i / SAMPLES) * LEN) }))
+    .filter((p, i) => i % 3 === 0 && p.w > 0.01);
+  if (cutPts.length) {
+    const xs = cutPts.map((p) => p.x);
+    const zs = cutPts.map((p) => p.z);
+    const box = [Math.min(...xs) - 60, Math.max(...xs) + 60, Math.min(...zs) - 60, Math.max(...zs) + 60];
+    addModifier((x, z, h) => {
+      if (x < box[0] || x > box[1] || z < box[2] || z > box[3]) return h;
+      let bd = 1e9;
+      let bp = cutPts[0];
+      for (const p of cutPts) {
+        const d = (p.x - x) ** 2 + (p.z - z) ** 2;
+        if (d < bd) {
+          bd = d;
+          bp = p;
+        }
+      }
+      const lat = Math.sqrt(bd);
+      if (lat > 55) return h;
+      const t = Math.min(1, Math.max(0, (lat - 14) / 26));
+      const target = bp.floor + CUT.bank * t * t * (3 - 2 * t);
+      const fade = Math.min(1, Math.max(0, (lat - 40) / 15));
+      return lerp(h, target, bp.w * (1 - fade * fade * (3 - 2 * fade)));
+    });
+  }
+}
+function profileCutAt(s: number): number {
+  const ps = profile.s;
+  const k = ps.findIndex((v) => v >= s);
+  if (k <= 0) return profile.cut[Math.max(0, k)];
+  const u = (s - ps[k - 1]) / (ps[k] - ps[k - 1]);
+  return profile.cut[k - 1] + (profile.cut[k] - profile.cut[k - 1]) * u;
+}

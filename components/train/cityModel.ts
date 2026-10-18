@@ -2,13 +2,15 @@
  * The city as data: water, streets, districts, lots, houses, trees, traffic runs, people, mountains.
  * Pure (no DOM, no React); the scene components turn these into meshes.
  */
-import { BoxGeometry, BufferAttribute, BufferGeometry, CircleGeometry, Color, MathUtils, PlaneGeometry } from "three";
+import { BoxGeometry, BufferAttribute, BufferGeometry, Color, MathUtils } from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
 import { stations } from "@/data";
 
 import { PEOPLE_VARIANTS } from "./constants";
-import { frameAt, groundAt, makeFrame, nearStation, samples, stationS, trackDist } from "./track";
+import { inLandmark, inPark } from "./sites";
+import { inWater } from "./terrain";
+import { frameAt, groundAt, makeFrame, nearStation, stationS, trackDist } from "./track";
 
 /* ------------------------------------------------------------------ random */
 /** Seeded so the same city is built on every visit (and in every screenshot). */
@@ -28,48 +30,6 @@ export class Rng {
   }
 }
 
-/* ------------------------------------------------------------------ water */
-// Burrard Inlet wraps the downtown peninsula; Stanley Park is the land between x −470 and −150; English Bay and
-// the strait lie west of x −470. False Creek west of Science World; Trout Lake east of the line.
-export const INLET: [number, number][] = [
-  [-470, -420],
-  [-150, -420],
-  [-150, -40],
-  [60, -40],
-  [200, -70],
-  [1000, -130],
-  [1000, -1100],
-  [-1600, -1100],
-  [-1600, 420],
-  [-700, 420],
-  [-470, 220],
-];
-export const CREEK: [number, number][] = [
-  [-220, 152],
-  [-60, 150],
-  [20, 150],
-  [55, 154],
-  [73, 160],
-  [62, 174],
-  [30, 182],
-  [-60, 190],
-  [-220, 198],
-];
-export const LAKE = { x: 400, z: 374, rx: 20, rz: 13 };
-
-export function inPoly(poly: [number, number][], x: number, z: number): boolean {
-  let c = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const [xi, zi] = poly[i];
-    const [xj, zj] = poly[j];
-    if (zi > z !== zj > z && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) c = !c;
-  }
-  return c;
-}
-export const inWater = (x: number, z: number): boolean =>
-  inPoly(INLET, x, z) || inPoly(CREEK, x, z) || ((x - LAKE.x) / LAKE.rx) ** 2 + ((z - LAKE.z) / LAKE.rz) ** 2 < 1;
-export const terrainAt = (x: number, z: number): number => (inWater(x, z) ? groundAt(x, z) - 3 : groundAt(x, z));
-
 /* ------------------------------------------------------------------ streets */
 // One 512 px ground tile = 44 units: an arterial (4 lanes) and a local street (2 lanes) with sidewalks; blocks between are 22 units.
 export const STREET_STEP = 22;
@@ -86,60 +46,10 @@ export const BJ1 = 37;
 const setX = (i: number) => (arterialX(i) ? 4.1 : 3.0);
 const setZ = (j: number) => (arterialZ(j) ? 4.1 : 3.0);
 
-/* ------------------------------------------------------------------ parks and landmarks */
-export type Park = { x: number; z: number; r: number; name: string };
-export const PARKS: Park[] = [
-  { x: 400, z: 374, r: 44, name: "John Hendry Park" },
-  { x: 318, z: 356, r: 16, name: "Clark Park" },
-  { x: 517, z: 520, r: 20, name: "Slocan Park" },
-  { x: 648, z: 613, r: 14, name: "Gaston Park" },
-  { x: 333, z: 155, r: 13, name: "Grandview Park" },
-  { x: 860, z: 790, r: 95, name: "Central Park" },
-];
-export const inPark = (x: number, z: number): boolean => PARKS.some((p) => Math.hypot(x - p.x, z - p.z) < p.r);
-
-export type LandmarkKey = "harbourCentre" | "canadaPlace" | "convention" | "bcPlace" | "rogers" | "scienceWorld";
-export type LandmarkDef = { key: LandmarkKey; x: number; z: number; r: number; h: number; margin: number; lotR: number };
-/** Mapped positions (km × 110); lotR is the footprint radius lots keep clear of. */
-export const LANDMARK_DEFS: LandmarkDef[] = [
-  { key: "harbourCentre", x: 2.6, z: 18.4, r: 11, h: 56, margin: 6, lotR: 12 },
-  { key: "canadaPlace", x: -36, z: -40, r: 16, h: 26, margin: 6, lotR: 16 },
-  { key: "convention", x: -30, z: -34, r: 36, h: 11, margin: 6, lotR: 36 },
-  { key: "bcPlace", x: -6, z: 122, r: 38, h: 26, margin: 6, lotR: 38 },
-  { key: "rogers", x: 52, z: 134, r: 19, h: 12, margin: 7, lotR: 19 },
-  { key: "scienceWorld", x: 68.3, z: 155.7, r: 12, h: 24, margin: 8, lotR: 13 },
-];
-
-/** Nudge a landmark out of the guideway corridor so the train never clips it (measured against every curve sample). */
-function pushOut(x: number, z: number, r: number, margin: number): [number, number] {
-  let best = samples[0];
-  let bd = 1e9;
-  for (const f of samples) {
-    const d = (f.p.x - x) ** 2 + (f.p.z - z) ** 2;
-    if (d < bd) {
-      bd = d;
-      best = f;
-    }
-  }
-  const dx = x - best.p.x;
-  const dz = z - best.p.z;
-  const d = Math.sqrt(bd);
-  if (d < r + margin + 0.5) {
-    const k = (r + margin + 0.5) / Math.max(d, 0.01);
-    return [best.p.x + dx * k, best.p.z + dz * k];
-  }
-  return [x, z];
-}
-export type PlacedLandmark = LandmarkDef & { px: number; pz: number };
-export const LANDMARKS: PlacedLandmark[] = LANDMARK_DEFS.map((l) => {
-  const [px, pz] = pushOut(l.x, l.z, l.r, l.margin);
-  return { ...l, px, pz };
-});
-export type Blocker = { x: number; z: number; r: number; h: number };
-/** The camera steers around these. */
-export const BLOCKERS: Blocker[] = LANDMARKS.map((l) => ({ x: l.px, z: l.pz, r: l.r, h: l.h }));
-export const inLandmark = (x: number, z: number, pad: number): boolean =>
-  LANDMARKS.some((l) => Math.hypot(x - l.px, z - l.pz) < l.lotR + pad);
+/* ------------------------------------------------------------------ sites */
+// Parks, landmarks and the camera blockers live in sites.ts (they register terrain pads); water comes from the DEM.
+export { BLOCKERS, inLandmark, inPark, LANDMARKS, PARKS, pushOut, type Blocker, type LandmarkKey, type Park, type PlacedLandmark } from "./sites";
+export { inWater } from "./terrain";
 
 /* ------------------------------------------------------------------ districts */
 export type District =
@@ -269,8 +179,8 @@ const tint = {
   concrete: (r: Rng) => hsl(0.08 + r.next() * 0.04, 0.12, 0.8 + r.next() * 0.17),
 };
 
-/** A box with the window texture tiled by size (one tile = 3.2 units), vertex-coloured, roof darkened. */
-function buildingGeo(x: number, z: number, w: number, hgt: number, d: number, col: Color, rot: number, yOff = 0): BufferGeometry {
+/** A box with the window texture tiled by size (one tile = 3.2 units), vertex-coloured, roof darkened; y0 is its base. */
+function buildingGeo(x: number, z: number, w: number, hgt: number, d: number, col: Color, rot: number, y0: number): BufferGeometry {
   const g = new BoxGeometry(w, hgt, d);
   const uv = g.attributes.uv as BufferAttribute;
   for (let i = 0; i < 24; i++) {
@@ -288,7 +198,7 @@ function buildingGeo(x: number, z: number, w: number, hgt: number, d: number, co
   }
   g.setAttribute("color", new BufferAttribute(colors, 3));
   g.rotateY(rot);
-  g.translate(x, groundAt(x, z) + yOff + hgt / 2, z);
+  g.translate(x, y0 + hgt / 2, z);
   return g;
 }
 
@@ -310,9 +220,15 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityData {
   const trees: Tree[] = [];
   const lots: Lot[] = [];
 
+  // each lot stands on the lowest ground under it (yb) and measures its height from the highest (yt)
+  let yb = 0;
+  let yt = 0;
   const push = (kind: Facade, col: Color, x: number, z: number, bw: number, bh: number, bd: number, rot: number, yOff = 0) =>
-    geosBy[kind].push(buildingGeo(x, z, bw, bh, bd, col, rot, yOff));
+    geosBy[kind].push(yOff ? buildingGeo(x, z, bw, bh, bd, col, rot, yt + yOff) : buildingGeo(x, z, bw, bh + (yt - yb), bd, col, rot, yb));
   const addBuilding = (type: BuildingType, x: number, z: number, w: number, d: number, hgt: number, rot: number, name: District) => {
+    const gs = [[x - w / 2, z - d / 2], [x + w / 2, z - d / 2], [x - w / 2, z + d / 2], [x + w / 2, z + d / 2], [x, z]].map(([px, pz]) => groundAt(px, pz));
+    yb = Math.min(...gs) - 0.4;
+    yt = Math.max(...gs);
     if (type === "tower") {
       const ph = 3.5 + rng.next() * 2;
       const brickPod = rng.next() < 0.5;
@@ -570,77 +486,4 @@ export function buildPeople(rng: Rng, PEOPLE_N: number): { people: Person[]; cou
     add({ x, y: groundAt(x, z), z, axis, dir: rng.next() < 0.5 ? 1 : -1, move: 0.8 + rng.next() * 0.6, origin: pos });
   }
   return { people, counts };
-}
-
-/* ------------------------------------------------------------------ terrain and mountains */
-/** One plane with the street-grid texture, dipped 3 units inside the water polygons. */
-export function buildGroundGeometry(): PlaneGeometry {
-  const g = new PlaneGeometry(2860, 2420, 230, 195);
-  g.rotateX(-Math.PI / 2);
-  g.translate(430, 0, 150);
-  const pa = g.attributes.position as BufferAttribute;
-  for (let i = 0; i < pa.count; i++) pa.setY(i, terrainAt(pa.getX(i), pa.getZ(i)) - 0.05);
-  g.computeVertexNormals();
-  return g;
-}
-
-export type MountainData = { geometry: PlaneGeometry; summer: BufferAttribute; winter: BufferAttribute };
-/** North Shore ridge 560–1310 units north, peaks to 300, with a summer and a winter snow-line colouring. */
-export function buildMountains(): MountainData {
-  const g = new PlaneGeometry(5200, 760, 220, 38);
-  g.rotateX(-Math.PI / 2);
-  g.translate(430, 0, -930);
-  const pa = g.attributes.position as BufferAttribute;
-  const col = new Float32Array(pa.count * 3);
-  const colW = new Float32Array(pa.count * 3);
-  const c = new Color();
-  const hash = (x: number, z: number) => {
-    const s = Math.sin(x * 127.1 + z * 311.7) * 43758.5453;
-    return s - Math.floor(s);
-  };
-  const vn = (x: number, z: number) => {
-    const ix = Math.floor(x);
-    const iz = Math.floor(z);
-    const fx = x - ix;
-    const fz = z - iz;
-    const sx = fx * fx * (3 - 2 * fx);
-    const sz = fz * fz * (3 - 2 * fz);
-    const a = hash(ix, iz);
-    const b = hash(ix + 1, iz);
-    const cc = hash(ix, iz + 1);
-    const d = hash(ix + 1, iz + 1);
-    return a + (b - a) * sx + (cc - a) * sz + (a - b - cc + d) * sx * sz;
-  };
-  for (let i = 0; i < pa.count; i++) {
-    const x = pa.getX(i);
-    const z = pa.getZ(i);
-    const edge = Math.min(1, Math.max(0, (-z - 560) / 150));
-    const h = (vn(x * 0.004, z * 0.004) * 0.6 + vn(x * 0.012 + 5, z * 0.012) * 0.3 + vn(x * 0.03, z * 0.03 + 9) * 0.1) * 300 * edge;
-    pa.setY(i, h - 2);
-    const paint = (arr: Float32Array, line: number) => {
-      const snow = Math.min(1, Math.max(0, (h - line) / 50));
-      c.setRGB(0.36 + 0.6 * snow, 0.42 + 0.54 * snow, 0.5 + 0.47 * snow);
-      arr.set([c.r, c.g, c.b], i * 3);
-    };
-    paint(col, 125);
-    paint(colW, 55);
-  }
-  const summer = new BufferAttribute(col, 3);
-  const winter = new BufferAttribute(colW, 3);
-  g.setAttribute("color", summer);
-  g.computeVertexNormals();
-  return { geometry: g, summer, winter };
-}
-
-/** Burnaby Mountain: a 300-radius dome, height 110. */
-export function buildHill(): CircleGeometry {
-  const hill = new CircleGeometry(300, 56);
-  hill.rotateX(-Math.PI / 2);
-  const pa = hill.attributes.position as BufferAttribute;
-  for (let i = 0; i < pa.count; i++) {
-    const d = Math.hypot(pa.getX(i), pa.getZ(i)) / 300;
-    pa.setY(i, 110 * Math.pow(Math.max(0, 1 - d), 1.6));
-  }
-  hill.computeVertexNormals();
-  return hill;
 }

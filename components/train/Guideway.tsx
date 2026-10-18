@@ -112,22 +112,23 @@ export function Guideway() {
     const m4 = new Matrix4();
     const q = new Quaternion();
     const basis = new Matrix4();
-    const back = new Vector3();
     const sc = new Vector3();
     const p = new Vector3();
+    const zAxis = new Vector3();
     for (let i = 0; i < count; i++) {
       frameAt(i * 24 + 12, f);
-      back.copy(f.t).negate();
-      basis.makeBasis(f.r, UP, back);
+      zAxis.copy(f.r).cross(UP);
+      basis.makeBasis(f.r, UP, zAxis);
       q.setFromRotationMatrix(basis);
       const gy = groundAt(f.p.x, f.p.z);
       const h = f.p.y - 1.1 - gy;
-      p.set(f.p.x, gy + h / 2, f.p.z);
-      sc.set(3.0, h, 2.6);
+      const tall = h > 1 ? 1 : 0;
+      p.set(f.p.x, gy - 0.3 + (h + 0.3) / 2, f.p.z);
+      sc.set(3.0 * tall, Math.max(0.01, h + 0.3), 2.6 * tall);
       m4.compose(p, q, sc);
       col.setMatrixAt(i, m4);
       p.set(f.p.x, f.p.y - 1.5, f.p.z);
-      sc.set(1, 1, 1);
+      sc.set(tall, tall, tall);
       m4.compose(p, q, sc);
       cap.setMatrixAt(i, m4);
     }

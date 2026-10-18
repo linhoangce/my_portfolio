@@ -28,7 +28,7 @@ export function Stations() {
       frameAt(stationS[i], f);
       const g = new Group();
       g.position.copy(f.p);
-      g.lookAt(f.p.clone().add(f.t));
+      g.lookAt(f.p.clone().add(f.t.clone().setY(0).normalize()));
       // +x local = left of the track
       const sides = [1, -1];
       const plat = new Mesh(merged(sides.map((side) => ({ geo: new BoxGeometry(5.2, 0.9, 26), position: [side * 8.9, 0.95, 0] }))), mats.plat);
@@ -55,7 +55,10 @@ export function Stations() {
         merged(sides.flatMap((side) => [-10, 10].map((z) => ({ geo: new SphereGeometry(0.17, 12, 10), position: [side * 8.2, 6.4, z] as [number, number, number] })))),
         mats.lamp,
       );
-      const gy = groundAt(f.p.x, f.p.z);
+      // +x local = left of the track, -z local = back along it: the tower stands at local (13.3, -14)
+      const tH = f.t.clone().setY(0).normalize();
+      const towerAt = f.p.clone().addScaledVector(f.r, -13.3).addScaledVector(tH, -14);
+      const gy = groundAt(towerAt.x, towerAt.z);
       const th = f.p.y - gy + 1.4;
       const concrete = new Mesh(
         merged([

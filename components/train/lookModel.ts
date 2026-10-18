@@ -80,7 +80,7 @@ export const THEMES: Record<Theme, ThemeDef> = {
     windows: 0.0,
     ground: "day",
     water: 0x4f86b5,
-    mountain: 0xffffff,
+    mountain: 0xc4cec0,
     concrete: 0xb3b2ab,
     platform: 0xa9aeb6,
     trainWin: 0.0,
@@ -100,23 +100,23 @@ type WeatherSide = { top: number; hor: number; fog: number; fogD: number; sun: n
 type WeatherDef = { day: WeatherSide; night: WeatherSide; wet: number };
 export const WEATHER: Record<Weather, WeatherDef> = {
   clear: {
-    day: { top: 0x4f8ad0, hor: 0xcfe0f2, fog: 0xcfdcea, fogD: 0.0013, sun: 1.1, hemi: 1.0, disc: true },
-    night: { top: 0x05070f, hor: 0x151d33, fog: 0x070a12, fogD: 0.003, sun: 1.0, hemi: 1.0, disc: true },
+    day: { top: 0x4f8ad0, hor: 0xcfe0f2, fog: 0xcfdcea, fogD: 0.00048, sun: 1.1, hemi: 1.0, disc: true },
+    night: { top: 0x05070f, hor: 0x151d33, fog: 0x070a12, fogD: 0.0016, sun: 1.0, hemi: 1.0, disc: true },
     wet: 0,
   },
   overcast: {
-    day: { top: 0xa9b5c3, hor: 0xdfe4ea, fog: 0xcfd7df, fogD: 0.0022, sun: 0.5, hemi: 1.2, disc: false },
-    night: { top: 0x0b0e16, hor: 0x1a2030, fog: 0x0c1019, fogD: 0.0036, sun: 0.6, hemi: 1.0, disc: false },
+    day: { top: 0xa9b5c3, hor: 0xdfe4ea, fog: 0xcfd7df, fogD: 0.0013, sun: 0.5, hemi: 1.2, disc: false },
+    night: { top: 0x0b0e16, hor: 0x1a2030, fog: 0x0c1019, fogD: 0.0022, sun: 0.6, hemi: 1.0, disc: false },
     wet: 0.3,
   },
   rain: {
-    day: { top: 0x8f9aa8, hor: 0xc9d0d8, fog: 0xbfc7d0, fogD: 0.0036, sun: 0.3, hemi: 1.05, disc: false },
-    night: { top: 0x080b12, hor: 0x161c2a, fog: 0x0a0e17, fogD: 0.0044, sun: 0.5, hemi: 0.95, disc: false },
+    day: { top: 0x8f9aa8, hor: 0xc9d0d8, fog: 0xbfc7d0, fogD: 0.0024, sun: 0.3, hemi: 1.05, disc: false },
+    night: { top: 0x080b12, hor: 0x161c2a, fog: 0x0a0e17, fogD: 0.0028, sun: 0.5, hemi: 0.95, disc: false },
     wet: 1,
   },
   snow: {
-    day: { top: 0xc3cbd6, hor: 0xeef1f5, fog: 0xe4e8ee, fogD: 0.004, sun: 0.5, hemi: 1.2, disc: false },
-    night: { top: 0x0d1119, hor: 0x202838, fog: 0x10151f, fogD: 0.0046, sun: 0.6, hemi: 1.1, disc: false },
+    day: { top: 0xc3cbd6, hor: 0xeef1f5, fog: 0xe4e8ee, fogD: 0.0028, sun: 0.5, hemi: 1.2, disc: false },
+    night: { top: 0x0d1119, hor: 0x202838, fog: 0x10151f, fogD: 0.0032, sun: 0.6, hemi: 1.1, disc: false },
     wet: 0.5,
   },
 };

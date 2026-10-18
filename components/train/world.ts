@@ -143,7 +143,7 @@ export function createWorld(gl: WebGLRenderer, scene: Scene, lowEnd: boolean): W
   ) as Record<Facade, MeshStandardMaterial>;
   const winTex = windowTextures(5.2);
 
-  const ground = new MeshStandardMaterial({ map: groundTex.night, roughness: 1 });
+  const ground = new MeshStandardMaterial({ map: groundTex.night, roughness: 1, vertexColors: true });
   ground.envMap = envTex;
   ground.envMapIntensity = 0;
 

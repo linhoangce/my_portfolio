@@ -2,8 +2,28 @@
 
 /** World units per kilometre; x east, z south, origin at Waterfront station. */
 export const K = 110;
-/** Guideway deck height above the ground. */
+/** Guideway deck height above the ground (where the terrain allows; see trackProfile.ts). */
 export const DECK = 10.5;
+
+// Terrain
+/** World units per metre of elevation (≈ 3.6× vertical exaggeration at 9.1 m per unit, so Vancouver's slopes read). */
+export const TERRAIN_V = 0.4;
+/** The water plane. */
+export const SEA = -0.6;
+/** Deck grade limits: everywhere, and on the Grandview Cut ramps. */
+export const GRADE_CAP = 0.09;
+export const GRADE_CAP_RAMP = 0.11;
+/** The deck stays level this far either side of a station. */
+export const PLATFORM_FLAT = 18;
+/** Minimum deck height above the ground beside the track. */
+export const CLEAR_DECK = 7.5;
+/**
+ * The Grandview Cut from Main Street to just past Commercial–Broadway: the deck rides low between wooded banks, and
+ * Commercial's platforms sit in the trench as the real Expo Line platforms do.
+ */
+export const CUT = { afterMain: 30, afterCommercial: 60, rampIn: 80, rampOut: 105, offset: 2.5, bank: 9.5 } as const;
+/** Vertical scale of the far backdrop (the North Shore range would tower at TERRAIN_V); blended from TERRAIN_V at the city edge. */
+export const FAR_V = 0.26;
 /** Lateral offset of each track from the guideway centreline; ours is +LANE (right-hand running). */
 export const LANE = 2.6;
 /** Length of a scissors crossover diagonal along the track. */

@@ -37,6 +37,11 @@ export function CameraRig() {
     if (!sim.stationS.length) return;
     const dt = Math.min(delta, 0.05) * sim.warp; // the damp is a stable lerp, so warp only shortens the easing
     const camera = state.camera;
+    if (sim.freeCam) {
+      camera.position.set(...sim.freeCam.pos);
+      camera.lookAt(...sim.freeCam.look);
+      return;
+    }
     frameAt(sim.s, fA, laneAt(sim, sim.s));
     const head = fA.p;
     const phone = env.phone;
@@ -82,9 +87,9 @@ export function CameraRig() {
       const dx = camPos.x - b.x;
       const dz = camPos.z - b.z;
       const d = Math.hypot(dx, dz);
-      if (d < b.r + CAM.blockerMargin && camPos.y < b.h + 3) {
-        const rise = b.h + 3 - camPos.y;
-        if (!stationView && rise < CAM.blockerRise) camPos.y = b.h + 3;
+      if (d < b.r + CAM.blockerMargin && camPos.y < b.top + 3) {
+        const rise = b.top + 3 - camPos.y;
+        if (!stationView && rise < CAM.blockerRise) camPos.y = b.top + 3;
         else {
           const k = (b.r + CAM.blockerMargin) / Math.max(d, 0.01);
           camPos.x = b.x + dx * k;

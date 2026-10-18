@@ -37,3 +37,6 @@ next-env.d.ts
 
 # Sentry Config File
 .sentryclirc
+
+# terrain tile cache (scripts/terrain/bake.mjs)
+/scripts/terrain/.cache/

@@ -22,7 +22,6 @@ import {
 } from "three";
 
 import { LANDMARKS, type LandmarkKey } from "./cityModel";
-import { groundAt } from "./track";
 import { type World, useWorld } from "./world";
 
 /** Sized against the train (one car ≈ 17 m), not the compressed street grid, so they read at the right scale from the guideway. */
@@ -149,7 +148,7 @@ export function Landmarks() {
     () =>
       LANDMARKS.map((l) => {
         const g = buildLandmark(l.key, world);
-        g.position.set(l.px, groundAt(l.px, l.pz), l.pz);
+        g.position.set(l.px, l.padY, l.pz);
         return g;
       }),
     [world],

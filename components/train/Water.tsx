@@ -1,44 +1,27 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
-import { CircleGeometry, Shape, ShapeGeometry, Vector2 } from "three";
+import { CircleGeometry, PlaneGeometry } from "three";
 
-import { CREEK, INLET, LAKE } from "./cityModel";
-import { groundAt } from "./track";
+import { SEA } from "./constants";
+import { LAKE, lakeLevel } from "./terrain";
 import { useWorld } from "./world";
 
-const waterShape = (poly: [number, number][]) => new Shape(poly.map(([x, z]) => new Vector2(x, -z)));
-
-/** Burrard Inlet (wrapping the peninsula into English Bay), False Creek and Trout Lake as flat reflective shapes. */
+/** One sea plane under the whole world (the terrain clips it to the real coastline) and Trout Lake at its own level. */
 export function Water() {
   const { mats } = useWorld();
-  const geos = useMemo(
-    () => ({
-      inlet: new ShapeGeometry(waterShape(INLET)),
-      creek: new ShapeGeometry(waterShape(CREEK)),
-      lake: new CircleGeometry(1, 40),
-    }),
-    [],
-  );
+  const geos = useMemo(() => ({ sea: new PlaneGeometry(9000, 9000), lake: new CircleGeometry(1, 48) }), []);
   useEffect(
     () => () => {
-      geos.inlet.dispose();
-      geos.creek.dispose();
+      geos.sea.dispose();
       geos.lake.dispose();
     },
     [geos],
   );
   return (
     <>
-      <mesh geometry={geos.inlet} material={mats.water} rotation-x={-Math.PI / 2} position-y={-0.6} />
-      <mesh geometry={geos.creek} material={mats.water} rotation-x={-Math.PI / 2} position-y={-0.6} />
-      <mesh
-        geometry={geos.lake}
-        material={mats.water}
-        rotation-x={-Math.PI / 2}
-        scale={[LAKE.rx, LAKE.rz, 1]}
-        position={[LAKE.x, groundAt(LAKE.x, LAKE.z) - 0.6, LAKE.z]}
-      />
+      <mesh geometry={geos.sea} material={mats.water} rotation-x={-Math.PI / 2} position={[400, SEA, 0]} />
+      <mesh geometry={geos.lake} material={mats.water} rotation-x={-Math.PI / 2} scale={[LAKE.rx + 1, LAKE.rz + 1, 1]} position={[LAKE.x, lakeLevel(), LAKE.z]} />
     </>
   );
 }

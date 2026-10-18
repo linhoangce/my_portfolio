@@ -9,13 +9,21 @@ import type { Season, Weather } from "./lookTypes";
 import { useTrain } from "./store";
 import { BLOCKERS } from "./cityModel";
 import { getCityData } from "./cityData";
-import { CROSSOVERS, LEN, samples, STATION_XZ, stationS } from "./track";
+import { CROSSOVERS, deckY, groundAt, LEN, profile, SAMPLES, samples, STATION_XZ, stationS } from "./track";
 import { useWorld } from "./world";
 
 export type TrainDebug = {
   ready: boolean;
   frames: number;
   calls: number;
+  triangles: number;
+  /** Debug camera: fixed position and look target until unview(). */
+  view: (pos: [number, number, number], look: [number, number, number]) => void;
+  unview: () => void;
+  ground: (x: number, z: number) => number;
+  profile: () => { s: number[]; y: number[]; cut: number[]; ground: number[]; lower: number[] };
+  /** Terrain and deck checks: max grade, platform flatness, clearance, cut offset. */
+  terrain: () => { maxGrade: number; maxGradeAt: number; platformSpread: number[]; minClearance: number; minClearanceAt: number; cutOffset: number };
   stations: string[];
   stationS: number[];
   crossovers: number[];
@@ -56,6 +64,49 @@ export function Debug() {
       ready: true,
       frames: 0,
       calls: 0,
+      triangles: 0,
+      view: (pos, look) => {
+        st().sim.freeCam = { pos, look };
+      },
+      unview: () => {
+        st().sim.freeCam = null;
+      },
+      ground: (x, z) => groundAt(x, z),
+      profile: () => ({ s: profile.s, y: profile.y, cut: profile.cut, ground: profile.ground, lower: profile.lower }),
+      terrain: () => {
+        let maxGrade = 0;
+        let maxGradeAt = 0;
+        let minClearance = 1e9;
+        let minClearanceAt = 0;
+        for (let i = 1; i < samples.length; i++) {
+          const a = samples[i - 1].p;
+          const b = samples[i].p;
+          const gr = Math.abs(b.y - a.y) / Math.max(1e-6, Math.hypot(b.x - a.x, b.z - a.z));
+          if (gr > maxGrade) {
+            maxGrade = gr;
+            maxGradeAt = (i / SAMPLES) * LEN;
+          }
+          const f = samples[i];
+          let g = -1e9;
+          for (let lat = -7; lat <= 7; lat += 3.5) g = Math.max(g, groundAt(f.p.x + f.r.x * lat, f.p.z + f.r.z * lat));
+          const c = f.p.y - 1.1 - g;
+          if (c < minClearance) {
+            minClearance = c;
+            minClearanceAt = (i / SAMPLES) * LEN;
+          }
+        }
+        const platformSpread = stationS.map((s0) => {
+          let lo = 1e9;
+          let hi = -1e9;
+          for (let s = s0 - 18; s <= s0 + 18; s += 2) {
+            const y = deckY(s);
+            lo = Math.min(lo, y);
+            hi = Math.max(hi, y);
+          }
+          return hi - lo;
+        });
+        return { maxGrade, maxGradeAt, platformSpread, minClearance, minClearanceAt, cutOffset: profile.cutOffset };
+      },
       stations: stations.map((s) => s.id),
       stationS,
       crossovers: CROSSOVERS,
@@ -120,6 +171,7 @@ export function Debug() {
     if (!h) return;
     h.frames++;
     h.calls = gl.info.render.calls;
+    h.triangles = gl.info.render.triangles;
     gl.info.reset();
   }, -1000);
 
