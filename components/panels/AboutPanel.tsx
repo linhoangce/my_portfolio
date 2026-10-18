@@ -1,25 +1,25 @@
 import { about } from "@/data";
-import { type HeadingTag, PanelShell } from "./PanelShell";
+import { type HeadingTag, kickerFor, PanelShell } from "./PanelShell";
 
-export function AboutPanel({ as = "h2" }: { as?: HeadingTag }) {
+export function AboutPanel({ code, as = "h2" }: { code?: string; as?: HeadingTag }) {
   return (
-    <PanelShell id="about" title="About" eyebrow="Linh Hoang" as={as}>
-      <p className="max-w-measure text-pretty">{about.bio}</p>
-      <dl className="grid gap-4 sm:grid-cols-2">
+    <PanelShell id="about" title={about.title} kicker={kickerFor(code, "About")} as={as}>
+      <p className="lead">{about.bio}</p>
+      <div className="skills">
         {about.skillGroups.map((group) => (
-          <div key={group.name} className="rounded-xl border border-border/15 bg-surface/50 p-3.5">
-            <dt className="eyebrow mb-2">{group.name}</dt>
-            <dd className="flex flex-wrap gap-1.5">
+          <div key={group.name}>
+            <span className="kicker">{group.name}</span>
+            <ul className="tags" aria-label={group.name}>
               {group.items.map((item) => (
-                <span key={item} className="chip">
+                <li key={item} className="chip">
                   {item}
-                </span>
+                </li>
               ))}
-            </dd>
+            </ul>
           </div>
         ))}
-      </dl>
-      <p className="text-sm text-cyan">{about.now}</p>
+      </div>
+      <p className="meta">{about.now}</p>
     </PanelShell>
   );
 }

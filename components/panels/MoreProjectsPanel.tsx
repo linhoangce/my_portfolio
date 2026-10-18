@@ -1,40 +1,34 @@
-import { ExternalLink } from "lucide-react";
+import { ArrowUpRight } from "lucide-react";
 
 import { moreProjects } from "@/data";
-import { type HeadingTag, PanelShell } from "./PanelShell";
+import { type HeadingTag, kickerFor, PanelShell } from "./PanelShell";
 
-export function MoreProjectsPanel({ as = "h2" }: { as?: HeadingTag }) {
+/** One-column list: title, one-line description, external-link arrow. */
+export function MoreProjectsPanel({ code, as = "h2" }: { code?: string; as?: HeadingTag }) {
   return (
-    <PanelShell id="more-projects" title="More projects" eyebrow="The shelf" as={as}>
-      <ul className="grid gap-2 sm:grid-cols-2">
-        {moreProjects.map((item) => {
-          const body = (
-            <>
-              <span className="flex items-center gap-1.5 font-medium text-fg">
-                {item.title}
-                {item.href ? <ExternalLink className="h-3.5 w-3.5 opacity-60" aria-hidden="true" /> : null}
-              </span>
-              <span className="text-sm text-muted">{item.copy}</span>
-            </>
-          );
-          return (
-            <li key={item.title}>
-              {item.href ? (
-                <a
-                  href={item.href}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  className="flex h-full flex-col gap-1 rounded-xl border border-border/15 bg-surface/50 p-3.5 transition-colors hover:border-cyan/50"
-                >
-                  {body}
-                </a>
-              ) : (
-                <div className="flex h-full flex-col gap-1 rounded-xl border border-border/10 bg-surface/30 p-3.5">{body}</div>
-              )}
-            </li>
-          );
-        })}
-      </ul>
+    <PanelShell id="more-projects" title="Also built" kicker={kickerFor(code, "More projects")} as={as}>
+      <p className="lead">Hackathon weekends, tools I use myself and experiments that taught me something.</p>
+      <div className="more">
+        {moreProjects.map((item) =>
+          item.href ? (
+            <a key={item.title} href={item.href} target="_blank" rel="noreferrer noopener">
+              <div>
+                <b>{item.title}</b>
+                <small>{item.copy}</small>
+              </div>
+              <ArrowUpRight className="h-3 w-3" aria-hidden="true" />
+            </a>
+          ) : (
+            <div key={item.title}>
+              <div>
+                <b>{item.title}</b>
+                <small>{item.copy}</small>
+              </div>
+              <span />
+            </div>
+          ),
+        )}
+      </div>
     </PanelShell>
   );
 }

@@ -161,6 +161,9 @@
   .panel p {
     @apply mt-2.5 text-fg3;
   }
+  .panel p.kicker {
+    @apply mb-1.5 mt-0 text-muted;
+  }
   .panel .meta {
     @apply mt-3 font-mono text-xs uppercase leading-[1.7] tracking-[0.06em] text-muted;
   }
