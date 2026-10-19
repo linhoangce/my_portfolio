@@ -58,7 +58,7 @@ export function Life() {
         [-1.2, 0.6],
       ].map(([x, y]) => new Vector2(x, y)),
     );
-    const body = new ExtrudeGeometry(prof, { depth: 1.1, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.05, bevelSegments: 2, curveSegments: 4 });
+    const body = new ExtrudeGeometry(prof, { depth: 1.1, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.05, bevelSegments: 1, curveSegments: 1 });
     body.translate(0, 0, -0.55);
     const glass = new BoxGeometry(0.95, 0.3, 1.16);
     glass.translate(-0.05, 0.74, 0);

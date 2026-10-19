@@ -3,7 +3,7 @@ import { CanvasTexture, RepeatWrapping, SRGBColorSpace, type Texture } from "thr
 
 import type { Station } from "@/data";
 
-import type { Facade, Rng } from "./cityModel";
+import type { Rng } from "./cityModel";
 
 const canvas = (w: number, h: number): [HTMLCanvasElement, CanvasRenderingContext2D] => {
   const c = document.createElement("canvas");
@@ -62,101 +62,6 @@ export function groundTexture(night: boolean, rng: Rng): CanvasTexture {
   const t = texture(c, true, 8);
   t.repeat.set(65, 55);
   return t;
-}
-
-export type FacadeTextures = { map: CanvasTexture; emissiveMap: CanvasTexture };
-
-/**
- * Four facade families, the way the city reads: curtain-wall glass, white concrete with balcony slabs, brick with
- * punched windows, plain concrete. One 512 px tile = 4 floors × 2 bays; the emissive map lights a share of windows at night.
- */
-export function facadeSet(kind: Facade, rng: Rng): FacadeTextures {
-  const size = 512;
-  const tiles = 4;
-  const tw = size / tiles;
-  const [c, g] = canvas(size, size);
-  const [e, h] = canvas(size, size);
-  const warm = () => rng.pick(["#ffd9a0", "#ffe9c4", "#dbe7ff", "#fff3d6"]);
-  h.fillStyle = "#000000";
-  h.fillRect(0, 0, size, size);
-  if (kind === "glass") {
-    g.fillStyle = "#8db3cf";
-    g.fillRect(0, 0, size, size);
-    for (let ty = 0; ty < tiles; ty++) {
-      g.fillStyle = "#5f7f97";
-      g.fillRect(0, ty * tw, size, 7);
-      for (let x = 0; x < size; x += 32) {
-        g.fillStyle = "#4e6a81";
-        g.fillRect(x, ty * tw, 2, tw);
-      }
-      if (rng.next() < 0.3) {
-        h.fillStyle = warm();
-        h.fillRect(0, ty * tw + 9, size, tw - 12);
-      }
-    }
-  } else if (kind === "balcony") {
-    g.fillStyle = "#ebe7df";
-    g.fillRect(0, 0, size, size);
-    for (let ty = 0; ty < tiles; ty++) {
-      for (let tx = 0; tx < tiles; tx++) {
-        const x = tx * tw;
-        const y = ty * tw;
-        g.fillStyle = "#2b3a4a";
-        g.fillRect(x + 6, y + 14, tw - 12, 56);
-        g.fillStyle = "#9aa3ad";
-        g.fillRect(x + 6, y + 40, tw - 12, 2);
-        g.fillStyle = "#f6f3ec";
-        g.fillRect(x, y + 70, tw, 14);
-        g.fillStyle = "#cfcac0";
-        g.fillRect(x, y + 84, tw, 6);
-        if (rng.next() < 0.38) {
-          h.fillStyle = warm();
-          h.fillRect(x + 8, y + 16, tw - 16, 52);
-        }
-      }
-    }
-  } else if (kind === "brick") {
-    g.fillStyle = "#9c5c47";
-    g.fillRect(0, 0, size, size);
-    for (let y = 0; y < size; y += 8) {
-      g.fillStyle = y % 16 ? "#a86652" : "#8f5140";
-      g.fillRect(0, y, size, 4);
-    }
-    for (let ty = 0; ty < tiles; ty++) {
-      for (let tx = 0; tx < tiles; tx++) {
-        for (const bx of [18, 74]) {
-          const x = tx * tw + bx;
-          const y = ty * tw + 30;
-          g.fillStyle = "#2a2f36";
-          g.fillRect(x, y, 36, 70);
-          g.fillStyle = "#d8cbb8";
-          g.fillRect(x - 3, y + 70, 42, 5);
-          if (rng.next() < 0.3) {
-            h.fillStyle = warm();
-            h.fillRect(x + 2, y + 2, 32, 66);
-          }
-        }
-      }
-    }
-  } else {
-    g.fillStyle = "#d4cdbf";
-    g.fillRect(0, 0, size, size);
-    for (let ty = 0; ty < tiles; ty++) {
-      for (let tx = 0; tx < tiles; tx++) {
-        for (const bx of [14, 72]) {
-          const x = tx * tw + bx;
-          const y = ty * tw + 26;
-          g.fillStyle = "#30363f";
-          g.fillRect(x, y, 42, 72);
-          if (rng.next() < 0.35) {
-            h.fillStyle = warm();
-            h.fillRect(x + 2, y + 2, 38, 68);
-          }
-        }
-      }
-    }
-  }
-  return { map: texture(c, true), emissiveMap: texture(e, true) };
 }
 
 /** A painted person (coat, trousers, hair, a bag or an umbrella) from a seed; six variants are built. */

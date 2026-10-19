@@ -16,12 +16,16 @@ type FarModule = typeof import("./terrainFar");
  * Burnaby Mountain, the suburbs and the strait, coloured by height and slope with a summer and a winter snowline.
  * The city rectangle is lowered under the city mesh. Mount Baker stays a stylised cone on the south-east horizon.
  */
-function buildFar(mod: FarModule): { geometry: BufferGeometry; summer: BufferAttribute; winter: BufferAttribute } {
-  const g = mod.DEM_FAR;
+function buildFar(mod: FarModule, stride: number): { geometry: BufferGeometry; summer: BufferAttribute; winter: BufferAttribute } {
+  const g0 = mod.DEM_FAR;
+  // the low-end budget takes every other far sample
+  const g = { ...g0, step: g0.step * stride, nx: Math.floor((g0.nx - 1) / stride) + 1, nz: Math.floor((g0.nz - 1) / stride) + 1 };
   const bin = atob(mod.DEM_FAR_DATA);
   const u8 = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
-  const raw = new Uint16Array(u8.buffer);
+  const raw0 = new Uint16Array(u8.buffer);
+  const raw = new Uint16Array(g.nx * g.nz);
+  for (let j = 0; j < g.nz; j++) for (let i = 0; i < g.nx; i++) raw[j * g.nx + i] = raw0[j * stride * g0.nx + i * stride];
   const n = g.nx * g.nz;
   const pos = new Float32Array(n * 3);
   const metres = new Float32Array(n);
@@ -108,12 +112,12 @@ export function Mountains() {
   useEffect(() => {
     let alive = true;
     import("./terrainFar").then((mod) => {
-      if (alive) setFar(buildFar(mod));
+      if (alive) setFar(buildFar(mod, world.lowEnd ? 2 : 1));
     });
     return () => {
       alive = false;
     };
-  }, []);
+  }, [world.lowEnd]);
 
   const farMesh = useMemo(() => (far ? new Mesh(far.geometry, world.mats.mountain) : null), [far, world]);
 

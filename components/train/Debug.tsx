@@ -2,6 +2,7 @@
 
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect } from "react";
+import type { InstancedMesh, Mesh } from "three";
 
 import { stations } from "@/data";
 
@@ -21,6 +22,8 @@ export type TrainDebug = {
   view: (pos: [number, number, number], look: [number, number, number]) => void;
   unview: () => void;
   ground: (x: number, z: number) => number;
+  /** Triangles per object (instanced meshes multiplied by their count), largest first. */
+  budget: () => [string, number][];
   profile: () => { s: number[]; y: number[]; cut: number[]; ground: number[]; lower: number[] };
   /** Terrain and deck checks: max grade, platform flatness, clearance, cut offset. */
   terrain: () => { maxGrade: number; maxGradeAt: number; platformSpread: number[]; minClearance: number; minClearanceAt: number; cutOffset: number };
@@ -72,6 +75,19 @@ export function Debug() {
         st().sim.freeCam = null;
       },
       ground: (x, z) => groundAt(x, z),
+      budget: () => {
+        const out: [string, number][] = [];
+        world.scene.traverse((o) => {
+          const m = o as Mesh;
+          if (!m.isMesh || !m.geometry) return;
+          const g = m.geometry;
+          const tris = (g.index ? g.index.count : g.attributes.position.count) / 3;
+          const n = (m as InstancedMesh).isInstancedMesh ? (m as InstancedMesh).count : 1;
+          const mat = Array.isArray(m.material) ? m.material[0] : m.material;
+          out.push([`${(m as InstancedMesh).isInstancedMesh ? "inst " : ""}${mat.type}${mat.name ? " " + mat.name : ""} ${tris.toFixed(0)}x${n}`, Math.round(tris * n)]);
+        });
+        return out.sort((a, b) => b[1] - a[1]).slice(0, 25);
+      },
       profile: () => ({ s: profile.s, y: profile.y, cut: profile.cut, ground: profile.ground, lower: profile.lower }),
       terrain: () => {
         let maxGrade = 0;
@@ -123,7 +139,7 @@ export function Debug() {
         return {
           samples: samples.map((f) => [f.p.x, f.p.y, f.p.z, f.t.x, f.t.z, f.r.x, f.r.z]),
           lots: city.lots,
-          houses: city.houses.map((h) => ({ x: h.x, z: h.z, w: h.w, d: h.d })),
+          houses: city.houses.map((h) => ({ x: h.x, z: h.z, w: 7 * h.sx, d: 9 * h.sz })),
           blockers: BLOCKERS,
           stationXZ: STATION_XZ,
           stationPts: stationS.map((s) => {
@@ -154,6 +170,9 @@ export function Debug() {
           phone: s.env.phone,
           warp: s.sim.warp,
           quality: s.quality,
+          cityMs: getCityData(s.env.lowEnd).ms,
+          lots: getCityData(s.env.lowEnd).lots.length,
+          houses: getCityData(s.env.lowEnd).houses.length,
         };
       },
     };

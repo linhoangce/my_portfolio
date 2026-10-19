@@ -84,7 +84,7 @@ export function Guideway() {
     for (const lane of [-LANE, LANE]) {
       for (const side of [-1, 1]) {
         const pts = samples.map((f) => f.p.clone().addScaledVector(f.r, lane + side * 0.72).addScaledVector(UP, 0.98));
-        tubes.push(new TubeGeometry(new CatmullRomCurve3(pts, false, "catmullrom", 0), SAMPLES, 0.07, 5, false));
+        tubes.push(new TubeGeometry(new CatmullRomCurve3(pts, false, "catmullrom", 0), lowEnd ? SAMPLES / 4 : SAMPLES / 2, 0.07, 4, false));
       }
     }
     const f = makeFrame();

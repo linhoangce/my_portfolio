@@ -1,72 +1,98 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
-import { BoxGeometry, Color, ConeGeometry, InstancedMesh, Matrix4, Quaternion, Vector3 } from "three";
+import { InstancedBufferAttribute, InstancedMesh, Matrix4, Mesh, Quaternion, Vector3 } from "three";
 
-import { FACADES } from "./cityModel";
 import { getCityData } from "./cityData";
-import { groundAt, UP } from "./track";
+import { HOUSE_KINDS, houseTemplate } from "./buildings/houses";
+import { UP } from "./track";
 import { useWorld } from "./world";
 
-/** Four merged facade meshes (one draw call per family) and the east-side houses as two instanced meshes. */
+/**
+ * The 2100 city: two merged meshes per 256-unit chunk (solid and glass façades from one texture array), the crown
+ * lights, glass domes and neon as three shared meshes, and the houses as four instanced templates.
+ */
 export function City() {
   const world = useWorld();
-  const { lowEnd, mats } = world;
+  const { lowEnd, buildings: B } = world;
   const data = useMemo(() => getCityData(lowEnd), [lowEnd]);
 
-  const houses = useMemo(() => {
-    const list = data.houses;
-    const n = list.length;
-    const body = new InstancedMesh(new BoxGeometry(1, 1, 1), mats.houseBody, Math.max(1, n));
-    const roofG = new ConeGeometry(0.72, 1, 4);
-    roofG.rotateY(Math.PI / 4);
-    roofG.translate(0, 0.5, 0);
-    const roof = new InstancedMesh(roofG, mats.houseRoof, Math.max(1, n));
-    const m4 = new Matrix4();
-    const q = new Quaternion();
-    const sc = new Vector3();
-    const p = new Vector3();
-    const c = new Color();
-    list.forEach((h, i) => {
-      const gy = groundAt(h.x, h.z);
-      q.setFromAxisAngle(UP, h.rot);
-      p.set(h.x, gy + h.h / 2, h.z);
-      sc.set(h.w, h.h, h.d);
-      m4.compose(p, q, sc);
-      body.setMatrixAt(i, m4);
-      body.setColorAt(i, c.setHex(h.body));
-      p.set(h.x, gy + h.h, h.z);
-      // roof pitch varies per house: a hash of its position stands in for the prototype's random draw
-      const pitch = 1.6 + ((Math.abs(Math.sin(h.x * 12.9898 + h.z * 78.233)) * 43758.5453) % 1) * 0.6;
-      sc.set(h.w * 1.15, pitch, h.d * 1.15);
-      m4.compose(p, q, sc);
-      roof.setMatrixAt(i, m4);
-      roof.setColorAt(i, c.setHex(h.roof));
-    });
-    body.count = roof.count = n;
-    body.castShadow = roof.castShadow = !lowEnd;
-    body.receiveShadow = true;
-    return { body, roof };
-  }, [data, mats, lowEnd]);
+  const meshes = useMemo(() => {
+    const list: Mesh[] = [];
+    for (const c of data.chunks) {
+      for (const [geo, mat] of [
+        [c.solid, B.solid],
+        [c.glass, B.glass],
+      ] as const) {
+        if (!geo.attributes.position.count) continue;
+        const m = new Mesh(geo, mat);
+        m.castShadow = !lowEnd;
+        m.receiveShadow = true;
+        list.push(m);
+      }
+    }
+    for (const [geo, mat] of [
+      [data.crownA, B.crownA],
+      [data.crownB, B.crownB],
+      [data.neon, B.neon],
+      [data.dome, B.dome],
+    ] as const) {
+      if (!geo.attributes.position.count) continue;
+      const m = new Mesh(geo, mat);
+      if (mat === B.dome) m.renderOrder = 2;
+      list.push(m);
+    }
+    return list;
+  }, [data, B, lowEnd]);
+
+  const houses = useMemo(
+    () =>
+      HOUSE_KINDS.map((kind) => {
+        const list = data.houses.filter((h) => h.kind === kind);
+        const geo = houseTemplate(kind);
+        const n = Math.max(1, list.length);
+        const wall = new Float32Array(n * 3);
+        const roof = new Float32Array(n * 3);
+        const m = new InstancedMesh(geo, B.house, n);
+        const m4 = new Matrix4();
+        const q = new Quaternion();
+        const p = new Vector3();
+        const s = new Vector3();
+        list.forEach((h, i) => {
+          q.setFromAxisAngle(UP, h.ry);
+          m4.compose(p.set(h.x, h.y, h.z), q, s.set(h.sx, 1, h.sz));
+          m.setMatrixAt(i, m4);
+          wall.set(h.wall, i * 3);
+          roof.set(h.roof, i * 3);
+        });
+        geo.setAttribute("aTint", new InstancedBufferAttribute(wall, 3));
+        geo.setAttribute("aTint2", new InstancedBufferAttribute(roof, 3));
+        m.count = list.length;
+        m.castShadow = !lowEnd && kind !== "simple";
+        m.receiveShadow = true;
+        return m;
+      }),
+    [data, B, lowEnd],
+  );
 
   useEffect(
     () => () => {
-      houses.body.geometry.dispose();
-      houses.roof.geometry.dispose();
-      houses.body.dispose();
-      houses.roof.dispose();
+      for (const h of houses) {
+        h.geometry.dispose();
+        h.dispose();
+      }
     },
     [houses],
   );
 
   return (
     <>
-      {FACADES.map((k) => {
-        const g = data.geos[k];
-        return g ? <mesh key={k} geometry={g} material={mats.city[k]} castShadow={!lowEnd} receiveShadow /> : null;
-      })}
-      <primitive object={houses.body} />
-      <primitive object={houses.roof} />
+      {meshes.map((m) => (
+        <primitive key={m.uuid} object={m} />
+      ))}
+      {houses.map((h) => (
+        <primitive key={h.uuid} object={h} />
+      ))}
     </>
   );
 }

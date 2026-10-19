@@ -13,8 +13,12 @@ import { useWorld } from "./world";
  * (each cell split along b–c), with a hillshade in the vertex colours so slopes read, sand at the shore and an
  * 8-unit skirt that hides the seam against the far terrain. UVs keep the street tile's original anchor.
  */
-function buildGround(): BufferGeometry {
-  const { grid: g, hf } = terrainRaster();
+function buildGround(stride: number): BufferGeometry {
+  const { grid: g0, hf: hf0 } = terrainRaster();
+  // the low-end budget draws every other raster vertex (a quarter of the triangles)
+  const g = { ...g0, step: g0.step * stride, nx: Math.floor((g0.nx - 1) / stride) + 1, nz: Math.floor((g0.nz - 1) / stride) + 1 };
+  const hf = new Float32Array(g.nx * g.nz);
+  for (let j = 0; j < g.nz; j++) for (let i = 0; i < g.nx; i++) hf[j * g.nx + i] = hf0[j * stride * g0.nx + i * stride];
   const n = g.nx * g.nz;
   const ring = 2 * (g.nx + g.nz) - 4;
   const pos = new Float32Array((n + ring) * 3);
@@ -145,8 +149,8 @@ function forestFloor(): BufferGeometry {
 }
 
 export function Ground() {
-  const { mats } = useWorld();
-  const geo = useMemo(() => buildGround(), []);
+  const { mats, lowEnd } = useWorld();
+  const geo = useMemo(() => buildGround(lowEnd ? 2 : 1), [lowEnd]);
   const lawns = useMemo(() => PARKS.map((p) => lawn(p.x, p.z, p.r)), []);
   const forest = useMemo(() => forestFloor(), []);
   useEffect(

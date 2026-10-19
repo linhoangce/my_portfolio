@@ -13,7 +13,7 @@ import { useWorld } from "./world";
 /** Three planes crossed at 60°, base at the origin, normals bent outward and up so a crown shades like a volume. */
 function crossGeo(): BufferGeometry {
   const parts = [0, 1, 2].map((k) => {
-    const p = new PlaneGeometry(1, 1, 1, 2);
+    const p = new PlaneGeometry(1, 1, 1, 1);
     p.translate(0, 0.5, 0);
     p.rotateY((k * Math.PI) / 3);
     return p;

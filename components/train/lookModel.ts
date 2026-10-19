@@ -260,10 +260,14 @@ export function tickLook(world: World, dt: number, instant: boolean, dockedIdx: 
   lights.sun.intensity = c.sunI;
   world.gl.toneMappingExposure = c.exposure;
   if (refs.bloom) refs.bloom.strength = c.bloom;
-  for (const m of Object.values(mats.city)) {
+  const bm = world.buildings;
+  for (const m of [bm.solid, bm.glass, bm.house]) {
     m.color.copy(c.facade);
     m.emissiveIntensity = c.windows;
   }
+  bm.neon.emissiveIntensity = 0.4 + c.windows * 1.6;
+  bm.dome.emissiveIntensity = c.windows * 0.35;
+  bm.crownA.emissiveIntensity = bm.crownB.emissiveIntensity = 0.3 + c.windows * 1.8;
   mats.ground.color.copy(c.groundCol);
   mats.ground.roughness = c.groundRough;
   mats.ground.envMapIntensity = c.groundEnv;
@@ -274,8 +278,6 @@ export function tickLook(world: World, dt: number, instant: boolean, dockedIdx: 
   mats.landmark.color.copy(c.concrete);
   mats.dome.color.copy(c.sails);
   mats.sail.color.copy(c.sails);
-  mats.houseBody.color.copy(c.houseBody);
-  mats.houseRoof.color.copy(c.houseRoof);
   mats.park.color.copy(c.park);
   mats.forestFloor.color.copy(c.forestFloor);
   tickTrees(world.trees, dt, instant, c.treeTone);

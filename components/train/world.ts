@@ -32,10 +32,11 @@ import {
 } from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 
-import { type Facade, FACADES, Rng } from "./cityModel";
+import { createBuildingMaterials, paintFacadeArrays, type BuildingMaterials } from "./buildings/facadeArray";
+import { Rng } from "./cityModel";
 import type { Season } from "./lookTypes";
 import type { LookTargets } from "./lookModel";
-import { facadeSet, groundTexture, personTexture, windowTextures } from "./textures";
+import { groundTexture, personTexture, windowTextures } from "./textures";
 import { paintTreeAtlas } from "./trees/atlas";
 import { createTreeShading, type TreeShading } from "./trees/treeMaterial";
 import { PEOPLE_VARIANTS } from "./constants";
@@ -55,9 +56,6 @@ export type World = {
     rail: MeshStandardMaterial;
     ground: MeshStandardMaterial;
     water: MeshStandardMaterial;
-    city: Record<Facade, MeshStandardMaterial>;
-    houseBody: MeshStandardMaterial;
-    houseRoof: MeshStandardMaterial;
     park: MeshStandardMaterial;
     forestFloor: MeshStandardMaterial;
     landmark: MeshStandardMaterial;
@@ -103,6 +101,7 @@ export type World = {
   };
   look: { cur: LookTargets | null; tgt: LookTargets | null; lastSeason: Season | null };
   trees: TreeShading;
+  buildings: BuildingMaterials;
   sunDir: Vector3;
 };
 
@@ -123,23 +122,6 @@ export function createWorld(gl: WebGLRenderer, scene: Scene, lowEnd: boolean): W
   scene.fog = new FogExp2(0x000000, 0.003);
 
   const groundTex = { day: groundTexture(false, rng), night: groundTexture(true, rng) };
-  const facades = Object.fromEntries(FACADES.map((k) => [k, facadeSet(k, rng)])) as Record<Facade, ReturnType<typeof facadeSet>>;
-  const city = Object.fromEntries(
-    FACADES.map((k) => [
-      k,
-      new MeshStandardMaterial({
-        map: facades[k].map,
-        emissiveMap: facades[k].emissiveMap,
-        emissive: 0xffffff,
-        emissiveIntensity: 1,
-        vertexColors: true,
-        roughness: k === "glass" ? 0.35 : 0.85,
-        metalness: k === "glass" ? 0.25 : 0,
-        envMap: k === "glass" ? envTex : null,
-        envMapIntensity: 0.35,
-      }),
-    ]),
-  ) as Record<Facade, MeshStandardMaterial>;
   const winTex = windowTextures(5.2);
 
   const ground = new MeshStandardMaterial({ map: groundTex.night, roughness: 1, vertexColors: true });
@@ -153,9 +135,6 @@ export function createWorld(gl: WebGLRenderer, scene: Scene, lowEnd: boolean): W
     rail: new MeshStandardMaterial({ color: 0x7a6250, metalness: 0.6, roughness: 0.55, envMap: envTex, envMapIntensity: 0.25 }),
     ground,
     water: new MeshStandardMaterial({ color: 0xffffff, metalness: 0.25, roughness: 0.22, envMap: envTex, envMapIntensity: 0.45 }),
-    city,
-    houseBody: new MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }),
-    houseRoof: new MeshStandardMaterial({ color: 0xffffff, roughness: 0.95 }),
     park: new MeshStandardMaterial({ color: 0x5f8f4a, roughness: 1 }),
     forestFloor: new MeshStandardMaterial({ color: 0x46613d, roughness: 1 }),
     landmark: new MeshStandardMaterial({ color: 0xffffff, roughness: 0.6 }),
@@ -271,6 +250,7 @@ export function createWorld(gl: WebGLRenderer, scene: Scene, lowEnd: boolean): W
     precip: { rain, rainPos, rainVel, RAIN_N, snow, snowPos, SNOW_N },
     refs: { mountain: null, mountainCols: null, wheels: [], bloom: null },
     trees: createTreeShading(paintTreeAtlas(), lowEnd),
+    buildings: createBuildingMaterials(paintFacadeArrays(lowEnd), envTex),
     look: { cur: null, tgt: null, lastSeason: null },
     sunDir: new Vector3(0, 1, 0),
   };
