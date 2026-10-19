@@ -42,31 +42,39 @@ export function solveProfile(pts: [number, number][], stationIdx: number[], cutF
     const rz = tx / L;
     return Math.max(demAt(x, z), demAt(x + rx * 8, z + rz * 8), demAt(x - rx * 8, z - rz * 8));
   });
+  // in the cut the trench floor replaces the ground beside the track, so only the centreline counts there
+  const gc = pts.map(([x, z]) => demAt(x, z));
   const cut = s.map((si) => (cutTo > cutFrom ? sstep(cutFrom, cutFrom + CUT.rampIn, si) * (1 - sstep(cutTo - CUT.rampOut, cutTo, si)) : 0));
   const ramp = s.map((si) => cutTo > cutFrom && si > cutFrom - 10 && si < cutTo + 10);
 
   // low-passed ground (σ ≈ 60 units) plus the deck height, and the clearance floor
   const sig = 60 / step;
   const span = Math.ceil(sig * 3);
-  const lp = g.map((_, i) => {
-    let acc = 0;
-    let w = 0;
-    for (let k = -span; k <= span; k++) {
-      const j = Math.min(n - 1, Math.max(0, i + k));
-      const ww = Math.exp(-(k * k) / (2 * sig * sig));
-      acc += g[j] * ww;
-      w += ww;
-    }
-    return acc / w;
-  });
-  const env = g.map((_, i) => {
-    let m = -1e9;
-    const r = Math.ceil(10 / step);
-    for (let k = -r; k <= r; k++) m = Math.max(m, g[Math.min(n - 1, Math.max(0, i + k))]);
-    return m;
-  });
-  const lower = env.map((e, i) => e + CLEAR_DECK + (1.5 - CLEAR_DECK) * cut[i]);
-  let y = lp.map((v, i) => Math.max(v + DECK + (CUT.offset - DECK) * cut[i], lower[i]));
+  const lowPass = (src: number[]) =>
+    src.map((_, i) => {
+      let acc = 0;
+      let w = 0;
+      for (let k = -span; k <= span; k++) {
+        const j = Math.min(n - 1, Math.max(0, i + k));
+        const ww = Math.exp(-(k * k) / (2 * sig * sig));
+        acc += src[j] * ww;
+        w += ww;
+      }
+      return acc / w;
+    });
+  const envelope = (src: number[]) =>
+    src.map((_, i) => {
+      let m = -1e9;
+      const r = Math.ceil(10 / step);
+      for (let k = -r; k <= r; k++) m = Math.max(m, src[Math.min(n - 1, Math.max(0, i + k))]);
+      return m;
+    });
+  const lp = lowPass(g);
+  const lpc = lowPass(gc);
+  const env = envelope(g);
+  const envc = envelope(gc);
+  const lower = env.map((e, i) => (e + CLEAR_DECK) * (1 - cut[i]) + (envc[i] + 1.5) * cut[i]);
+  let y = lp.map((v, i) => Math.max((v + DECK) * (1 - cut[i]) + (lpc[i] + CUT.offset) * cut[i], lower[i]));
 
   const limit = () => {
     for (let i = 1; i < n; i++) y[i] = Math.max(y[i], y[i - 1] - (ramp[i] ? GRADE_CAP_RAMP : GRADE_CAP) * (s[i] - s[i - 1]));
@@ -98,9 +106,24 @@ export function solveProfile(pts: [number, number][], stationIdx: number[], cutF
     for (let sweep = 0; sweep < 800; sweep++) {
       let moved = 0;
       for (let i = 1; i < n - 1; i++) {
-        if (fixed[i]) continue;
         const ds = 0.5 * (s[i + 1] - s[i - 1]);
         const tol = 0.5 * 0.002 * ds * ds;
+        if (fixed[i]) {
+          // at a platform end the level run cannot move: bend the free neighbour instead, so the vertical curve
+          // starts outside the platform rather than leaving a kink at its end
+          for (const [j, k] of [
+            [i - 1, i + 1],
+            [i + 1, i - 1],
+          ]) {
+            if (fixed[j] || !fixed[k]) continue;
+            const lo = Math.max(lower[j], 2 * y[i] - y[k] - 2 * tol);
+            const hi = 2 * y[i] - y[k] + 2 * tol;
+            const v = Math.min(Math.max(y[j], lo), Math.max(hi, lo));
+            moved = Math.max(moved, Math.abs(v - y[j]));
+            y[j] = v;
+          }
+          continue;
+        }
         const avg = 0.5 * (y[i - 1] + y[i + 1]);
         let v = y[i];
         if (v < avg - tol) v = avg - tol;
@@ -113,12 +136,13 @@ export function solveProfile(pts: [number, number][], stationIdx: number[], cutF
     }
   };
   // level platforms, the grade cap and the vertical curves all hold once this settles
-  for (let k = 0; k < 4; k++) {
+  for (let k = 0; k < 16; k++) {
     flatten();
     limit();
     round();
   }
   flatten();
+  limit();
 
   let off = 0;
   let cnt = 0;

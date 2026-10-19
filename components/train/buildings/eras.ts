@@ -6,6 +6,7 @@
  */
 import { inPark } from "../sites";
 import { sdfAt } from "../terrain";
+import { cutNear } from "../track";
 
 export type Hood =
   | "forest"
@@ -39,8 +40,8 @@ export function hood(x: number, z: number): Hood {
   if (x < -120 && z < 140) return "westend";
   if (x > -140 && x < 30 && z >= 92 && z < 150) return "yaletown";
   if (x > -90 && x < 90 && z > 190 && z < 250) return "olympic";
+  if (cutNear(x, z) > 0.3) return "cut";
   if (x > 95 && x < 250 && z >= 112 && z < 225) return "flats";
-  if (x > 160 && x < 345 && z > 160 && z < 300) return "cut";
   if (x > 15 && x < 250 && z >= 225 && z < 340) return "mountpleasant";
   if (Math.hypot(x - 344, z - 298) < 70) return "commercial";
   if (Math.hypot(x - 643, z - 585) < 60) return "joyce";

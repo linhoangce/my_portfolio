@@ -33,11 +33,11 @@ export const STATION_XZ: [number, number][] = stations.map((st) => [st.km[0] * K
 const nearestPoint = ([sx, sz]: [number, number]) => TRACK.reduce((b, [x, z], i) => ((x - sx) ** 2 + (z - sz) ** 2 < (TRACK[b][0] - sx) ** 2 + (TRACK[b][1] - sz) ** 2 ? i : b), 0);
 const stationIdx = STATION_XZ.map(nearestPoint);
 
-// deck heights over the real terrain, with the Grandview Cut between Main Street and Commercial–Broadway
+// deck heights over the real terrain, with the Grandview Cut from Clark Drive to past 29th Avenue
 const iMain = stationIdx[stations.findIndex((s) => s.id === "mainstreet")];
-const iComm = stationIdx[stations.findIndex((s) => s.id === "commercial")];
+const i29 = stationIdx[stations.findIndex((s) => s.id === "29th")];
 const sAt = (i: number) => { let s = 0; for (let k = 1; k <= i; k++) s += Math.hypot(TRACK[k][0] - TRACK[k - 1][0], TRACK[k][1] - TRACK[k - 1][1]); return s; };
-export const profile = solveProfile(TRACK, stationIdx, sAt(iMain) + CUT.afterMain, sAt(iComm) + CUT.afterCommercial);
+export const profile = solveProfile(TRACK, stationIdx, sAt(iMain) + CUT.afterMain, sAt(i29) + CUT.after29th);
 
 export const controlPoints: Vector3[] = TRACK.map(([x, z], i) => new Vector3(x, profile.y[i], z));
 export const curve = new CatmullRomCurve3(controlPoints, false, "centripetal", 0.5);
@@ -271,7 +271,8 @@ export const smoothstep01 = (u: number): number => {
     addModifier(rectPad(f.p.x, f.p.z, tx, tz, 34, inCut ? 13 : 22, inCut ? 6 : 26, f.p.y - (inCut ? 2.4 : DECK)));
   }
 }
-// the Grandview Cut: a floor just under the girder within 14 units, wooded banks rising to floor + CUT.bank by 40, back to the DEM by 55
+// the Grandview Cut: dug, never built up: a floor just under the girder within 14 units, banks rising to floor + CUT.bank
+// by 40, back to the DEM by 55
 {
   const cutPts = samples
     .map((f, i) => ({ x: f.p.x, z: f.p.z, floor: f.p.y - 2.4, w: profileCutAt((i / SAMPLES) * LEN) }))
@@ -294,12 +295,39 @@ export const smoothstep01 = (u: number): number => {
       const lat = Math.sqrt(bd);
       if (lat > 55) return h;
       const t = Math.min(1, Math.max(0, (lat - 14) / 26));
-      const target = bp.floor + CUT.bank * t * t * (3 - 2 * t);
+      // only ever digs: where the deck runs above the ground the guideway simply stands on its piers
+      const target = Math.min(h, bp.floor + CUT.bank * t * t * (3 - 2 * t));
       const fade = Math.min(1, Math.max(0, (lat - 40) / 15));
       return lerp(h, target, bp.w * (1 - fade * fade * (3 - 2 * fade)));
     });
   }
 }
+/**
+ * How much of the Grandview Cut a ground point belongs to (0 outside, 1 on the trench floor and the banks out to 30
+ * units, fading by 45), from a 6-unit raster painted along the cut: the buildings and the trees use it.
+ */
+const CUT_CELL = 6;
+const cutCells = new Map<number, number>();
+{
+  for (let i = 0; i <= SAMPLES; i += 2) {
+    const s = (i / SAMPLES) * LEN;
+    const w = profileCutAt(s);
+    if (w < 0.02) continue;
+    const p = samples[i].p;
+    const ci = Math.round(p.x / CUT_CELL);
+    const cj = Math.round(p.z / CUT_CELL);
+    for (let di = -8; di <= 8; di++) {
+      for (let dj = -8; dj <= 8; dj++) {
+        const d = Math.hypot((ci + di) * CUT_CELL - p.x, (cj + dj) * CUT_CELL - p.z);
+        const v = w * (1 - smoothstep01((d - 30) / 15));
+        const k = (ci + di) * 100000 + (cj + dj);
+        if (v > (cutCells.get(k) ?? 0)) cutCells.set(k, v);
+      }
+    }
+  }
+}
+export const cutNear = (x: number, z: number): number => cutCells.get(Math.round(x / CUT_CELL) * 100000 + Math.round(z / CUT_CELL)) ?? 0;
+
 function profileCutAt(s: number): number {
   const ps = profile.s;
   const k = ps.findIndex((v) => v >= s);

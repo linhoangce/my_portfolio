@@ -18,10 +18,11 @@ export const PLATFORM_FLAT = 18;
 /** Minimum deck height above the ground beside the track. */
 export const CLEAR_DECK = 7.5;
 /**
- * The Grandview Cut from Main Street to just past Commercial–Broadway: the deck rides low between wooded banks, and
- * Commercial's platforms sit in the trench as the real Expo Line platforms do.
+ * The Grandview Cut, as on the real line: from about Clark Drive (past the False Creek Flats) to just beyond 29th
+ * Avenue the deck rides low in a trench between wooded banks, with Commercial–Broadway, Nanaimo and 29th Avenue's
+ * platforms down in it. `afterMain` and `after29th` are arc distances from those stations.
  */
-export const CUT = { afterMain: 30, afterCommercial: 60, rampIn: 80, rampOut: 105, offset: 2.5, bank: 9.5 } as const;
+export const CUT = { afterMain: 150, after29th: 115, rampIn: 80, rampOut: 105, offset: 2.5, bank: 9.5 } as const;
 /** Vertical scale of the far backdrop (the North Shore range would tower at TERRAIN_V); blended from TERRAIN_V at the city edge. */
 export const FAR_V = 0.26;
 /** Lateral offset of each track from the guideway centreline; ours is +LANE (right-hand running). */

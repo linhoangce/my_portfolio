@@ -7,7 +7,7 @@ import { stations } from "@/data";
 import { PEOPLE_VARIANTS } from "./constants";
 import { inLandmark, inPark } from "./sites";
 import { inWater } from "./terrain";
-import { frameAt, groundAt, LEN, makeFrame, stationS, trackDist } from "./track";
+import { cutNear, frameAt, groundAt, LEN, makeFrame, stationS, trackDist } from "./track";
 
 /* ------------------------------------------------------------------ random */
 /** Seeded so the same city is built on every visit (and in every screenshot). */
@@ -66,11 +66,11 @@ export function district(x: number, z: number): District {
   if (x > 8 && x < 100 && z > 12 && z < 100 && !(z > 62 && x < 32)) return "gastown";
   if (Math.hypot(x + 20, z - 40) < 100) return "downtown";
   if (x < -120 && z < 130) return "westend";
+  if (cutNear(x, z) > 0.3) return "cut";
   if (x > 95 && x < 240 && z > 95 && z < 215) return "flats";
   if (x > 15 && x < 200 && z > 185 && z < 300) return "mountpleasant";
   if (Math.hypot(x - 344, z - 298) < 70) return "commercial";
   if (Math.hypot(x - 643, z - 585) < 60) return "joyce";
-  if (x > 160 && x < 345 && z > 160 && z < 300) return "cut";
   return "residential";
 }
 

@@ -9,11 +9,13 @@ import {
   BoxGeometry,
   type BufferGeometry,
   CanvasTexture,
+  CatmullRomCurve3,
   Color,
   ConeGeometry,
   CylinderGeometry,
   DoubleSide,
   Float32BufferAttribute,
+  Euler,
   Group,
   IcosahedronGeometry,
   LatheGeometry,
@@ -33,6 +35,7 @@ import {
   SphereGeometry,
   SRGBColorSpace,
   TorusGeometry,
+  TubeGeometry,
   Vector2,
   Vector3,
 } from "three";
@@ -107,8 +110,12 @@ function terrace(c: Ctx, a0: number, a1: number, l0: number, l1: number): number
     [a1 - 3, l1 - 3],
     [(a0 + a1) / 2, l1 - 3],
   ], top - 0.5);
-  // a bridge from the platform's outer edge onto the terrace
-  if (l0 > 11.6) c.add(mats.plat, new BoxGeometry(l0 - 11.4, 0.3, 5), c.L(0, (l0 + 11.4) / 2, 1.3));
+  // a bridge from the platform's outer edge onto the terrace, sloping up where the terrace stands on a bank of the cut
+  if (l0 > 11.6) {
+    const run = l0 - 11.4;
+    const rise = top - 0.1 - 1.3;
+    c.add(mats.plat, new BoxGeometry(Math.hypot(run, rise), 0.3, 5), c.L(0, (l0 + 11.4) / 2, 1.3 + rise / 2), [0, 0, Math.atan2(rise, run)]);
+  }
   return top;
 }
 
@@ -163,7 +170,137 @@ function depart(c: Ctx): Partial<BuiltSet> {
     c.add(k === 0 ? glowMat(0xffffff, 2.4) : lineMat, new SphereGeometry(k === 0 ? 0.55 : 0.38, 14, 10), c.L(a, 22, top + 7));
   }
   anchors.push(new Vector3(...c.L(-15, 22, top + 7.8)), new Vector3(...c.L(15, 22, top + 7.8)));
-  return { anchors, focus: new Vector3(...c.L(0, 16, top + 4)), shot: { from: [-74, 92, 22], to: [-36, 70, 34], look: [0, 16, 6] } };
+  // from the city side, over the station and the plaza to the harbour, the loop over the water and the North Shore
+  return { anchors, focus: new Vector3(...c.L(0, 16, top + 4)), shot: { from: [-74, 92, 22], to: [0, -46, 17], look: [0, 16, 6] } };
+}
+
+/**
+ * A western red cedar, built rather than stacked: a flared, fluted trunk in fibrous red-brown bark, and branches that
+ * droop from the trunk and sweep up at their tips, hung with flat lacy sprays (one instanced card per spray). The
+ * crown is narrow and conical with a nodding leader. Everything is in the set's local frame, standing at (a, l) on
+ * `base`, `height` tall, with the crown starting at `crownFrom`.
+ */
+function cedar(c: Ctx, a: number, l: number, base: number, height: number, crownFrom: number): void {
+  const [cx, , cz] = c.L(a, l, 0);
+  const top = base + height;
+  // bark: vertical fibrous strips in reds and browns
+  const barkTex = canvasTex(
+    64,
+    256,
+    (g) => {
+      g.fillStyle = "#74402c";
+      g.fillRect(0, 0, 64, 256);
+      for (let k = 0; k < 46; k++) {
+        const x = (k * 37) % 64;
+        const w = 1 + ((k * 13) % 4);
+        g.fillStyle = ["#8d5238", "#5c301f", "#a2643f", "#6a3825"][k % 4];
+        g.beginPath();
+        g.moveTo(x, 0);
+        for (let y = 0; y <= 256; y += 16) g.lineTo(x + Math.sin(y * 0.05 + k) * 1.5, y);
+        g.lineTo(x + w, 256);
+        g.lineTo(x + w, 0);
+        g.fill();
+      }
+    },
+    true,
+  );
+  barkTex.repeat.set(3, 7);
+  const bark = new MeshStandardMaterial({ map: barkTex, roughness: 1 });
+  const prof: Vector2[] = [];
+  for (let k = 0; k <= 24; k++) {
+    const y = (k / 24) * height;
+    // a buttressed flare at the foot, a slow taper to the leader
+    const r = 0.32 + 0.95 * (1 - y / height) ** 1.2 + 1.7 * Math.exp(-y / 1.4);
+    prof.push(new Vector2(r, y));
+  }
+  const trunk = new LatheGeometry(prof, 18);
+  const tp = trunk.attributes.position;
+  for (let i = 0; i < tp.count; i++) {
+    const x = tp.getX(i);
+    const y = tp.getY(i);
+    const z = tp.getZ(i);
+    const th = Math.atan2(z, x);
+    const k = 1 + (0.09 * Math.sin(th * 7) + 0.04 * Math.sin(th * 13 + 1)) * (0.35 + Math.exp(-y / 5));
+    tp.setXYZ(i, x * k, y, z * k);
+  }
+  trunk.computeVertexNormals();
+  c.add(bark, trunk, [cx, base - 0.3, cz]);
+  // one flat spray of scale leaves: a rachis with alternate side sprays, lacy at the edges
+  const frondTex = canvasTex(128, 80, (g) => {
+    g.clearRect(0, 0, 128, 80);
+    const shade = (t: number) => `rgb(${Math.round(56 + 40 * t)},${Math.round(98 + 46 * t)},${Math.round(52 + 22 * t)})`;
+    for (let t = 0.04; t < 1; t += 0.055) {
+      const x = 6 + t * 116;
+      const len = 30 * (1 - t * 0.75);
+      for (const side of [-1, 1]) {
+        const ang = side * (0.9 - t * 0.35);
+        for (let u = 0; u < 1; u += 0.12) {
+          const px = x + Math.cos(ang) * len * u * 0.55;
+          const py = 40 + Math.sin(ang) * len * u;
+          g.fillStyle = shade(0.25 + u * 0.75 - t * 0.15);
+          g.beginPath();
+          g.ellipse(px, py, 4.2 * (1 - u * 0.5), 2.2, ang, 0, Math.PI * 2);
+          g.fill();
+        }
+      }
+    }
+    g.strokeStyle = "#4a6b33";
+    g.lineWidth = 2;
+    g.beginPath();
+    g.moveTo(2, 40);
+    g.lineTo(124, 40);
+    g.stroke();
+  });
+  const frondMat = new MeshStandardMaterial({ map: frondTex, alphaTest: 0.45, side: DoubleSide, roughness: 0.9 });
+  const card = new PlaneGeometry(1, 0.62).rotateX(-Math.PI / 2).translate(0.5, 0, 0);
+  const limbs: Part[] = [];
+  const mats: Matrix4[] = [];
+  const m4 = new Matrix4();
+  const q = new Quaternion();
+  const e = new Euler(0, 0, 0, "YZX");
+  const step = c.lowEnd ? 0.9 : 0.55;
+  const fronds = c.lowEnd ? 4 : 6;
+  const crownH = top - crownFrom;
+  let az = 0;
+  for (let y = crownFrom; y < top - 1.2; y += step) {
+    const h = (y - crownFrom) / crownH;
+    // widest low down, narrowing to the leader; the lowest branches a little shorter where they meet the canopy
+    const R = 5.1 * (1 - h) ** 0.9 * (0.75 + 0.25 * Math.min(1, h * 6)) + 0.6;
+    for (let b = 0; b < 3; b++) {
+      az += 2.39996;
+      const len = R * (0.75 + 0.3 * Math.abs(Math.sin(az * 3.1)));
+      const dx = Math.cos(az);
+      const dz = Math.sin(az);
+      // the branch: out and down, then up at the tip (droop increases down the crown)
+      const droop = 0.3 + 0.25 * (1 - h);
+      const at = (u: number): [number, number, number] => [cx + dx * len * u, y + len * (-droop * u + droop * 0.85 * u * u * u), cz + dz * len * u];
+      const p0 = at(0.05);
+      const p1 = at(0.7);
+      const mid: [number, number, number] = [(p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2, (p0[2] + p1[2]) / 2];
+      const lv = new Vector3(p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]);
+      const eu = new Euler().setFromQuaternion(q.setFromUnitVectors(new Vector3(0, 1, 0), lv.clone().normalize()));
+      limbs.push({ geo: new CylinderGeometry(0.05, 0.12, lv.length(), 5), position: mid, rotation: [eu.x, eu.y, eu.z] });
+      for (let k = 0; k < fronds; k++) {
+        const u = 0.3 + (0.7 * k) / (fronds - 1);
+        const [px, py, pz] = at(u);
+        const side = k % 2 ? 1 : -1;
+        const yaw = -az + side * (0.25 + 0.5 * ((k * 7 + b) % 3) / 3);
+        const s = (1.3 + 1.1 * (1 - u * 0.5)) * (0.7 + 0.3 * (1 - h));
+        e.set(0, yaw, -(0.25 + 0.4 * u * (1 - h)), "YZX");
+        m4.compose(new Vector3(px, py - 0.05, pz), q.setFromEuler(e), new Vector3(s, 1, s));
+        mats.push(m4.clone());
+      }
+    }
+  }
+  // the nodding leader
+  const lead: Vector3[] = [];
+  for (let k = 0; k <= 6; k++) lead.push(new Vector3(cx + (k / 6) ** 2 * 0.9, top - 1.4 + (k / 6) * 2.2 - (k / 6) ** 3 * 0.6, cz));
+  limbs.push({ geo: new TubeGeometry(new CatmullRomCurve3(lead), 8, 0.09, 5, false) });
+  c.add(bark, merged(limbs));
+  const inst = new InstancedMesh(card, frondMat, mats.length);
+  mats.forEach((m, i) => inst.setMatrixAt(i, m));
+  inst.castShadow = !c.lowEnd;
+  c.group.add(inst);
 }
 
 // ------------------------------------------------------------------ 01 About · Burrard: the cedar atrium and its skill rings
@@ -171,19 +308,9 @@ function about(c: Ctx): Partial<BuiltSet> {
   const { mats } = c.world;
   const L0 = 28;
   const g = c.G(0, L0);
-  const bark = new MeshStandardMaterial({ color: 0x7a4a33, roughness: 0.95 });
-  const needles = new MeshStandardMaterial({ color: 0x2f5b3b, roughness: 0.9, flatShading: true });
-  const H = 34;
-  c.add(bark, new CylinderGeometry(0.9, 2.2, H, 14), c.L(0, L0, g + H / 2));
-  // a western red cedar's ragged, drooping tiers: alternating spreads, each turned and nudged off the trunk
-  const needles2 = new MeshStandardMaterial({ color: 0x3d6b45, roughness: 0.9, flatShading: true });
-  for (let k = 0; k < 10; k++) {
-    const y = g + 10 + k * 2.55;
-    const r = 7.2 * (1 - k / 11) * (k % 2 ? 0.84 : 1);
-    c.add(k % 2 ? needles2 : needles, new ConeGeometry(r, 4.6, 7), c.L(Math.sin(k * 2.1) * 0.4, L0 + Math.cos(k * 1.7) * 0.4, y + 2.3), [0, k * 1.3, 0]);
-  }
   // a mass-timber canopy with an oculus the cedar grows through, on four columns
   const deckY = Math.max(g + 9, 1.4 + 7);
+  cedar(c, 0, L0, g, 36, deckY + 0.9);
   const annulus = (r0: number, r1: number, h: number) =>
     new LatheGeometry([new Vector2(r0, 0), new Vector2(r1, 0), new Vector2(r1, h), new Vector2(r0, h), new Vector2(r0, 0)], 40);
   c.add(mats.timber, annulus(3.2, 10, 0.6), c.L(0, L0, deckY - 0.6));
@@ -204,7 +331,8 @@ function about(c: Ctx): Partial<BuiltSet> {
   for (let k = 0; k < 4; k++) {
     const r = new Group();
     const y = deckY + 3 + k * 3.6;
-    const rad = 5.2 + (k % 2) * 1.4;
+    // clear of the crown, which narrows as the rings rise
+    const rad = 6.6 + (k % 2) * 1.0 - k * 0.3;
     r.add(new Mesh(new TorusGeometry(rad, 0.09, 6, 64), ringMat));
     const tiles = new InstancedMesh(new BoxGeometry(0.8, 0.8, 0.12), tileMat, 8);
     const m4 = new Matrix4();

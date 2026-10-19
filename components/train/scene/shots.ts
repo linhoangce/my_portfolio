@@ -5,7 +5,7 @@
  * raises it, until the lines to every subject miss all building boxes, the camera sits off the guideway and outside
  * the landmarks it does not own. Main Street frames Science World whole, with the water column beside it.
  */
-import { Vector3 } from "three";
+import { Box3, Vector3 } from "three";
 
 import { blockedSamples, roofAt } from "../camSafe";
 import { monumentFocus } from "../monuments";
@@ -52,7 +52,7 @@ function stationShot(i: number, lowEnd: boolean): ShotPlan {
   const targets = [focus, deck, ...(set?.anchors.slice(0, 2) ?? [])];
   // a free shot starts where it is authored (the Granville dolly starts on the guideway, behind the train); the others
   // are a short push-in that starts just behind where they end, so the cut lands on the set straight away
-  const to = search(focus, stationPoint(i, spec.to), targets, lowEnd);
+  const to = search(focus, stationPoint(i, spec.to), targets, lowEnd, undefined, i);
   const from = spec.free ? stationPoint(i, spec.from) : pullBack(to, focus, lowEnd);
   // the hold circles the focus from where the shot ends, so the shot's last look is the focus
   return {
@@ -76,9 +76,42 @@ function scienceWorldShot(lowEnd: boolean): ShotPlan {
   const sideSign = trackDist(mid.x + perp.x * 95, mid.z + perp.z * 95) >= trackDist(mid.x - perp.x * 95, mid.z - perp.z * 95) ? 1 : -1;
   const targets = [sw.clone().addScaledVector(UP, 8), sw.clone().addScaledVector(UP, -6), col, station];
   const guessTo = mid.clone().addScaledVector(perp, 95 * sideSign).addScaledVector(UP, 28);
-  const to = search(mid, guessTo, targets, lowEnd, "scienceWorld");
+  const to = search(mid, guessTo, targets, lowEnd, "scienceWorld", 4);
   const from = pullBack(to, mid, lowEnd, 16);
   return { from: { pos: from, look: mid.clone().addScaledVector(UP, -1.5) }, to: { pos: to, look: mid.clone() }, focus: mid, dist: [30, 200], owns: "scienceWorld" };
+}
+
+/** The other stations' set pieces as boxes, so one stop's camera never stands in (or looks through) the next stop's set. */
+let setBoxes: Box3[] | null = null;
+function boxesOf(): Box3[] {
+  if (!setBoxes && setRegistry.sets) setBoxes = setRegistry.sets.map((st) => new Box3().setFromObject(st.group).expandByScalar(1.5));
+  return setBoxes ?? [];
+}
+const bp = new Vector3();
+function setBlocked(a: Vector3, b: Vector3, own: number): number {
+  const boxes = boxesOf();
+  let n = 0;
+  for (let k = 1; k < 28; k++) {
+    bp.lerpVectors(a, b, k / 28);
+    for (let i = 0; i < boxes.length; i++) if (i !== own && boxes[i].containsPoint(bp)) n++;
+  }
+  return n;
+}
+
+/** How many of 28 samples along a → b pass through a landmark's volume (a cylinder to its top), other than `owns`. */
+function landmarkBlocked(a: Vector3, b: Vector3, owns?: LandmarkKey): number {
+  let n = 0;
+  for (let k = 1; k < 28; k++) {
+    const u = k / 28;
+    const x = a.x + (b.x - a.x) * u;
+    const y = a.y + (b.y - a.y) * u;
+    const z = a.z + (b.z - a.z) * u;
+    for (let i = 0; i < BLOCKERS.length; i++) {
+      const bl = BLOCKERS[i];
+      if (LANDMARKS[i].key !== owns && y < bl.top && (x - bl.x) ** 2 + (z - bl.z) ** 2 < bl.r * bl.r) n++;
+    }
+  }
+  return n;
 }
 
 /** A start pose `d` behind and a little above the end pose, along the line of sight, kept clear of roofs and ground. */
@@ -91,12 +124,12 @@ function pullBack(to: Vector3, focus: Vector3, lowEnd: boolean, d = 11): Vector3
 /**
  * From the authored pose, turn around `focus` (all the way round if need be), then back off, then rise a little,
  * scoring every candidate: it must stand clear of the ground, roofs, the guideway and landmarks, and its line to the
- * focus must be clear (the hold orbit's spring arm checks the same line); lines to the other subjects count against
+ * focus must miss every building and landmark (the hold orbit's spring arm checks the same line); lines to the other subjects count against
  * it. Within about 70° of the authored angle the first fully clear candidate wins, else the least blocked one there;
  * only when that whole arc fails does the camera go further round. Never higher than about 40° over the focus, so a
  * crowded view does not turn into a plan view.
  */
-function search(focus: Vector3, guess: Vector3, targets: Vector3[], lowEnd: boolean, owns?: LandmarkKey): Vector3 {
+function search(focus: Vector3, guess: Vector3, targets: Vector3[], lowEnd: boolean, owns?: LandmarkKey, own = -1): Vector3 {
   const off = guess.clone().sub(focus);
   const yaw0 = Math.atan2(off.z, off.x);
   const dist0 = Math.hypot(off.x, off.z);
@@ -120,9 +153,10 @@ function search(focus: Vector3, guess: Vector3, targets: Vector3[], lowEnd: bool
         if (trackDist(p.x, p.z) < 10) continue;
         // the camera may stand near a landmark (it is part of the view), just not inside one
         if (BLOCKERS.some((b, bi) => LANDMARKS[bi].key !== owns && Math.hypot(p.x - b.x, p.z - b.z) < b.r + 4 && p.y < b.top + 3)) continue;
-        if (blockedSamples(p, focus, 28, lowEnd) > 0) continue;
+        if (boxesOf().some((bx, bi) => bi !== own && bx.containsPoint(p))) continue;
+        if (blockedSamples(p, focus, 28, lowEnd) > 0 || landmarkBlocked(p, focus, owns) > 0 || setBlocked(p, focus, own) > 0) continue;
         let blocked = 0;
-        for (const tg of targets) if (tg !== focus) blocked += blockedSamples(p, tg, 28, lowEnd);
+        for (const tg of targets) if (tg !== focus) blocked += blockedSamples(p, tg, 28, lowEnd) + landmarkBlocked(p, tg, owns) + setBlocked(p, tg, own);
         const inArc = Math.ceil(k / 2) * 0.14 <= 1.22;
         if (blocked === 0 && inArc) return p.clone();
         const score = blocked * 50 + order;
