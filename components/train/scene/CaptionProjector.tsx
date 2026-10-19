@@ -8,7 +8,7 @@ import { useTrain } from "../store";
 import { captionBus } from "./captionBus";
 
 const v = new Vector3();
-const last: { x: number; y: number; on: boolean; el: HTMLElement }[] = [];
+const last: { x: number; y: number; on: boolean; flip: boolean; el: HTMLElement }[] = [];
 
 /**
  * Projects the scene's caption anchors to the screen after the camera has moved, writing a transform only when a
@@ -41,11 +41,11 @@ export function CaptionProjector() {
         x = (v.x * 0.5 + 0.5) * W;
         y = (-v.y * 0.5 + 0.5) * H;
         const far = a.distanceTo(state.camera.position) > 450;
-        on = v.z < 1 && !far && x > left + 10 && x < W - 40 && y > top && y < bottom && (!phone || shown < 3);
+        on = v.z < 1 && !far && x > left + 10 && x < W - 16 && y > top && y < bottom && (!phone || shown < 3);
       }
       if (on) shown++;
       // a new scene renders new elements: start their state afresh
-      if (!last[k] || last[k].el !== el) last[k] = { x: -1, y: -1, on: false, el };
+      if (!last[k] || last[k].el !== el) last[k] = { x: -1, y: -1, on: false, flip: false, el };
       const L = last[k];
       if (on && (Math.abs(x - L.x) > 0.3 || Math.abs(y - L.y) > 0.3)) {
         el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
@@ -55,6 +55,12 @@ export function CaptionProjector() {
       if (on !== L.on) {
         el.classList.toggle("on", on);
         L.on = on;
+      }
+      // near the right edge (on a phone, anywhere in the right half) the chip hangs to the left of its pin
+      const flip = x > Math.max(W / 2, W - 280);
+      if (on && flip !== L.flip) {
+        el.classList.toggle("flip", flip);
+        L.flip = flip;
       }
     }
   }, -50);

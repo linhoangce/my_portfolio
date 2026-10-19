@@ -113,8 +113,29 @@ function terrace(c: Ctx, a0: number, a1: number, l0: number, l1: number): number
 }
 
 // ------------------------------------------------------------------ 00 Depart · Waterfront
+/** A paved plaza on the ground: one slab per 6-unit cell, each at its own ground height, with planters and benches. */
+function plaza(c: Ctx, a0: number, a1: number, l0: number, l1: number): void {
+  const paving = new MeshStandardMaterial({ color: 0xcfc8bb, roughness: 0.95 });
+  const planter = new MeshStandardMaterial({ color: 0x8a8378, roughness: 0.9 });
+  const green = new MeshStandardMaterial({ color: 0x4f7a3e, roughness: 1 });
+  for (let a = a0; a < a1; a += 6) {
+    for (let l = l0; l < l1; l += 6) {
+      const g = Math.max(c.G(a + 3, l + 3), c.G(a, l), c.G(a + 6, l + 6));
+      c.add(paving, new BoxGeometry(6.02, 0.4, 6.02), c.L(a + 3, l + 3, g + 0.1));
+    }
+  }
+  for (let a = a0 + 4; a < a1 - 2; a += 10) {
+    const l = (l0 + l1) / 2;
+    const g = c.G(a, l);
+    c.add(planter, new BoxGeometry(3, 0.8, 3), c.L(a, l, g + 0.6));
+    c.add(green, new SphereGeometry(1.6, 10, 8), c.L(a, l, g + 1.6), [0, 0, 0], [1, 0.7, 1]);
+    c.add(planter, new BoxGeometry(0.6, 0.5, 3.2), c.L(a + 3.2, l, g + 0.45));
+  }
+}
+
 function depart(c: Ctx): Partial<BuiltSet> {
-  const top = terrace(c, -18, 18, 14, 30);
+  plaza(c, -24, 24, 14, 44);
+  const top = Math.max(1.4, c.G(0, 24) + 0.5);
   // the restored CPR facade: a colonnade under a cornice and pediment, facing the station
   const stone = new MeshStandardMaterial({ color: 0xd8cdb8, roughness: 0.85 });
   const l = 36;
@@ -131,6 +152,11 @@ function depart(c: Ctx): Partial<BuiltSet> {
   // the light-line map of the ten stops, floating over the terrace
   const lineMat = glowMat(0xa78bfa, 2.2);
   c.add(lineMat, new BoxGeometry(0.12, 0.12, 30), c.L(0, 22, top + 7));
+  // two slim masts hold the light line over the plaza
+  for (const a of [-15, 15]) {
+    const g0 = c.G(a, 22);
+    c.add(c.world.mats.girder, new CylinderGeometry(0.12, 0.16, top + 7 - g0, 8), c.L(a, 22, (top + 7 + g0) / 2));
+  }
   const anchors: Vector3[] = [new Vector3(...c.L(10, l, g + h + 2.2))];
   for (let k = 0; k < stations.length; k++) {
     const a = -15 + (30 * k) / (stations.length - 1);
@@ -252,12 +278,14 @@ function experience(c: Ctx, world: World): Partial<BuiltSet> {
       g.textAlign = "center";
       g.fillText(roles[k], 128, 70);
     });
-    const plaque = new Mesh(new PlaneGeometry(3.2, 1.2), new MeshBasicMaterial({ map: tex, toneMapped: false, side: DoubleSide }));
-    plaque.position.set(...at(0, 10.4));
-    // facing back down the line, toward the train that comes through
-    plaque.rotation.set(0, yaw + Math.PI, 0);
-    plaque.translateZ(0.7);
-    plaques.push(plaque);
+    // one plaque on each face of the lintel, so the year reads from either direction
+    for (const turn of [0, Math.PI]) {
+      const plaque = new Mesh(new PlaneGeometry(3.2, 1.2), new MeshBasicMaterial({ map: tex, toneMapped: false }));
+      plaque.position.set(...at(0, 10.4));
+      plaque.rotation.set(0, yaw + turn, 0);
+      plaque.translateZ(0.7);
+      plaques.push(plaque);
+    }
     anchors[order[k]] = new Vector3(...at(0, 12.2));
   }
   const g = new Group();
@@ -268,7 +296,7 @@ function experience(c: Ctx, world: World): Partial<BuiltSet> {
   return {
     anchors,
     focus: anchors[2].clone().setY(anchors[2].y - 6),
-    shot: { from: [-14, -3, 6.5], to: [78, -30, 13], look: [46, 0, 6], fromLook: [60, 0, 5.5], free: true },
+    shot: { from: [-14, -3, 6.5], to: [42, -64, 26], look: [42, 0, 6], fromLook: [60, 0, 5.5], free: true },
   };
 }
 
@@ -320,7 +348,7 @@ function awdon(c: Ctx): Partial<BuiltSet> {
       flow.offset.x = -t * 0.25;
       gate.emissiveIntensity = 0.6 + Math.max(0, Math.sin(t * 1.3)) ** 8 * 3;
     },
-    shot: { from: [-48, 70, 6], to: [-20, 56, 22], look: [0, 20, 4] },
+    shot: { from: [-56, 66, 8], to: [-24, 58, 22], look: [0, 20, 4] },
   };
 }
 
@@ -493,7 +521,7 @@ function vessel(c: Ctx): Partial<BuiltSet> {
       });
       drone.position.copy(dc).add(new Vector3(Math.sin(t * 0.5) * 3, Math.sin(t * 1.3) * 0.4, Math.cos(t * 0.4) * 2));
     },
-    shot: { from: [-30, 60, 40], to: [-12, 46, 26], look: [0, 20, 1] },
+    shot: { from: [-34, 62, 34], to: [-14, 50, 26], look: [0, 20, 1] },
   };
 }
 
@@ -560,7 +588,7 @@ function weed(c: Ctx): Partial<BuiltSet> {
         m.scale.setScalar(u < 0.03 ? 0 : s);
       });
     },
-    shot: { from: [-26, 4, 3], to: [-8, 58, 20], look: [0, 22, 2], fromLook: [12, 18, 2] },
+    shot: { from: [-40, 50, 6], to: [-12, 58, 20], look: [0, 22, 2], fromLook: [0, 26, 2] },
   };
 }
 
@@ -622,7 +650,7 @@ function abckidz(c: Ctx): Partial<BuiltSet> {
       (beam.material as MeshBasicMaterial).opacity = 0.35 + Math.sin(t * 3) * 0.2;
       blocks.forEach((b, k) => (b.position.y += Math.sin(t * 1.2 + k) * 0.002));
     },
-    shot: { from: [-36, 74, 12], to: [-6, 54, 20], look: [0, 22, 4] },
+    shot: { from: [-40, 72, 14], to: [-8, 56, 20], look: [0, 22, 4] },
   };
 }
 
@@ -655,7 +683,7 @@ function more(c: Ctx): Partial<BuiltSet> {
     else if (k.roof === "dome") c.add(m, new SphereGeometry(2.2, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), c.L(a, L0, top + 3));
     else if (k.roof === "hex") c.add(m, new CylinderGeometry(2.4, 2.4, 0.5, 6), c.L(a, L0, top + 3.2));
     else c.add(m, new BoxGeometry(3.8, 0.3, 3.4), c.L(a, L0, top + 3.1), [0.12, 0, 0]);
-    anchors.push(new Vector3(...c.L(a, L0, top + 5.2)));
+    anchors.push(new Vector3(...c.L(a, L0, top + 5.2 + (j % 2) * 3)));
   });
   // the props: a claw, scales, a mask, a headset, a pixel judge, a bee
   const prop = new MeshStandardMaterial({ color: 0xf2f3f5, roughness: 0.4, metalness: 0.3 });
@@ -717,12 +745,12 @@ function contactSet(c: Ctx): Partial<BuiltSet> {
   const bark = new MeshStandardMaterial({ color: 0x6a4a36, roughness: 1 });
   const needles = new MeshStandardMaterial({ color: 0x264b35, roughness: 0.9, flatShading: true });
   const ring: [number, number, number][] = [
-    [-12, L0 - 4, 1.1],
-    [-9, L0 + 9, 1.3],
-    [0, L0 + 12, 1.2],
-    [10, L0 + 8, 1.4],
-    [12, L0 - 6, 1.0],
-    [-14, L0 + 3, 0.9],
+    [-13, L0 - 6, 1.1],
+    [-12, L0 + 4, 1.3],
+    [13, L0 - 5, 1.2],
+    [12, L0 + 5, 1.4],
+    [-6, L0 - 11, 1.0],
+    [7, L0 - 12, 0.9],
   ];
   for (const [a, l, s] of ring) {
     const gy = c.G(a, l);
@@ -741,20 +769,25 @@ function contactSet(c: Ctx): Partial<BuiltSet> {
     gx.fillStyle = "#f5f3ff";
     gx.fillText("Let's talk.", 512, 132);
   });
-  const sign = new Mesh(new PlaneGeometry(12, 3), new MeshBasicMaterial({ map: tex, transparent: true, toneMapped: false, side: DoubleSide, depthWrite: false }));
-  sign.position.set(...c.L(0, L0 + 2, deck + 4.4));
-  sign.rotation.y = -Math.PI / 2;
-  c.group.add(sign);
+  // two faces back to back, so the words read from the train and from the lookout
+  const signMat = new MeshBasicMaterial({ map: tex, transparent: true, toneMapped: false, depthWrite: false });
+  for (const ry of [-Math.PI / 2, Math.PI / 2]) {
+    const sign = new Mesh(new PlaneGeometry(12, 3), signMat);
+    sign.position.set(...c.L(0, L0 + 2, deck + 4.4));
+    sign.rotation.y = ry;
+    c.group.add(sign);
+  }
   c.add(glowMat(0xa78bfa, 2.2), new BoxGeometry(0.1, 0.1, 12.4), c.L(0, L0 + 2, deck + 2.7));
   // four lit signposts
   const post = glowMat(0xc4b5fd, 1.2);
   const anchors: Vector3[] = [];
-  [-4.5, -1.5, 1.5, 4.5].forEach((a) => {
-    c.add(mats.timber, new BoxGeometry(0.2, 2.2, 0.2), c.L(a, L0 - 5, deck + 1.35));
-    c.add(post, new BoxGeometry(0.15, 0.5, 1.6), c.L(a, L0 - 5, deck + 2.3));
-    anchors.push(new Vector3(...c.L(a, L0 - 5, deck + 3.1)));
+  [-5.4, -1.8, 1.8, 5.4].forEach((a, k) => {
+    const h = 2.2 + (k % 2) * 1.4;
+    c.add(mats.timber, new BoxGeometry(0.2, h, 0.2), c.L(a, L0 - 5, deck + 0.25 + h / 2));
+    c.add(post, new BoxGeometry(0.15, 0.5, 1.6), c.L(a, L0 - 5, deck + h + 0.1));
+    anchors.push(new Vector3(...c.L(a, L0 - 5, deck + h + 0.9)));
   });
-  return { anchors, focus: new Vector3(...c.L(0, L0 - 2, deck + 3)), shot: { from: [-10, 48, 3], to: [-20, 52, 14], look: [0, 22, 5], fromLook: [0, 30, 6] } };
+  return { anchors, focus: new Vector3(...c.L(0, L0 - 2, deck + 3)), shot: { from: [-12, 46, 4], to: [0, 50, 11], look: [0, 22, 5], fromLook: [0, 30, 6] } };
 }
 
 const BUILDERS = [depart, about, null, awdon, planktoneer, vessel, weed, abckidz, more, contactSet] as const;

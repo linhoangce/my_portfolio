@@ -813,6 +813,13 @@ html:has(.scene-ov.open) .ask {
   left: auto;
   right: 16px;
 }
+/* below 1200 px there is no room for both: with Ask open the column folds to its kicker and title */
+@media (max-width: 1200px) {
+  html:has(.ask.open) .scene-ov .panel > :nth-child(n + 3),
+  html:has(.ask.open) .scene-ov .col-foot {
+    display: none;
+  }
+}
 
 /* captions pinned to the set: a dot, a stem, a chip with the number and its label */
 .caps {
@@ -867,6 +874,11 @@ html:has(.scene-ov.open) .ask {
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   text-decoration: none;
+}
+.cap.flip .chip-c {
+  left: auto;
+  right: -8px;
+  align-items: flex-end;
 }
 .cap a.chip-c {
   pointer-events: auto;
@@ -1107,9 +1119,21 @@ html:has(.scene-ov.open) .ask {
   }
   .linemap .stepper {
     display: flex;
+    min-width: 0;
+  }
+  .linemap .stepper .btn-icon {
+    width: 30px;
+    height: 30px;
+    flex: none;
+  }
+  .linemap .here {
+    max-width: 26vw;
   }
   .brand .name {
-    font-size: 20px;
+    font-size: 18px;
+  }
+  .top .right {
+    gap: 6px;
   }
   .menu {
     top: auto;
@@ -1192,6 +1216,12 @@ html:has(.scene-ov.open) .ask {
   }
   html[data-scene="hold"] .drive {
     display: none;
+  }
+  .cap .chip-c b {
+    font-size: 16px;
+  }
+  .cap .chip-c span {
+    max-width: 140px;
   }
   .mon-card {
     right: 0;

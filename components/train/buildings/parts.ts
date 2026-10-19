@@ -178,19 +178,35 @@ const sc = new Vector3();
 const p = new Vector3();
 const UPV = new Vector3(0, 1, 0);
 
+const UNIT_BOX = new BoxGeometry(1, 1, 1);
+
+/** Shared geometry templates, made once and reused by every building that asks for the same key. */
+const TEMPLATES = new Map<string, BufferGeometry>();
+const TEMPLATE_SET = new WeakSet<BufferGeometry>();
+export function tpl(key: string, make: () => BufferGeometry): BufferGeometry {
+  let g = TEMPLATES.get(key);
+  if (!g) {
+    g = make();
+    TEMPLATES.set(key, g);
+    TEMPLATE_SET.add(g);
+  }
+  return g;
+}
+
 /** A box from y up by h, in a façade family (uvs scaled to the box) or a crown or dome builder. */
 export function box(sink: Sink, fam: FamilyId | Special, x: number, y: number, z: number, w: number, h: number, d: number, tint: Tint = WHITE, ry = 0): void {
   q.setFromAxisAngle(UPV, ry);
   m4.compose(p.set(x, y + h / 2, z), q, sc.set(w, h, d));
-  const g = new BoxGeometry(1, 1, 1);
-  if (special(fam)) sink[fam].addGeo(g, m4, 0, tint);
-  else builderFor(sink, fam).addGeo(g, m4, FAMILY[fam].layer, tint, Math.max(w, h) / 6);
+  // one shared unit box, transformed into each builder (it is never disposed)
+  if (special(fam)) sink[fam].addGeo(UNIT_BOX, m4, 0, tint, 1, true);
+  else builderFor(sink, fam).addGeo(UNIT_BOX, m4, FAMILY[fam].layer, tint, Math.max(w, h) / 6, true);
 }
 
 /** Any three.js solid (sphere segment, cylinder, torus) placed with a transform. */
 export function solid(sink: Sink, fam: FamilyId | Special, geo: BufferGeometry, x: number, y: number, z: number, sx: number, sy: number, sz: number, tint: Tint = WHITE, ry = 0): void {
   q.setFromAxisAngle(UPV, ry);
   m4.compose(p.set(x, y, z), q, sc.set(sx, sy, sz));
-  if (special(fam)) sink[fam].addGeo(geo, m4, 0, tint);
-  else builderFor(sink, fam).addGeo(geo, m4, FAMILY[fam].layer, tint);
+  const keep = TEMPLATE_SET.has(geo);
+  if (special(fam)) sink[fam].addGeo(geo, m4, 0, tint, 1, keep);
+  else builderFor(sink, fam).addGeo(geo, m4, FAMILY[fam].layer, tint, 1, keep);
 }

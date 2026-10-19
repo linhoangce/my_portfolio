@@ -24,7 +24,8 @@ export function captionsFor(panel: SectionId): Caption[] {
     case "experience":
       return roles.map((r, i) => ({ value: r.period, label: r.title, prio: i + 1 }));
     case "more-projects":
-      return moreProjects.map((p, i) => ({ value: p.title, label: p.copy, prio: i + 1, href: p.href }));
+      // the gist only ("AI assistant gateway", not the whole line), so six kiosks' captions fit side by side
+      return moreProjects.map((p, i) => ({ value: p.title, label: p.copy.split(/ (?:with|on|for|reacting)\b|[.,]/)[0], prio: i + 1, href: p.href }));
     case "contact":
       return [
         { value: "Email", label: contact.email, prio: 1, href: `mailto:${contact.email}` },

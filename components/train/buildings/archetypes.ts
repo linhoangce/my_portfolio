@@ -11,7 +11,7 @@ import type { Rng } from "../cityModel";
 import type { SpeciesId } from "../trees/species";
 import type { ArchId, Hood } from "./eras";
 import type { Tint } from "./meshBuilder";
-import { box, cap, fp, gable, hip, type Sink, solid, walls, WHITE } from "./parts";
+import { box, cap, fp, gable, hip, type Sink, solid, tpl, walls, WHITE } from "./parts";
 
 export type Ctx = {
   rng: Rng;
@@ -69,7 +69,7 @@ export const BUILD: Record<Exclude<ArchId, "house">, (o: Ctx) => void> = {
     walls(sink, "concrete", fp.rect(w * 1.04, d * 1.04), x, z, top, top + 0.7, { tint: T(0xd9cbb3) });
     cap(sink, "roof", ring.map(([a, , b]) => [a, top + 0.65, b]));
     // a 2100 rooftop greenhouse in glass
-    if (rng.next() < 0.4) solid(sink, "dome", new CylinderGeometry(1, 1, 1, 4, 1).rotateY(Math.PI / 4).translate(0, 0.5, 0), x, top + 0.6, z, w * 0.32, 2.2, d * 0.32);
+    if (rng.next() < 0.4) solid(sink, "dome", tpl("roofBox4", () => new CylinderGeometry(1, 1, 1, 4, 1).rotateY(Math.PI / 4).translate(0, 0.5, 0)), x, top + 0.6, z, w * 0.32, 2.2, d * 0.32);
   },
   chinatownBlock(o) {
     const { rng, sink, x, z, w, d, yb, yt } = o;
@@ -107,8 +107,8 @@ export const BUILD: Record<Exclude<ArchId, "house">, (o: Ctx) => void> = {
     walls(sink, "concrete", poly.map(([a, b]) => [a * 1.06, b * 1.06] as [number, number]), x, z, top, top + 0.6, { tint: T(0xe9dcc4) });
     cap(sink, "roof", ring.map(([a, , b]) => [a, top + 0.55, b]));
     // a copper cupola on the sharp corner
-    solid(sink, "copper", new CylinderGeometry(1, 1, 1, 12).translate(0, 0.5, 0), x - w * 0.32, top + 0.55, z - d * 0.32, 1.4, 2.2, 1.4);
-    solid(sink, "copper", new SphereGeometry(1, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), x - w * 0.32, top + 2.75, z - d * 0.32, 1.5, 1.6, 1.5);
+    solid(sink, "copper", tpl("drum12", () => new CylinderGeometry(1, 1, 1, 12).translate(0, 0.5, 0)), x - w * 0.32, top + 0.55, z - d * 0.32, 1.4, 2.2, 1.4);
+    solid(sink, "copper", tpl("cupola12x8", () => new SphereGeometry(1, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2)), x - w * 0.32, top + 2.75, z - d * 0.32, 1.5, 1.6, 1.5);
   },
   pointTower(o) {
     const { rng, sink, x, z, w, d, yb, yt, H } = o;
@@ -182,7 +182,7 @@ export const BUILD: Record<Exclude<ArchId, "house">, (o: Ctx) => void> = {
     const ring = walls(sink, kind, fp.rounded(s, s, s * 0.22, 3), x, z, yt + 3, yt + H, { segs: 26, r1: (0.6 + rng.next() * 0.8) * (rng.next() < 0.5 ? 1 : -1), s1: 0.62 + rng.next() * 0.2, tint: tint(rng, PAL.glass[Math.floor(rng.next() * PAL.glass.length)], 0.04), yRef: yt });
     cap(sink, "roof", ring);
     box(sink, crown(rng), x, yt + H - 0.6, z, s * 0.55, 0.6, s * 0.55, WHITE, 0.5);
-    solid(sink, "concrete", new CylinderGeometry(0.18, 0.3, 1, 6).translate(0, 0.5, 0), x, yt + H, z, 1, 5 + rng.next() * 5, 1, T(0xb8c0c8));
+    solid(sink, "concrete", tpl("spire6", () => new CylinderGeometry(0.18, 0.3, 1, 6).translate(0, 0.5, 0)), x, yt + H, z, 1, 5 + rng.next() * 5, 1, T(0xb8c0c8));
   },
   needle(o) {
     const { rng, sink, x, z, w, d, yb, yt, H } = o;
@@ -190,7 +190,7 @@ export const BUILD: Record<Exclude<ArchId, "house">, (o: Ctx) => void> = {
     const ring = walls(sink, "diagrid", fp.hex(r), x, z, yb, yt + H, { segs: 10, s1: 0.38 + rng.next() * 0.14, curve: (t) => Math.pow(t, 1.6), yRef: yt });
     cap(sink, "roof", ring);
     box(sink, crown(rng), x, yt + H * 0.92, z, r * 0.62, 0.7, r * 0.62);
-    solid(sink, "concrete", new CylinderGeometry(0.12, 0.35, 1, 6).translate(0, 0.5, 0), x, yt + H, z, 1, H * 0.18, 1, T(0xb8c0c8));
+    solid(sink, "concrete", tpl("needle6", () => new CylinderGeometry(0.12, 0.35, 1, 6).translate(0, 0.5, 0)), x, yt + H, z, 1, H * 0.18, 1, T(0xb8c0c8));
   },
   stacked(o) {
     const { rng, sink, x, z, w, d, yb, yt, H } = o;
@@ -262,10 +262,10 @@ export const BUILD: Record<Exclude<ArchId, "house">, (o: Ctx) => void> = {
     const ring = walls(sink, rng.next() < 0.3 ? "solar" : "glass", fp.rect(w * 0.9, d * 0.9), x, z, yb, yt + h, { yRef: yt });
     cap(sink, "garden", ring);
     const r = Math.min(w, d) * 0.38;
-    solid(sink, "dome", new SphereGeometry(1, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), x, yt + h, z, r, r * 0.8, r);
+    solid(sink, "dome", tpl("biodome12x5", () => new SphereGeometry(1, 12, 5, 0, Math.PI * 2, 0, Math.PI / 2)), x, yt + h, z, r, r * 0.8, r);
     for (let k = 0; k < 4; k++) o.terrace(x + (rng.next() - 0.5) * r, yt + h, z + (rng.next() - 0.5) * r, 0.6 + rng.next() * 0.3, (["cherry", "smaple", "cedar"] as SpeciesId[])[Math.floor(rng.next() * 3)]);
     // drone pad with a ring of light on the podium corner
-    solid(sink, "crownA", new TorusGeometry(1, 0.08, 6, 24).rotateX(Math.PI / 2), x + w * 0.3, yt + h + 0.05, z + d * 0.3, 1.6, 1, 1.6);
+    solid(sink, "crownA", tpl("padRing", () => new TorusGeometry(1, 0.08, 6, 24).rotateX(Math.PI / 2)), x + w * 0.3, yt + h + 0.05, z + d * 0.3, 1.6, 1, 1.6);
   },
   wave(o) {
     const { rng, sink, x, z, w, d, yb, yt, H } = o;

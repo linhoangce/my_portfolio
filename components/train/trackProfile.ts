@@ -89,11 +89,36 @@ export function solveProfile(pts: [number, number][], stationIdx: number[], cutF
     });
     for (let i = 0; i < n; i++) y[i] = Math.max(y[i], lower[i]);
   }
-  // level platforms and the grade cap both hold once this settles (each step only raises)
+  // vertical curves: the grade may change by at most 0.02 per 10 units, so sags are raised and crests lowered (never
+  // below the clearance floor) until it does; the limiter leaves sharp V-shaped sags at the cap otherwise, which the
+  // curve through the points overshoots. Platform windows (with their 6-unit level run-outs) stay as flatten() set them.
+  const fixed = new Array<boolean>(n).fill(false);
+  for (const si of stationIdx) for (let i = 0; i < n; i++) if (Math.abs(s[i] - s[si]) <= PLATFORM_FLAT + 6) fixed[i] = true;
+  const round = () => {
+    for (let sweep = 0; sweep < 800; sweep++) {
+      let moved = 0;
+      for (let i = 1; i < n - 1; i++) {
+        if (fixed[i]) continue;
+        const ds = 0.5 * (s[i + 1] - s[i - 1]);
+        const tol = 0.5 * 0.002 * ds * ds;
+        const avg = 0.5 * (y[i - 1] + y[i + 1]);
+        let v = y[i];
+        if (v < avg - tol) v = avg - tol;
+        else if (v > avg + tol) v = avg + tol;
+        v = Math.max(v, lower[i]);
+        moved = Math.max(moved, Math.abs(v - y[i]));
+        y[i] = v;
+      }
+      if (moved < 1e-4) break;
+    }
+  };
+  // level platforms, the grade cap and the vertical curves all hold once this settles
   for (let k = 0; k < 4; k++) {
     flatten();
     limit();
+    round();
   }
+  flatten();
 
   let off = 0;
   let cnt = 0;

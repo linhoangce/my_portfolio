@@ -13,14 +13,14 @@ import { SEA } from "../constants";
 import { inSetZone } from "../sets/zones";
 import { inLandmark, inPark, streamDist } from "../sites";
 import { groundAt, inWater, RASTER, sdfAt } from "../terrain";
-import { trackNearest } from "../track";
+import { samples, trackNearest } from "../track";
 import type { SpeciesId } from "../trees/species";
 import { BUILD, type Ctx, PAL } from "./archetypes";
 import { ARCH_BY_ERA, type ArchId, hood, type Hood, TOWERISH, ZONES } from "./eras";
 import { HEROES } from "./heroes";
 import { type HouseInst, type HouseKind } from "./houses";
 import { GeoBuilder } from "./meshBuilder";
-import { cap, fp, type Sink, solid, walls } from "./parts";
+import { cap, fp, type Sink, solid, tpl, walls } from "./parts";
 
 export type Lot = { x: number; z: number; w: number; d: number; h: number; top: number };
 export type TerraceTree = { x: number; y: number; z: number; s: number; sp: SpeciesId };
@@ -34,6 +34,8 @@ export type CityGeometry = {
   lots: Lot[];
   terrace: TerraceTree[];
   ms: number;
+  /** Milliseconds per phase, for the budget checks. */
+  phases: Record<string, number>;
 };
 
 /** Nothing above a podium within this distance of the guideway. */
@@ -50,15 +52,51 @@ const sstep = (a: number, b: number, x: number) => {
 /** Distance to the guideway and the deck height there, on the terrain raster (bilinear), computed once. */
 function corridorRaster() {
   const g = RASTER;
-  const d = new Float32Array(g.nx * g.nz);
+  const d = new Float32Array(g.nx * g.nz).fill(Infinity);
   const y = new Float32Array(g.nx * g.nz);
+  // near the line (where the clearance and height rules bite): each coarse track sample paints the cells within 100
+  const R = 100;
+  const rc = Math.ceil(R / g.step);
+  for (let s = 0; s < samples.length; s += 4) {
+    const p = samples[s].p;
+    const ci = Math.round((p.x - g.x0) / g.step);
+    const cj = Math.round((p.z - g.z0) / g.step);
+    for (let j = Math.max(0, cj - rc); j <= Math.min(g.nz - 1, cj + rc); j++) {
+      for (let i = Math.max(0, ci - rc); i <= Math.min(g.nx - 1, ci + rc); i++) {
+        const k = j * g.nx + i;
+        const dd = Math.hypot(g.x0 + i * g.step - p.x, g.z0 + j * g.step - p.z);
+        if (dd < d[k]) {
+          d[k] = dd;
+          y[k] = p.y;
+        }
+      }
+    }
+  }
+  // beyond (only house detail and thinning care): the full search on a grid four times coarser, interpolated
+  const S = 4;
+  const cx = Math.ceil((g.nx - 1) / S) + 1;
+  const cz = Math.ceil((g.nz - 1) / S) + 1;
+  const far = new Float32Array(cx * cz);
+  for (let j = 0; j < cz; j++) {
+    for (let i = 0; i < cx; i++) {
+      const x = g.x0 + i * S * g.step;
+      const z = g.z0 + j * S * g.step;
+      const f = trackNearest(x, z);
+      far[j * cx + i] = Math.hypot(f.p.x - x, f.p.z - z);
+    }
+  }
   for (let j = 0; j < g.nz; j++) {
     for (let i = 0; i < g.nx; i++) {
-      const x = g.x0 + i * g.step;
-      const z = g.z0 + j * g.step;
-      const f = trackNearest(x, z);
-      d[j * g.nx + i] = Math.hypot(f.p.x - x, f.p.z - z);
-      y[j * g.nx + i] = f.p.y;
+      const k = j * g.nx + i;
+      if (d[k] !== Infinity) continue;
+      const fi = Math.min(cx - 1.001, i / S);
+      const fj = Math.min(cz - 1.001, j / S);
+      const i0 = Math.floor(fi);
+      const j0 = Math.floor(fj);
+      const u = fi - i0;
+      const v = fj - j0;
+      const q = j0 * cx + i0;
+      d[k] = Math.max(R, (far[q] * (1 - u) + far[q + 1] * u) * (1 - v) + (far[q + cx] * (1 - u) + far[q + cx + 1] * u) * v);
     }
   }
   const at = (arr: Float32Array, x: number, z: number) => {
@@ -75,8 +113,17 @@ function corridorRaster() {
 }
 
 export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
-  const t0 = typeof performance !== "undefined" ? performance.now() : 0;
+  const now = () => (typeof performance !== "undefined" ? performance.now() : 0);
+  const t0 = now();
+  const phases: Record<string, number> = {};
+  let tp = t0;
+  const mark = (k: string) => {
+    const t = now();
+    phases[k] = Math.round(t - tp);
+    tp = t;
+  };
   const cor = corridorRaster();
+  mark("corridor");
   const chunks = new Map<string, Sink>();
   const shared = { crownA: new GeoBuilder(), crownB: new GeoBuilder(), dome: new GeoBuilder(), neon: new GeoBuilder() };
   const sinkAt = (x: number, z: number): Sink => {
@@ -103,10 +150,13 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
     h.build(sinkAt(h.x, h.z), h.x, h.z, yb, yt, rng, addTerrace);
     lots.push({ x: h.x, z: h.z, w: h.r * 2, d: h.r * 2, h: h.h, top: yt + h.h + 3 });
   }
-  const inHero = (x: number, z: number) => HEROES.some((h) => Math.hypot(x - h.x, z - h.z) < h.r + 2.5);
+  const inHero = (x: number, z: number) => HEROES.some((h) => (x - h.x) ** 2 + (z - h.z) ** 2 < (h.r + 2.5) ** 2);
+  mark("heroes");
 
   // the lots, block by block
   const last = new Map<string, string>();
+  let buildMs = 0;
+  const archMs: Record<string, number> = {};
   const pickArch = (zone: NonNullable<(typeof ZONES)[Hood]>, name: Hood, big: boolean, cell: string, left: string, up: string): { era: 0 | 1 | 2; arch: ArchId } => {
     let era: 0 | 1 | 2 = 0;
     let arch: ArchId = "heritageBrick";
@@ -189,13 +239,20 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
           }
           if (H < 3) continue;
           const ctx: Ctx = { rng, sink: sinkAt(x, z), x, z, w, d, yb, yt, H, hood: name, terrace: addTerrace };
+          const tb = now();
           BUILD[chosen as Exclude<ArchId, "house">](ctx);
+          const dtb = now() - tb;
+          archMs[chosen] = (archMs[chosen] ?? 0) + dtb;
+          buildMs += dtb;
           lots.push({ x, z, w, d, h: H + (yt - yb), top: yt + H + 3 });
         }
       }
     }
   }
 
+  mark("lots");
+  phases.lotGeometry = Math.round(buildMs);
+  for (const [k, v] of Object.entries(archMs)) if (v > 20) phases[`arch:${k}`] = Math.round(v);
   // floating hex districts on False Creek: pods clear of the shore and the guideway, joined by footbridges
   const pods: [number, number, number][] = [];
   for (let k = 0; k < 400 && pods.length < 4; k++) {
@@ -219,7 +276,7 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
       cap(s, "garden", rr);
       addTerrace(bx, SEA + 0.9 + h, bz, 0.55, "cherry");
     }
-    solid(s, "dome", new SphereGeometry(1, 18, 9, 0, Math.PI * 2, 0, Math.PI / 2), px, SEA + 0.9, pz, pr * 0.3, pr * 0.25, pr * 0.3);
+    solid(s, "dome", tpl("podDome", () => new SphereGeometry(1, 14, 6, 0, Math.PI * 2, 0, Math.PI / 2)), px, SEA + 0.9, pz, pr * 0.3, pr * 0.25, pr * 0.3);
     lots.push({ x: px, z: pz, w: pr * 2, d: pr * 2, h: 8, top: SEA + 9 });
   }
   for (let k = 0; k < pods.length - 1; k++) {
@@ -227,9 +284,10 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
     const [bx2, bz2] = pods[k + 1];
     const L = Math.hypot(bx2 - ax2, bz2 - az2);
     if (L > 60) continue;
-    solid(sinkAt(ax2, az2), "concrete", new CylinderGeometry(0.5, 0.5, 1, 6).rotateZ(Math.PI / 2), (ax2 + bx2) / 2, SEA + 0.85, (az2 + bz2) / 2, L, 0.6, 2.6, [0.95, 0.95, 0.95], -Math.atan2(bz2 - az2, bx2 - ax2));
+    solid(sinkAt(ax2, az2), "concrete", tpl("bridgeBeam", () => new CylinderGeometry(0.5, 0.5, 1, 6).rotateZ(Math.PI / 2)), (ax2 + bx2) / 2, SEA + 0.85, (az2 + bz2) / 2, L, 0.6, 2.6, [0.95, 0.95, 0.95], -Math.atan2(bz2 - az2, bx2 - ax2));
   }
 
+  mark("pods");
   const out: CityGeometry = {
     chunks: [...chunks.entries()].map(([key, s]) => ({ key, solid: s.solid.build(), glass: s.glass.build() })),
     crownA: shared.crownA.build(),
@@ -240,7 +298,9 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
     lots,
     terrace,
     ms: 0,
+    phases,
   };
-  out.ms = (typeof performance !== "undefined" ? performance.now() : 0) - t0;
+  mark("buffers");
+  out.ms = now() - t0;
   return out;
 }

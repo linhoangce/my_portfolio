@@ -220,7 +220,9 @@ export function CameraRig() {
       // the ground, then building boxes: rise fast, settle slowly
       const floor = Math.max(groundAt(want.x, want.z) + 2, roofAt(want.x, want.z, 1.5, env.lowEnd));
       const need = Math.max(0, floor - want.y);
-      R.lift = need > R.lift ? need : R.lift + (need - R.lift) * (1 - Math.exp(-1.5 * real));
+      // the chase rises over a roof fast and settles slowly; the orbit views have their spring arm instead
+      const orbiting = mode === "hold" || mode === "monument" || mode === "shot";
+      R.lift = orbiting || need > R.lift ? need : R.lift + (need - R.lift) * (1 - Math.exp(-1.5 * real));
       want.y = Math.max(want.y + R.lift, floor);
       // landmarks the view does not own: the chase rises over them, the other views stay outside
       const owns = mode === "shot" || mode === "hold" ? shotFor(sim.film.idx, env.lowEnd).owns : undefined;

@@ -15,7 +15,8 @@ export const PARKS: Park[] = [
   { x: 860, z: 790, r: 95, name: "Central Park" },
   { x: 248, z: 253, r: 13, name: "China Creek Park" },
 ];
-export const inPark = (x: number, z: number): boolean => PARKS.some((p) => Math.hypot(x - p.x, z - p.z) < p.r);
+// squared distances: these run for every test point of every lot, and Math.hypot is slow in V8
+export const inPark = (x: number, z: number): boolean => PARKS.some((p) => (x - p.x) ** 2 + (z - p.z) ** 2 < p.r * p.r);
 
 export type LandmarkKey = "harbourCentre" | "canadaPlace" | "convention" | "bcPlace" | "rogers" | "scienceWorld" | "gate" | "cauldron" | "orca" | "steamClock";
 export type LandmarkDef = { key: LandmarkKey; x: number; z: number; r: number; h: number; margin: number; lotR: number };
@@ -88,7 +89,7 @@ export type Blocker = { x: number; z: number; r: number; h: number; top: number 
 /** The camera steers around these; `top` is absolute (pad height plus the landmark's height). */
 export const BLOCKERS: Blocker[] = LANDMARKS.map((l) => ({ x: l.px, z: l.pz, r: l.r, h: l.h, top: l.padY + l.h }));
 export const inLandmark = (x: number, z: number, pad: number): boolean =>
-  LANDMARKS.some((l) => Math.hypot(x - l.px, z - l.pz) < l.lotR + pad);
+  LANDMARKS.some((l) => (x - l.px) ** 2 + (z - l.pz) ** 2 < (l.lotR + pad) ** 2);
 
 /**
  * China Creek, daylighted: from China Creek Park down through the False Creek Flats to the head of False Creek, in a
@@ -102,17 +103,20 @@ export const STREAM: [number, number][] = (() => {
   }
   return pts;
 })();
+const STREAM_BOX = STREAM.reduce((b, [x, z]) => [Math.min(b[0], x), Math.max(b[1], x), Math.min(b[2], z), Math.max(b[3], z)], [1e9, -1e9, 1e9, -1e9]);
 export function streamDist(x: number, z: number): number {
-  let d = 1e9;
+  // anything well outside the creek's box is simply far (callers only ask about the nearest few dozen units)
+  if (x < STREAM_BOX[0] - 60 || x > STREAM_BOX[1] + 60 || z < STREAM_BOX[2] - 60 || z > STREAM_BOX[3] + 60) return 99;
+  let d2 = 1e18;
   for (let i = 0; i < STREAM.length - 1; i++) {
     const [ax, az] = STREAM[i];
     const [bx, bz] = STREAM[i + 1];
     const ex = bx - ax;
     const ez = bz - az;
     const t = Math.min(1, Math.max(0, ((x - ax) * ex + (z - az) * ez) / (ex * ex + ez * ez)));
-    d = Math.min(d, Math.hypot(x - ax - ex * t, z - az - ez * t));
+    d2 = Math.min(d2, (x - ax - ex * t) ** 2 + (z - az - ez * t) ** 2);
   }
-  return d;
+  return Math.sqrt(d2);
 }
 addModifier((x, z, h) => {
   if (x < 40 || x > 270 || z < 150 || z > 270) return h;

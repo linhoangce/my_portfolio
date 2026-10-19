@@ -2,7 +2,7 @@
 
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect } from "react";
-import type { InstancedMesh, Mesh } from "three";
+import { type InstancedMesh, type Mesh, Vector3 } from "three";
 
 import { stations } from "@/data";
 
@@ -42,6 +42,8 @@ export type TrainDebug = {
   shot: (i: number) => { from: number[]; to: number[]; focus: number[]; owns?: string };
   /** Drop the intro card as a click on it would (Depart drives; this does not). */
   dismiss: () => void;
+  /** Where the camera is and what it looks at, this frame. */
+  cam: () => { pos: number[]; dir: number[] };
   crossovers: number[];
   LEN: number;
   driveTo: (i: number) => void;
@@ -71,6 +73,7 @@ declare global {
 /** `window.__train`: a debug handle for the headless checks (frames, draw calls, simulation state, jumps). */
 export function Debug() {
   const gl = useThree((s) => s.gl);
+  const camera = useThree((s) => s.camera);
   const world = useWorld();
 
   useEffect(() => {
@@ -151,6 +154,10 @@ export function Debug() {
         return { from: p.from.pos.toArray(), to: p.to.pos.toArray(), focus: p.focus.toArray(), owns: p.owns };
       },
       dismiss: () => st().dismissIntro(),
+      cam: () => {
+        const d = camera.getWorldDirection(new Vector3());
+        return { pos: camera.position.toArray(), dir: d.toArray() };
+      },
       driveTo: (i) => st().driveTo(i),
       jump: (i) => st().jump(i),
       look: (season, weather, event) => st().setLook({ season, weather, event, auto: false }),
@@ -201,6 +208,7 @@ export function Debug() {
           warp: s.sim.warp,
           quality: s.quality,
           cityMs: getCityData(s.env.lowEnd).ms,
+          cityPhases: getCityData(s.env.lowEnd).phases,
           lots: getCityData(s.env.lowEnd).lots.length,
           houses: getCityData(s.env.lowEnd).houses.length,
         };
@@ -212,7 +220,7 @@ export function Debug() {
       delete window.__train;
       useTrain.getState().setReady(false);
     };
-  }, [gl, world]);
+  }, [gl, world, camera]);
 
   // first every frame: read last frame's draw-call total, then reset the counter
   useFrame(() => {
