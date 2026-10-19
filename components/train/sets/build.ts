@@ -43,6 +43,7 @@ import {
 import { stations } from "@/data";
 
 import { merged, type Part } from "../merge";
+import { cap, type P2, walls } from "../shapes";
 import { monumentFocus } from "../monuments";
 import { groundAt } from "../terrain";
 import { frameAt, makeFrame, stationS, trackDist, UP } from "../track";
@@ -119,6 +120,45 @@ function terrace(c: Ctx, a0: number, a1: number, l0: number, l1: number): number
   return top;
 }
 
+/** The CPR station's buff stone: arched windows on the ground floor, square ones above, joints and a cornice band. */
+function stationTextures(): { map: CanvasTexture; glow: CanvasTexture } {
+  const paint = (lit: boolean) =>
+    canvasTex(
+      128,
+      128,
+      (g) => {
+        g.fillStyle = lit ? "#000" : "#d9ccb3";
+        g.fillRect(0, 0, 128, 128);
+        if (!lit) {
+          g.fillStyle = "#c7b99e";
+          for (let y = 8; y < 128; y += 10) g.fillRect(0, y, 128, 1);
+          g.fillStyle = "#e6dbc6";
+          g.fillRect(0, 0, 128, 9);
+          g.fillRect(0, 58, 128, 6);
+        }
+        for (const x of [14, 78]) {
+          // a tall arched window below, a square one above
+          g.fillStyle = lit ? "#ffcf8a" : "#2c3644";
+          g.beginPath();
+          g.moveTo(x, 120);
+          g.lineTo(x, 84);
+          g.arc(x + 18, 84, 18, Math.PI, 0);
+          g.lineTo(x + 36, 120);
+          g.fill();
+          g.fillRect(x + 6, 22, 24, 26);
+          if (!lit) {
+            g.fillStyle = "#d9ccb3";
+            g.fillRect(x + 17, 66, 2, 54);
+            g.fillRect(x + 17, 22, 2, 26);
+          }
+        }
+      },
+      true,
+    );
+  return { map: paint(false), glow: paint(true) };
+}
+let stationGlow: MeshStandardMaterial | null = null;
+
 // ------------------------------------------------------------------ 00 Depart · Waterfront
 /** A paved plaza on the ground: one slab per 6-unit cell, each at its own ground height, with planters and benches. */
 function plaza(c: Ctx, a0: number, a1: number, l0: number, l1: number): void {
@@ -143,19 +183,36 @@ function plaza(c: Ctx, a0: number, a1: number, l0: number, l1: number): void {
 function depart(c: Ctx): Partial<BuiltSet> {
   plaza(c, -24, 24, 14, 44);
   const top = Math.max(1.4, c.G(0, 24) + 0.5);
-  // the restored CPR facade: a colonnade under a cornice and pediment, facing the station
-  const stone = new MeshStandardMaterial({ color: 0xd8cdb8, roughness: 0.85 });
+  // the restored CPR station: a beaux-arts block in buff stone, arched windows below and square ones above, a
+  // colonnade with an entablature and pediment facing the line, a copper-roofed attic; its windows light at dusk
   const l = 36;
-  const g = c.G(10, l);
+  const g = Math.min(c.G(10, l), c.G(10, l + 10), c.G(-1, l + 5), c.G(21, l + 5)) - 0.4;
   const h = top + 6.5 - g;
-  // the colonnade on the outer face, set along the line so the shot looks past it at the station
-  c.add(stone, new BoxGeometry(2.2, h, 20), c.L(10, l, g + h / 2));
-  for (let k = -4; k <= 4; k++) c.add(stone, new CylinderGeometry(0.42, 0.5, h - 2.4, 12), c.L(10 + k * 2.2, l + 1.7, g + (h - 2.4) / 2));
-  c.add(stone, new BoxGeometry(3.6, 1.2, 21), c.L(10, l + 0.9, g + h - 0.6));
-  // the pediment: a shallow ridge over the centre bays
-  c.add(stone, new BoxGeometry(2.2, 2.2, 10), c.L(10, l, g + h + 0.1), [0, 0, Math.PI / 4], [1, 0.55, 1]);
-  const win = new MeshStandardMaterial({ color: 0x2a3446, emissive: 0xffd9a0, emissiveIntensity: 0.35, roughness: 0.3 });
-  for (let k = -4; k <= 3; k++) c.add(win, new BoxGeometry(0.1, 3, 1.2), c.L(10 + k * 2.2 + 1.1, l + 1.12, g + h * 0.45));
+  const facade = stationTextures();
+  const stoneWall = new MeshStandardMaterial({ map: facade.map, emissiveMap: facade.glow, emissive: 0xffffff, emissiveIntensity: 0, roughness: 0.85 });
+  const ring: P2[] = [
+    [-1, l],
+    [21, l],
+    [21, l + 10],
+    [-1, l + 10],
+  ].map(([a, ll]) => {
+    const [x, , z] = c.L(a, ll, 0);
+    return [x, z] as P2;
+  });
+  c.add(stoneWall, walls(ring, g, g + h, { uPer: 6, vPer: h }));
+  const stone = new MeshStandardMaterial({ color: 0xd9ccb3, roughness: 0.85 });
+  c.add(stone, cap(ring, g + h));
+  // the colonnade and its entablature, a step out from the wall
+  for (let k = 0; k <= 9; k++) c.add(stone, new CylinderGeometry(0.4, 0.48, h * 0.74, 12), c.L(k * 2.2, l - 1.6, g + (h * 0.74) / 2));
+  c.add(stone, new BoxGeometry(2.4, 1.1, 22.4), c.L(10, l - 1.4, g + h * 0.74 + 0.55));
+  c.add(stone, new BoxGeometry(2.8, 0.5, 22.8), c.L(10, l - 0.2, g + h + 0.1));
+  // the pediment over the centre bays: a low triangular prism
+  // (a 3-sided cylinder turned so its axis runs back into the wall and one edge points up)
+  c.add(stone, new CylinderGeometry(1, 1, 1, 3).rotateZ(Math.PI / 2).rotateX(-Math.PI / 2), c.L(10, l - 1.4, g + h * 0.74 + 1.9), [0, 0, 0], [2.2, 1.6, 5.8]);
+  // the attic with its copper hip roof
+  c.add(stone, new BoxGeometry(6, 2.2, 12), c.L(10, l + 5, g + h + 1.1));
+  c.add(new MeshStandardMaterial({ color: 0x5f9c86, roughness: 0.6 }), new ConeGeometry(1, 1, 4, 1).rotateY(Math.PI / 4), c.L(10, l + 5, g + h + 3.2), [0, 0, 0], [4.8, 2, 9.2]);
+  stationGlow = stoneWall;
   // the light-line map of the ten stops, floating over the terrace
   const lineMat = glowMat(0xa78bfa, 2.2);
   c.add(lineMat, new BoxGeometry(0.12, 0.12, 30), c.L(0, 22, top + 7));
@@ -171,7 +228,17 @@ function depart(c: Ctx): Partial<BuiltSet> {
   }
   anchors.push(new Vector3(...c.L(-15, 22, top + 7.8)), new Vector3(...c.L(15, 22, top + 7.8)));
   // from the city side, over the station and the plaza to the harbour, the loop over the water and the North Shore
-  return { anchors, focus: new Vector3(...c.L(0, 16, top + 4)), shot: { from: [-74, 92, 22], to: [0, -46, 17], look: [0, 16, 6] } };
+  const lit = stationGlow;
+  const city = c.world.buildings.solid;
+  return {
+    anchors,
+    focus: new Vector3(...c.L(0, 16, top + 4)),
+    update: () => {
+      // the station's windows light with the city's
+      if (lit) lit.emissiveIntensity = city.emissiveIntensity * 0.6;
+    },
+    shot: { from: [-74, 92, 22], to: [0, -46, 17], look: [0, 16, 6] },
+  };
 }
 
 /**

@@ -23,8 +23,9 @@ export type LandmarkDef = { key: LandmarkKey; x: number; z: number; r: number; h
 /** Mapped positions (km × 110); lotR is the footprint radius lots keep clear of. */
 export const LANDMARK_DEFS: LandmarkDef[] = [
   { key: "harbourCentre", x: 2.6, z: 18.4, r: 11, h: 56, margin: 6, lotR: 12 },
-  { key: "canadaPlace", x: -36, z: -40, r: 16, h: 26, margin: 6, lotR: 16 },
-  { key: "convention", x: -30, z: -34, r: 36, h: 11, margin: 6, lotR: 36 },
+  // Canada Place out on its pier over the inlet, the Convention Centre on the shore to the west (they overlapped)
+  { key: "canadaPlace", x: -40, z: -76, r: 26, h: 22, margin: 6, lotR: 30 },
+  { key: "convention", x: -88, z: -46, r: 20, h: 11, margin: 6, lotR: 20 },
   { key: "bcPlace", x: -6, z: 122, r: 38, h: 26, margin: 6, lotR: 38 },
   { key: "rogers", x: 52, z: 134, r: 19, h: 12, margin: 7, lotR: 19 },
   { key: "scienceWorld", x: 68.3, z: 155.7, r: 12, h: 24, margin: 8, lotR: 13 },

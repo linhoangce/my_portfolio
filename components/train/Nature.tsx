@@ -11,6 +11,7 @@ import {
   CatmullRomCurve3,
   Color,
   ConeGeometry,
+  Euler,
   Group,
   InstancedMesh,
   Matrix4,
@@ -28,6 +29,7 @@ import { SEA } from "./constants";
 import { merged, type Part } from "./merge";
 import { streetX, streetZ } from "./cityModel";
 import { STREAM } from "./sites";
+import { quadcopter, quadcopterLights } from "./vessels";
 import { useTrain } from "./store";
 import { groundAt, inWater, sdfAt, surfaceAt } from "./terrain";
 import { LEN, frameAt, makeFrame, UP } from "./track";
@@ -167,11 +169,14 @@ export function Nature() {
       return { cx, cz, r: 20 + Math.random() * 50, h: 30 + Math.random() * 30, sp: (0.15 + Math.random() * 0.2) * (Math.random() < 0.5 ? 1 : -1), ph: Math.random() * Math.PI * 2, scale: i % 9 === 0 ? 2.4 : 1 };
     });
     // drones on lanes over the towers and along the line
-    const DN = lowEnd ? 50 : 110;
+    const DN = lowEnd ? 30 : 90;
     // flat dark quadcopters; their running lights only show after dark
-    const droneMat = new MeshStandardMaterial({ color: 0x2a303a, emissive: 0x7dd3fc, emissiveIntensity: 0, roughness: 0.6 });
-    const drones = new InstancedMesh(new BoxGeometry(0.9, 0.16, 0.9), droneMat, DN);
+    // quadcopters: a vertex-coloured frame and, as a second mesh, their running lights (lit after dark)
+    const drones = new InstancedMesh(quadcopter(), new MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.2 }), DN);
     drones.frustumCulled = false;
+    const droneMat = new MeshStandardMaterial({ vertexColors: true, emissive: 0xffffff, emissiveIntensity: 0, roughness: 0.4 });
+    const droneLights = new InstancedMesh(quadcopterLights(), droneMat, DN);
+    droneLights.frustumCulled = false;
     const droneData = Array.from({ length: DN }, (_, i) => {
       const lane = i % 5;
       const centres = [[-60, 50, 70], [-120, 80, 95], [60, 140, 60], [340, 300, 70], [640, 580, 80]];
@@ -222,8 +227,8 @@ export function Nature() {
       clouds.push(s);
       group.add(s);
     }
-    group.add(birds, drones);
-    return { group, birds, birdData, drones, droneData, droneMat, orcas, orcaHome, seals, sealAt, cloudMat };
+    group.add(birds, drones, droneLights);
+    return { group, birds, birdData, drones, droneLights, droneData, droneMat, orcas, orcaHome, seals, sealAt, cloudMat };
   }, [world, lowEnd]);
 
   useEffect(
@@ -240,6 +245,7 @@ export function Nature() {
   const v = useMemo(() => new Vector3(), []);
   const s = useMemo(() => new Vector3(), []);
   const col = useMemo(() => new Color(), []);
+  const e = useMemo(() => new Euler(), []);
   useFrame((state) => {
     const t = state.clock.elapsedTime;
     const { birds, birdData, drones, droneData } = built;
@@ -255,10 +261,14 @@ export function Nature() {
     droneData.forEach((d, i) => {
       const a = d.ph + t * d.sp;
       v.set(d.cx + Math.cos(a) * d.r, d.h + Math.sin(t + i) * 0.6, d.cz + Math.sin(a) * d.r * 0.7);
-      m4.makeTranslation(v.x, v.y, v.z);
+      // nose along the flight path, pitched a little forward as quadcopters fly
+      e.set(0.14, Math.atan2(-Math.sin(a) * d.r, Math.cos(a) * d.r * 0.7), 0, "YXZ");
+      m4.compose(v, q.setFromEuler(e), s.set(1, 1, 1));
       drones.setMatrixAt(i, m4);
+      built.droneLights.setMatrixAt(i, m4);
     });
     drones.instanceMatrix.needsUpdate = true;
+    built.droneLights.instanceMatrix.needsUpdate = true;
     built.droneMat.emissiveIntensity = night.current ? 2.2 : 0;
     built.orcas.forEach((o, i) => {
       const [hx, hz] = built.orcaHome[i];

@@ -10,8 +10,8 @@ export type Monument = { key: LandmarkKey; name: string; era: string; r: number;
 export const MONUMENTS: Monument[] = [
   { key: "scienceWorld", name: "Science World", era: "Expo 86 · geodesic dome · an LED node at every vertex", r: 17, cy: 11 },
   { key: "bcPlace", name: "BC Place", era: "1983 · cable-stayed roof since 2011 · LED crown", r: 40, cy: 12 },
-  { key: "canadaPlace", name: "Canada Place", era: "Expo 86 · five sails over the cruise pier", r: 44, cy: 10 },
-  { key: "harbourCentre", name: "Harbour Centre", era: "1977 · the lookout ring and its glass elevators", r: 30, cy: 28 },
+  { key: "canadaPlace", name: "Canada Place", era: "Expo 86 · five sails over the cruise pier", r: 46, cy: 8 },
+  { key: "harbourCentre", name: "Vancouver Lookout", era: "Harbour Centre · 1977 · the saucer and its glass elevators", r: 33, cy: 31 },
   { key: "rogers", name: "Rogers Arena", era: "1995 · home ice of the Canucks", r: 21, cy: 5 },
   { key: "gate", name: "Millennium Gate", era: "2002 · Chinatown's gateway on Pender Street", r: 7, cy: 4.5 },
   { key: "cauldron", name: "Olympic Cauldron", era: "2010 Winter Games · Jack Poole Plaza", r: 8, cy: 6.5 },

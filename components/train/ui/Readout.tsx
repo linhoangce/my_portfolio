@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { stations } from "@/data";
 
 import { EVENT_META } from "../lookTypes";
+import { hasSidebar } from "../scene/copy";
 import { useTrain } from "../store";
 import { eventSwatch } from "./MonumentCard";
 
@@ -20,6 +21,7 @@ export function Readout() {
   const season = useTrain((s) => s.season);
   const introDone = useTrain((s) => s.introDone);
   const setUi = useTrain((s) => s.setUi);
+  const filmOn = useTrain((s) => s.filmOn);
   const [hints, setHints] = useState(true);
 
   useEffect(() => {
@@ -41,7 +43,7 @@ export function Readout() {
     body = (
       <>
         At <b>{st.section}</b> · {st.name}
-        {overlay ? null : (
+        {overlay || !hasSidebar(readout.idx, filmOn) ? null : (
           <>
             {" · "}
             <b>E</b>

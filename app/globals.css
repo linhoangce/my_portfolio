@@ -834,11 +834,16 @@ html:has(.scene-ov.open) .ask {
   left: 0;
   top: 0;
   opacity: 0;
-  transition: opacity 0.5s;
+  visibility: hidden;
+  transition:
+    opacity 0.5s,
+    visibility 0s 0.5s;
   will-change: transform;
 }
 .cap.on {
   opacity: 1;
+  visibility: visible;
+  transition: opacity 0.5s;
 }
 .cap .pin {
   position: absolute;
@@ -874,6 +879,48 @@ html:has(.scene-ov.open) .ask {
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   text-decoration: none;
+}
+/* Contact's captions are its content: bigger chips that read as links */
+.caps.content .chip-c {
+  padding: 10px 14px;
+  border-color: rgb(167 139 250 / 0.55);
+}
+.caps.content .chip-c b {
+  font-size: 24px;
+}
+.caps.content .chip-c span {
+  font-size: 11px;
+  color: #d5dce8;
+}
+.caps.content a.chip-c:hover,
+.caps.content a.chip-c:focus-visible {
+  background: rgb(91 63 209 / 0.85);
+  border-color: rgb(196 181 253);
+}
+/* on a phone, Contact's links sit in a grid along the bottom instead of on the signposts */
+.caps.docked {
+  inset: auto 0 0 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 12px 12px max(env(safe-area-inset-bottom), 14px);
+  overflow: visible;
+}
+.caps.docked .cap {
+  position: static;
+  transform: none !important;
+}
+.caps.docked .cap .pin,
+.caps.docked .cap .stem {
+  display: none;
+}
+.caps.docked .chip-c {
+  position: static;
+  white-space: normal;
+}
+.caps.docked .chip-c span {
+  max-width: none;
+  overflow-wrap: anywhere;
 }
 .cap.flip .chip-c {
   left: auto;

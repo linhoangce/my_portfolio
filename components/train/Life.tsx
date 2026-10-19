@@ -22,10 +22,11 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 
 import { inLandmark, inPark, inWater, Rng } from "./cityModel";
 import { getLifeData } from "./cityData";
-import { PEOPLE_VARIANTS } from "./constants";
+import { PEOPLE_VARIANTS, SEA } from "./constants";
 import { merged } from "./merge";
 import { sdfAt } from "./terrain";
 import { groundAt, UP } from "./track";
+import { sailboat, seabus, yacht } from "./vessels";
 import { useWorld } from "./world";
 
 const CAR_COLOURS = [0xffffff, 0xe8e8e8, 0xc9ccd1, 0x2b2f36, 0x1f2a44, 0x8c1d1d, 0x3a5fa8, 0x6b7280, 0xd9d2c3, 0x111111, 0x9ca3af, 0x7f1d1d];
@@ -35,7 +36,8 @@ const q = new Quaternion();
 const one = new Vector3(1, 1, 1);
 const p = new Vector3();
 
-type Boat = { x: number; z: number; dir: 1 | -1; speed: number };
+/** kind: 0 SeaBus, 1 sailboat, 2 motor yacht. */
+type Boat = { x: number; z: number; dir: 1 | -1; speed: number; kind: number; k: number };
 
 /** Traffic on the street grid, people on platforms and sidewalks, boats on the inlet, a floatplane over the harbour. */
 export function Life() {
@@ -83,17 +85,26 @@ export function Life() {
       return m;
     });
 
-    // six boats on the inlet, one instanced mesh
-    const bg = new BoxGeometry(6, 1.6, 2.2);
-    bg.translate(0, 0.8, 0);
-    const boatMesh = new InstancedMesh(bg, new MeshStandardMaterial({ color: 0xf1f1f1, roughness: 0.6 }), 6);
-    boatMesh.frustumCulled = false;
+    // boats on the inlet: the SeaBus, sailboats and motor yachts, one instanced mesh per kind
+    const KINDS = 3;
+    const boatMat = new MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.05, side: 2 });
+    const boatMeshes = [seabus(), sailboat(), yacht()].map((g) => {
+      const m = new InstancedMesh(g, boatMat, 4);
+      m.frustumCulled = false;
+      m.castShadow = !lowEnd;
+      return m;
+    });
     const boats: Boat[] = [];
+    const perKind = new Array<number>(KINDS).fill(0);
     // boat lanes come from the real coastline: only spots well out in Burrard Inlet
-    for (let tries = 0; boats.length < 6 && tries < 400; tries++) {
+    for (let tries = 0; boats.length < 8 && tries < 600; tries++) {
       const x = -150 + rng.next() * 700;
       const z = -60 - rng.next() * 200;
-      if (sdfAt(x, z) < -10 && sdfAt(x + 30, z) < -8 && sdfAt(x - 30, z) < -8) boats.push({ x, z, dir: rng.next() < 0.5 ? 1 : -1, speed: 3 + rng.next() * 3 });
+      if (sdfAt(x, z) < -10 && sdfAt(x + 30, z) < -8 && sdfAt(x - 30, z) < -8) {
+        const kind = [0, 1, 2, 1, 2, 0, 1, 2][boats.length];
+        const speed = kind === 0 ? 6 : kind === 1 ? 2 + rng.next() : 4 + rng.next() * 2;
+        boats.push({ x, z, dir: rng.next() < 0.5 ? 1 : -1, speed, kind, k: perKind[kind]++ });
+      }
     }
 
     // a floatplane circling the harbour: fuselage and floats, wing and tail, three meshes
@@ -112,7 +123,8 @@ export function Life() {
         new MeshStandardMaterial({ color: 0x9aa3ad }),
       ),
     );
-    return { carMesh, carTrim, peopleMeshes, boats, boatMesh, plane, planeT: 0 };
+    boatMeshes.forEach((m, kind) => (m.count = perKind[kind]));
+    return { carMesh, carTrim, peopleMeshes, boats, boatMeshes, boatMat, plane, planeT: 0 };
   }, [data, mats, lowEnd]);
 
   useEffect(
@@ -123,8 +135,10 @@ export function Life() {
       built.carTrim.dispose();
       built.peopleMeshes[0].geometry.dispose();
       for (const m of built.peopleMeshes) m.dispose();
-      built.boatMesh.geometry.dispose();
-      built.boatMesh.dispose();
+      for (const m of built.boatMeshes) {
+        m.geometry.dispose();
+        m.dispose();
+      }
       built.plane.traverse((o) => {
         if (o instanceof Mesh) o.geometry.dispose();
       });
@@ -173,12 +187,15 @@ export function Life() {
       // turn around before the shore
       if (sdfAt(b.x + b.dir * 12, b.z) > -6) b.dir = b.dir > 0 ? -1 : 1;
       b.x += b.dir * b.speed * dt;
-      p.set(b.x, -0.3 + Math.sin(t * 1.3 + b.z) * 0.15, b.z);
-      q.setFromAxisAngle(UP, b.dir > 0 ? 0 : Math.PI);
+      p.set(b.x, SEA + 0.05 + Math.sin(t * 1.3 + b.z) * 0.08, b.z);
+      // the hulls are built bow along +z; a quarter turn points them along the lane
+      q.setFromAxisAngle(UP, b.dir > 0 ? Math.PI / 2 : -Math.PI / 2);
       m4.compose(p, q, one);
-      built.boatMesh.setMatrixAt(i, m4);
+      built.boatMeshes[b.kind].setMatrixAt(b.k, m4);
     });
-    built.boatMesh.instanceMatrix.needsUpdate = true;
+    for (const m of built.boatMeshes) m.instanceMatrix.needsUpdate = true;
+    // white hulls take the city's night tone rather than glowing in the dark
+    built.boatMat.color.copy(world.buildings.solid.color);
     built.planeT += dt * 0.12;
     const R = 190;
     const cx = 120;
@@ -195,7 +212,9 @@ export function Life() {
       {built.peopleMeshes.map((m, v) => (
         <primitive key={`people${v}`} object={m} />
       ))}
-      <primitive object={built.boatMesh} />
+      {built.boatMeshes.map((m, i) => (
+        <primitive key={`boat${i}`} object={m} />
+      ))}
       <primitive object={built.plane} />
     </>
   );

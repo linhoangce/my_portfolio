@@ -16,6 +16,8 @@ export type EventLights = {
   glow: MeshStandardMaterial;
   glowB: MeshStandardMaterial;
   patterns: LitPattern[];
+  /** Anything else lit by the event or by night (sail uplights, mast lights, a lattice that follows its nodes). */
+  followers: ((level: number, ev: EventId | null, t: number) => void)[];
 };
 
 export function createEventLights(): EventLights {
@@ -23,6 +25,7 @@ export function createEventLights(): EventLights {
     glow: new MeshStandardMaterial({ color: 0x15171c, emissive: 0xa78bfa, emissiveIntensity: 0, roughness: 0.5 }),
     glowB: new MeshStandardMaterial({ color: 0x15171c, emissive: 0x6ee7f9, emissiveIntensity: 0, roughness: 0.5 }),
     patterns: [],
+    followers: [],
   };
 }
 
@@ -57,7 +60,8 @@ export function tickEventLights(L: EventLights, ev: EventId | null, t: number, l
       let k = 0;
       let blend = false;
       if (ev === "pride") {
-        k = (((a / (Math.PI * 2) + 0.5) * n + t * 0.25) % n + n) % n;
+        // a sphere's nodes take the rainbow in horizontal bands, as Science World does; rings sweep it round
+        k = p.kind === "nodes" ? ((((1 - y) * n * 0.999 + t * 0.15) % n) + n) % n : ((((a / (Math.PI * 2) + 0.5) * n + t * 0.25) % n) + n) % n;
         blend = true;
       } else if (ev === "diwali") k = hash(i, Math.floor(t * 3)) < 0.3 ? 0 : y > 0.4 ? 1 : 2;
       else if (ev === "cherry") {
@@ -77,6 +81,7 @@ export function tickEventLights(L: EventLights, ev: EventId | null, t: number, l
   eventColour(ev, 0, t, L.glow.emissive);
   eventColour(ev, 1, t, L.glowB.emissive);
   L.glow.emissiveIntensity = L.glowB.emissiveIntensity = 0.25 + level * 2.2;
+  for (const f of L.followers) f(level, ev, t);
 }
 
 /** Register an instanced mesh whose instances sit at `points` (normalised height from minY..maxY, angle about centre). */

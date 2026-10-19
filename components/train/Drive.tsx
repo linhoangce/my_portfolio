@@ -33,15 +33,33 @@ export function loopState(sim: Sim): "out" | "tail" | null {
  * (wrong-way running, as the automated line does when single-tracking) until it reaches the next scissors
  * crossover, where it takes the diagonal across. Reversing mid-crossover rereads the same diagonal from the other end.
  *
- * Past either end the train runs a turning loop on its own at LOOP_V and comes back on the other track, heading for
- * the terminus it just passed; until its last car is back on the line it cannot stop or reverse.
+ * At either terminus the train never reverses: asked to head back (a stop behind it, S, scrolling back), it runs on
+ * into the turning loop, round it on its own at LOOP_V, and back onto the other track, then carries on to where it was
+ * sent (or to the terminus). Until its last car is back on the line it cannot stop or reverse.
  */
 export function updateDrive(sim: Sim, dt: number): void {
   const prevS = sim.s;
   if (sim.loopHold && sim.throttle !== sim.loopHold) sim.loopHold = 0;
+  const S = sim.stationS;
+  const last = S[S.length - 1];
+  // facing the loop at a terminus: at or past the end station, heading out
+  const atEnd = (sim.travelDir > 0 && sim.s >= last - 3) || (sim.travelDir < 0 && sim.s <= S[0] + 3);
+  if (atEnd && loopState(sim) === null) {
+    const backTarget = sim.target !== null && (sim.target - sim.s) * sim.travelDir < -0.5;
+    const backThrottle = sim.throttle * sim.travelDir < 0 && !sim.loopHold;
+    if (backTarget || backThrottle) {
+      // turn round through the loop rather than reversing: remember where to go once round
+      sim.afterLoop = backTarget ? sim.target : null;
+      sim.target = sim.travelDir > 0 ? LEN + 3 : -3;
+      if (backThrottle) sim.loopHold = sim.throttle;
+      sim.braking = false;
+    }
+  }
   const throttle = sim.loopHold ? 0 : sim.throttle;
   const loop = loopState(sim);
   if (loop === "out") {
+    // a stop chosen while going round is where the train heads once it is back on the line
+    if (sim.target !== null && sim.target >= S[0] - 1 && sim.target <= last + 1) sim.afterLoop = sim.target;
     sim.target = null;
     sim.v += clamp(sim.travelDir * LOOP_V - sim.v, -BRAKE * dt, ACC * dt);
     sim.s += sim.v * dt;
@@ -55,9 +73,16 @@ export function updateDrive(sim: Sim, dt: number): void {
       sim.travelDir = far ? -1 : 1;
       sim.v = sim.travelDir * Math.abs(sim.v);
       sim.laneFrom = sim.laneTo = LANE * sim.travelDir;
-      sim.target = sim.stationS[far ? sim.stationS.length - 1 : 0];
-      // a key held through the loop would send the train straight back round it: it counts again once released
-      sim.loopHold = sim.throttle;
+      if (sim.throttle * sim.travelDir > 0) {
+        // a key held for the new direction (S pressed at Patterson, say) simply carries on driving
+        sim.loopHold = 0;
+        sim.target = null;
+      } else {
+        sim.target = sim.afterLoop ?? sim.stationS[far ? sim.stationS.length - 1 : 0];
+        // a key held through the loop would send the train straight back round it: it counts again once released
+        sim.loopHold = sim.throttle;
+      }
+      sim.afterLoop = null;
       sim.s2 = clamp(sim.s + sim.travelDir * ONCOMING_RESEAT, stationS[0], stationS[stationS.length - 1]);
       sim.dwell2 = 0;
     }
@@ -205,7 +230,8 @@ export function Drive() {
         const dd = (stationS[i] - sim.s) * dir;
         if (dd > 1 && (nextIdx === null || dd < (stationS[nextIdx] - sim.s) * dir)) nextIdx = i;
       }
-      if (loopState(sim)) readout = { kind: "loop", idx: sim.s > stationS[stationS.length - 1] ? stationS.length - 1 : 0 };
+      const turning = loopState(sim) || (sim.target !== null && (sim.target > LEN || sim.target < 0));
+      if (turning) readout = { kind: "loop", idx: sim.s > (stationS[0] + stationS[stationS.length - 1]) / 2 ? stationS.length - 1 : 0 };
       else if (nextIdx === null) readout = { kind: "end" };
       else {
         const metres = Math.abs(stationS[nextIdx] - sim.s) * METRES_PER_UNIT;

@@ -3,6 +3,7 @@ import { create } from "zustand";
 import { stations } from "@/data";
 
 import { ASSIST_RADIUS, DRAG, LANE } from "./constants";
+import { hasSidebar } from "./scene/copy";
 import { type EventId, LOOK_CYCLE, type Season, SEASONS, type Weather, WEATHERS, cycleNext } from "./lookTypes";
 import type { LandmarkKey } from "./sites";
 
@@ -44,6 +45,8 @@ export type Sim = {
   warp: number;
   /** The throttle that was held when the train came out of a turning loop; ignored until released. */
   loopHold: number;
+  /** Where a train turning round through a loop heads once it is back on the line. */
+  afterLoop: number | null;
   /** The camera's ground position, written by the rig each frame (the oncoming train stays out of its sight when it reappears). */
   cam: [number, number];
   /** Debug only: a fixed camera (position, look target) for the headless checks. */
@@ -162,6 +165,7 @@ export const useTrain = create<TrainState>((set, get) => ({
     film: { phase: "hold", idx: 0, t: 0, cooldown: 0, startedAt: -10 },
     warp: 1,
     loopHold: 0,
+    afterLoop: null,
     cam: [0, 0],
     freeCam: null,
     stationS: [],
@@ -226,6 +230,8 @@ export const useTrain = create<TrainState>((set, get) => ({
   },
   setThrottle: (t) => {
     const { sim } = get();
+    // a held key repeats: only a change of throttle counts (a repeat must not cancel a turn through a loop)
+    if (t === sim.throttle) return;
     sim.throttle = t;
     if (t !== 0) {
       sim.target = null;
@@ -291,14 +297,15 @@ export const useTrain = create<TrainState>((set, get) => ({
   setStage: (n) => {
     const st = get();
     if (n === st.sceneStage) return;
-    set({ sceneStage: n, overlay: n >= 1 && st.dismissed !== st.sceneIdx && st.introDone ? true : st.overlay });
+    const open = n >= 1 && st.dismissed !== st.sceneIdx && st.introDone && hasSidebar(st.sceneIdx, st.filmOn);
+    set({ sceneStage: n, overlay: open ? true : st.overlay });
   },
   showOverlay: () => set({ overlay: true, dismissed: null }),
   hideOverlay: () => set((st) => ({ overlay: false, dismissed: st.sceneIdx })),
   toggleOverlay: () => {
     const st = get();
     const active = st.scenePhase === "establish" || st.scenePhase === "hold" || (!st.filmOn && st.dockedIdx !== null);
-    if (!active) return;
+    if (!active || !hasSidebar(st.sceneIdx, st.filmOn)) return;
     if (st.overlay) st.hideOverlay();
     else st.showOverlay();
   },

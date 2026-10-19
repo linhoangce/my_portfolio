@@ -36,12 +36,18 @@ export function CaptionProjector() {
       let on = show && !!a;
       let x = 0;
       let y = 0;
+      if (captionBus.docked) {
+        // laid out by CSS along the bottom of a phone screen: only shown or hidden here
+        if (on !== (last[k]?.on ?? false)) el.classList.toggle("on", on);
+        last[k] = { x: -1, y: -1, on, flip: false, el };
+        continue;
+      }
       if (on && a) {
         v.copy(a).project(state.camera);
         x = (v.x * 0.5 + 0.5) * W;
         y = (-v.y * 0.5 + 0.5) * H;
         const far = a.distanceTo(state.camera.position) > 450;
-        on = v.z < 1 && !far && x > left + 10 && x < W - 16 && y > top && y < bottom && (!phone || shown < 3);
+        on = v.z < 1 && !far && x > left + 10 && x < W - 16 && y > top && y < bottom && (!phone || captionBus.all || shown < 3);
       }
       if (on) shown++;
       // a new scene renders new elements: start their state afresh
