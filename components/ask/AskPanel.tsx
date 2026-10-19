@@ -57,7 +57,10 @@ export function AskPanel() {
     await new Promise((r) => setTimeout(r, reduced ? 0 : 650));
     const r = scripted(q);
     let answer = r.answer ?? "";
-    if (r.scene) {
+    if (r.scene?.event !== undefined) {
+      setLook({ event: r.scene.event, season: r.scene.season, weather: r.scene.weather, auto: false });
+      if (r.scene.time) setTheme(r.scene.time === "day" ? "light" : "dark");
+    } else if (r.scene) {
       setLook({ season: r.scene.season, weather: r.scene.weather, auto: false });
       if (r.scene.time) setTheme(r.scene.time === "day" ? "light" : "dark");
       const st = useTrain.getState();
@@ -66,6 +69,10 @@ export function AskPanel() {
     }
     setMsgs((m) => [...m, { role: "bot", text: answer, chips: goChips(answer) }]);
     setBusy(false);
+    if (r.monument) {
+      useTrain.getState().openMonument(r.monument);
+      if (phone) setAskOpen(false);
+    }
     if (r.go !== null) {
       driveTo(r.go);
       if (phone) setAskOpen(false);

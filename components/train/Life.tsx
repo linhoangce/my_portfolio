@@ -62,18 +62,8 @@ export function Life() {
     body.translate(0, 0, -0.55);
     const glass = new BoxGeometry(0.95, 0.3, 1.16);
     glass.translate(-0.05, 0.74, 0);
-    const wheel = new CylinderGeometry(0.19, 0.19, 0.2, 10);
-    wheel.rotateX(Math.PI / 2);
-    const wheels = [
-      [-0.75, -0.5],
-      [0.75, -0.5],
-      [-0.75, 0.5],
-      [0.75, 0.5],
-    ].map(([x, z]) => {
-      const w = wheel.clone();
-      w.translate(x, 0.19, z);
-      return w;
-    });
+    // the wheels as two dark axle blocks: at street distance they read the same for 24 triangles instead of 160
+    const wheels = [-0.75, 0.75].map((x) => new BoxGeometry(0.38, 0.38, 1.2).translate(x, 0.19, 0));
     const n = data.cars.length;
     const carMesh = new InstancedMesh(body, mats.car, Math.max(1, n));
     const carTrim = new InstancedMesh(mergeGeometries([glass, ...wheels], false), mats.carTrim, Math.max(1, n));
@@ -81,7 +71,6 @@ export function Life() {
     data.cars.forEach((_, i) => carMesh.setColorAt(i, c.setHex(rng.pick(CAR_COLOURS))));
     carMesh.count = carTrim.count = n;
     carMesh.castShadow = !lowEnd;
-    wheel.dispose();
     glass.dispose();
     for (const w of wheels) w.dispose();
 

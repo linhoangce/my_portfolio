@@ -7,6 +7,10 @@ import type { InstancedMesh, Mesh } from "three";
 import { stations } from "@/data";
 
 import type { EventId, Season, Weather } from "./lookTypes";
+import { skipToHold } from "./scene/director";
+import { shotFor } from "./scene/shots";
+import { orbitBy, zoomBy } from "./scene/view";
+import type { LandmarkKey } from "./sites";
 import { useTrain } from "./store";
 import { BLOCKERS } from "./cityModel";
 import { getCityData } from "./cityData";
@@ -29,6 +33,15 @@ export type TrainDebug = {
   terrain: () => { maxGrade: number; maxGradeAt: number; platformSpread: number[]; minClearance: number; minClearanceAt: number; cutOffset: number };
   stations: string[];
   stationS: number[];
+  /** Orbit the current view (yaw, pitch in radians) and zoom (log). */
+  orbit: (yaw: number, pitch: number, zoom?: number) => void;
+  monument: (key: LandmarkKey | null) => void;
+  /** Skip an establishing shot to its hold. */
+  skip: () => void;
+  /** The current scene's shot plan (positions only), for the frame checks. */
+  shot: (i: number) => { from: number[]; to: number[]; focus: number[]; owns?: string };
+  /** Drop the intro card as a click on it would (Depart drives; this does not). */
+  dismiss: () => void;
   crossovers: number[];
   LEN: number;
   driveTo: (i: number) => void;
@@ -127,6 +140,17 @@ export function Debug() {
       stationS,
       crossovers: CROSSOVERS,
       LEN,
+      orbit: (yaw, pitch, zoom = 0) => {
+        orbitBy(st(), yaw, pitch);
+        if (zoom) zoomBy(st(), zoom);
+      },
+      monument: (key) => (key ? st().openMonument(key) : st().closeMonument()),
+      skip: () => skipToHold(st()),
+      shot: (i) => {
+        const p = shotFor(i, st().env.lowEnd);
+        return { from: p.from.pos.toArray(), to: p.to.pos.toArray(), focus: p.focus.toArray(), owns: p.owns };
+      },
+      dismiss: () => st().dismissIntro(),
       driveTo: (i) => st().driveTo(i),
       jump: (i) => st().jump(i),
       look: (season, weather, event) => st().setLook({ season, weather, event, auto: false }),
@@ -159,7 +183,12 @@ export function Debug() {
           laneTo: s.sim.laneTo,
           crossStart: s.sim.crossStart,
           dockedIdx: s.dockedIdx,
-          dockOpen: s.dockOpen,
+          overlay: s.overlay,
+          phase: s.scenePhase,
+          sceneIdx: s.sceneIdx,
+          stage: s.sceneStage,
+          monument: s.monument,
+          filmOn: s.filmOn,
           season: s.season,
           weather: s.weather,
           event: s.event,

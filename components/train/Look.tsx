@@ -33,14 +33,17 @@ export function Look() {
   useFrame((state, delta) => {
     const st = useTrain.getState();
     const dt = Math.min(delta, 0.05) * st.sim.warp;
-    if (st.autoLook) {
+    // the automatic cycle holds still while a scene is cutting in or establishing
+    const filming = st.scenePhase === "cut" || st.scenePhase === "establish";
+    if (st.autoLook && !filming) {
       autoT.current += dt;
       if (autoT.current > AUTO_LOOK_PERIOD) {
         autoT.current = 0;
         st.advanceCycle();
       }
     } else autoT.current = 0;
-    tickLook(world, dt, st.env.reduced || first.current, st.dockedIdx);
+    const inScene = st.scenePhase === "cut" || st.scenePhase === "establish" || st.scenePhase === "hold";
+    tickLook(world, dt, st.env.reduced || first.current, inScene ? st.sceneIdx : st.dockedIdx);
     first.current = false;
 
     const { sim } = st;

@@ -13,6 +13,7 @@ import {
   Matrix4,
   Mesh,
   MeshStandardMaterial,
+  NormalBlending,
   PlaneGeometry,
   Points,
   PointsMaterial,
@@ -61,7 +62,7 @@ function points(n: number, size: number, additive: boolean): { pts: Points; pos:
   const g = new BufferGeometry();
   g.setAttribute("position", new BufferAttribute(pos, 3));
   g.setAttribute("color", new BufferAttribute(colour, 3));
-  const pts = new Points(g, new PointsMaterial({ size, map: dot(), vertexColors: true, transparent: true, alphaTest: additive ? 0 : 0.2, depthWrite: false, toneMapped: !additive, blending: additive ? AdditiveBlending : undefined }));
+  const pts = new Points(g, new PointsMaterial({ size, map: dot(), vertexColors: true, transparent: true, alphaTest: additive ? 0 : 0.2, depthWrite: false, toneMapped: !additive, blending: additive ? AdditiveBlending : NormalBlending }));
   pts.frustumCulled = false;
   pts.visible = false;
   return { pts, pos, colour };

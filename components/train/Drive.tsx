@@ -4,6 +4,7 @@ import { useFrame } from "@react-three/fiber";
 import { useRef } from "react";
 
 import { ACC, BRAKE, CROSS_LEN, DOCK_DIST, DOCK_V, DRAG, KMH_PER_UNIT, LANE, METRES_PER_UNIT, ONCOMING_DWELL, ONCOMING_RESEAT, ONCOMING_SPEED, S_MIN, TRAIN_LEN, VMAX } from "./constants";
+import { stepFilm } from "./scene/director";
 import { type Readout, type Sim, useTrain } from "./store";
 import { CROSSOVERS, LEN, nearestStation, stationS } from "./track";
 
@@ -103,7 +104,7 @@ export function updateOncoming(sim: Sim, dt: number): void {
 const sameReadout = (a: Readout, b: Readout) =>
   a.kind === b.kind && (a.kind === "end" || b.kind === "end" || (a.idx === b.idx && (a.kind !== "next" || b.kind !== "next" || a.metres === b.metres)));
 
-/** The physics step and the UI-visible state derived from it (dock, readout, speed, next stop). */
+/** The physics step, the film director on the same clock, and the UI-visible state derived from them (dock, readout, speed, next stop). */
 export function Drive() {
   const lastDistAt = useRef(0);
 
@@ -117,6 +118,7 @@ export function Drive() {
       const dt = Math.min(remaining, 0.05);
       updateDrive(sim, dt);
       updateOncoming(sim, dt);
+      stepFilm(useTrain.getState(), dt);
       remaining -= dt;
     } while (remaining > 1e-6);
 

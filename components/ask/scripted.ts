@@ -1,13 +1,53 @@
 /** Scripted attendant: keyword matching over the station notes, used when no API key is configured. No three.js here. */
-import { type Season, SEASONS, type Weather } from "@/components/train/lookTypes";
+import { EVENT_META, type EventId, type Season, SEASONS, type Weather } from "@/components/train/lookTypes";
+import type { LandmarkKey } from "@/components/train/sites";
 
-export type SceneChange = { weather?: Weather; season?: Season; time?: "day" | "night" };
-export type ScriptedReply = { answer: string | null; go: number | null; scene: SceneChange | null };
+export type SceneChange = { weather?: Weather; season?: Season; time?: "day" | "night"; event?: EventId | null };
+export type ScriptedReply = { answer: string | null; go: number | null; scene: SceneChange | null; monument?: LandmarkKey };
+
+/** Event phrases, matched before anything else ("fireworks" must not read as "work", "rainbow" as "rain"). */
+const EVENT_WORDS: [EventId, string[]][] = [
+  ["cherry", ["cherry", "blossom", "sakura"]],
+  ["light", ["fireworks", "celebration of light"]],
+  ["pride", ["pride", "rainbow"]],
+  ["diwali", ["diwali", "diya"]],
+  ["halloween", ["halloween", "pumpkin", "spooky"]],
+  ["brightnights", ["bright nights", "christmas", "holiday lights", "festive"]],
+  ["lunar", ["lunar new year", "chinese new year", "lunar", "lantern"]],
+  ["vaisakhi", ["vaisakhi", "baisakhi"]],
+];
+
+const MONUMENT_WORDS: [LandmarkKey, string[]][] = [
+  ["scienceWorld", ["science world", "sphere", "geodesic", "dome"]],
+  ["bcPlace", ["bc place"]],
+  ["canadaPlace", ["canada place", "sails"]],
+  ["harbourCentre", ["harbour centre", "harbor center", "lookout tower"]],
+  ["steamClock", ["steam clock", "gastown"]],
+  ["gate", ["millennium gate", "chinatown gate"]],
+  ["orca", ["digital orca", "orca", "coupland"]],
+  ["cauldron", ["cauldron", "olympic"]],
+  ["rogers", ["rogers arena", "canucks"]],
+];
 
 /** Returns the answer, the station index to drive to and any scene change the visitor asked for. */
 export function scripted(q: string): ScriptedReply {
   const t = q.toLowerCase();
   const has = (...w: string[]) => w.some((x) => t.includes(x));
+  for (const [id, words] of EVENT_WORDS) {
+    if (!has(...words)) continue;
+    const m = EVENT_META[id];
+    return {
+      answer: `Lighting the city for ${m.label}: ${m.note}.${m.night ? " I switched to night so the monuments glow." : ""} Click Science World or BC Place to circle them.`,
+      go: null,
+      scene: { event: id, season: m.season, weather: m.weather, time: m.night ? "night" : undefined },
+    };
+  }
+  if (has("no event", "turn off the event", "plain city")) return { answer: "The city is back to its everyday lights.", go: null, scene: { event: null } };
+  for (const [key, words] of MONUMENT_WORDS) {
+    if (has(...words) && has("show", "see", "look", "circle", "where", "visit", "take me")) {
+      return { answer: "Here it is. Drag to circle it, ctrl and scroll to zoom, Esc to come back to the train.", go: null, scene: null, monument: key };
+    }
+  }
   const scene: SceneChange = {};
   if (has("rain")) scene.weather = "rain";
   else if (has("snow")) scene.weather = "snow";
@@ -64,6 +104,7 @@ export function scripted(q: string): ScriptedReply {
 export const SUGGESTIONS = [
   "What did Linh build at the Cursor hackathon?",
   "Take me to the project that uses DINOv2",
-  "Which projects use PyTorch?",
+  "Light the city for Pride",
+  "Show me Science World",
   "How do I contact Linh?",
 ];

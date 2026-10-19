@@ -21,6 +21,9 @@ import { Mountains } from "./Mountains";
 import { Nature } from "./Nature";
 import { Perf } from "./Perf";
 import { Precipitation } from "./Precipitation";
+import { CaptionProjector } from "./scene/CaptionProjector";
+import { MonumentPicker } from "./scene/MonumentPicker";
+import { Sets } from "./sets/Sets";
 import { Sky } from "./Sky";
 import { Stations } from "./Stations";
 import { useTrain } from "./store";
@@ -65,11 +68,14 @@ export default function Scene({ onContextLost }: { onContextLost?: () => void })
         <Nature />
         <Guideway />
         <Stations />
+        <Sets />
         <Train />
         <Life />
         <Precipitation />
         <Drive />
         <CameraRig />
+        <MonumentPicker />
+        <CaptionProjector />
         <Look />
         {!lowEnd && bloom ? <Effects /> : null}
         {!lowEnd ? <Perf /> : null}

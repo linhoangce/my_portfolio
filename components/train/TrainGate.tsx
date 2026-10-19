@@ -13,9 +13,13 @@ import { Keyboard } from "./controls/Keyboard";
 import { Pointer } from "./controls/Pointer";
 import { Wheel } from "./controls/Wheel";
 import { useTrain } from "./store";
-import { Dock } from "./ui/Dock";
+import { FilmFx } from "./ui/FilmFx";
 import { Intro } from "./ui/Intro";
+import { Help, Menu } from "./ui/Menu";
+import { MonumentCard } from "./ui/MonumentCard";
 import { Readout } from "./ui/Readout";
+import { SceneCaptions } from "./ui/SceneCaptions";
+import { SceneOverlay } from "./ui/SceneOverlay";
 import { TopBar } from "./ui/TopBar";
 
 const Scene = dynamic(() => import("./Scene"), { ssr: false, loading: () => null });
@@ -58,6 +62,8 @@ export function TrainGate() {
     const phone = () => window.innerWidth < PHONE_MAX_WIDTH;
     const lite = /[?&]lite=1/.test(window.location.search); // forces the phone budget (used by the headless checks)
     setEnv({ coarse, reduced: reducedMq.matches, phone: phone(), lowEnd: coarse || phone() || lite });
+    // ?film=0: arrivals open the section without the film (a visitor setting and a harness switch)
+    if (/[?&]film=0/.test(window.location.search)) useTrain.getState().setFilmOn(false);
     const onResize = () => setEnv({ phone: phone() });
     const onMotion = () => setEnv({ reduced: reducedMq.matches });
     window.addEventListener("resize", onResize);
@@ -117,11 +123,16 @@ export function TrainGate() {
       </Pointer>
       <Keyboard />
       <Wheel />
+      <FilmFx />
       <TopBar />
       <Readout />
       <DriveButtons />
+      <SceneCaptions />
+      <SceneOverlay />
+      <MonumentCard />
+      <Menu />
+      <Help />
       <Intro />
-      <Dock />
       <AskPanel />
     </>
   );

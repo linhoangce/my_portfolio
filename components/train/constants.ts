@@ -60,20 +60,15 @@ export const CAM = {
   chasePhone: { right: 13, up: 12, back: 44 },
   station: { right: 30, up: 13, ahead: 20 },
   stationPhone: { right: 40, up: 17, ahead: 28 },
-  dockShift: 9,
   cab: { up: 3.1, ahead: 4.4, look: 30 },
-  yawMax: 1.3,
-  pitchMin: -0.22,
-  pitchMax: 0.4,
+  /** How fast the chase view swings back behind the train after 3 s without input, once it is moving. */
   yawDecay: 0.6,
-  blockerMargin: 8,
-  blockerRise: 12,
   fov: 40,
   near: 0.5,
   far: 5200,
 } as const;
 
-/** Seasons and weather cycle on their own every this many seconds until a chip or the attendant takes over. */
+/** Seasons, weather and events cycle on their own every this many seconds until the menu or the attendant takes over. */
 export const AUTO_LOOK_PERIOD = 10;
 
 /** Below this width the layout is the phone layout (bottom sheets, hold buttons). */

@@ -4,6 +4,12 @@ import { stations } from "@/data";
 
 import { ASSIST_RADIUS, DRAG, LANE, S_MIN } from "./constants";
 import { type EventId, LOOK_CYCLE, type Season, SEASONS, type Weather, WEATHERS, cycleNext } from "./lookTypes";
+import type { LandmarkKey } from "./sites";
+
+/** idle → cut (dip to black) → establish (the authored shot) → hold (orbit the set) → exit (blend back to the chase). */
+export type ScenePhase = "idle" | "cut" | "establish" | "hold" | "exit";
+export type Orbit = { yaw: number; pitch: number; zoom: number };
+export type UiPanel = null | "menu" | "help";
 
 /**
  * Hot-path numbers, mutated in place by Drive, the camera rig and the controls every frame.
@@ -22,11 +28,18 @@ export type Sim = {
   /** The oncoming train. */
   s2: number;
   dwell2: number;
-  yawOff: number;
-  pitchOff: number;
+  /** The visitor's view: around the chase angles (yaw unbounded), around a scene's set, around a monument. */
+  orbit: Orbit & { idle: number };
+  hold: Orbit;
+  mon: Orbit;
+  /** A/D or ←/→ held: −1, 0, 1. */
+  held: number;
   dragging: boolean;
-  dragAxis: "drive" | "look" | null;
+  /** The chase camera rides right of the train (1) unless a landmark is there (−1). */
+  camSide: 1 | -1;
   camInit: boolean;
+  /** The film director's clock; the React-visible phase and stage are mirrored into the store on change. */
+  film: { phase: ScenePhase; idx: number; t: number; cooldown: number; startedAt: number };
   /** Simulated seconds per real second; the headless checks raise it, the physics is sub-stepped so it stays exact. */
   warp: number;
   /** Debug only: a fixed camera (position, look target) for the headless checks. */
@@ -47,8 +60,19 @@ export type TrainState = {
   env: Env;
   ready: boolean;
   dockedIdx: number | null;
+  /** The scene whose overlay the visitor hid (E or Esc); it stays hidden for this stay. */
   dismissed: number | null;
-  dockOpen: boolean;
+  /** The station overlay is on screen (owned by the director). */
+  overlay: boolean;
+  scenePhase: ScenePhase;
+  sceneIdx: number;
+  /** 0–4: kicker and title, lead, the beats, the metrics; drives the reveal. */
+  sceneStage: number;
+  /** false with ?film=0: arrivals open the overlay without the film. */
+  filmOn: boolean;
+  monument: LandmarkKey | null;
+  hoverMon: LandmarkKey | null;
+  ui: UiPanel;
   nextIdx: number | null;
   kmh: number;
   readout: Readout;
@@ -77,9 +101,19 @@ export type TrainState = {
   setDocked: (idx: number | null) => void;
   setReadout: (r: Readout, next: number | null) => void;
   setKmh: (k: number) => void;
-  openDock: () => void;
-  closeDock: () => void;
-  toggleDock: () => void;
+  startScene: (i: number) => void;
+  setPhase: (phase: ScenePhase) => void;
+  endScene: () => void;
+  setStage: (n: number) => void;
+  showOverlay: () => void;
+  hideOverlay: () => void;
+  toggleOverlay: () => void;
+  setFilmOn: (on: boolean) => void;
+  openMonument: (key: LandmarkKey) => void;
+  closeMonument: () => void;
+  setHoverMon: (key: LandmarkKey | null) => void;
+  setUi: (ui: UiPanel) => void;
+  setEvent: (event: EventId | null) => void;
   dismissIntro: () => void;
   toggleCab: () => void;
   setAskOpen: (open: boolean) => void;
@@ -112,11 +146,15 @@ export const useTrain = create<TrainState>((set, get) => ({
     crossStart: 0,
     s2: 0,
     dwell2: 0,
-    yawOff: 0,
-    pitchOff: 0,
+    orbit: { yaw: 0, pitch: 0, zoom: 0, idle: 0 },
+    hold: { yaw: 0, pitch: 0, zoom: 0 },
+    mon: { yaw: 0, pitch: 0.3, zoom: 0 },
+    held: 0,
     dragging: false,
-    dragAxis: null,
+    camSide: 1,
     camInit: false,
+    // the Waterfront shot holds behind the intro card
+    film: { phase: "hold", idx: 0, t: 0, cooldown: 0, startedAt: -10 },
     warp: 1,
     freeCam: null,
     stationS: [],
@@ -126,7 +164,14 @@ export const useTrain = create<TrainState>((set, get) => ({
   ready: false,
   dockedIdx: null,
   dismissed: null,
-  dockOpen: false,
+  overlay: false,
+  scenePhase: "hold",
+  sceneIdx: 0,
+  sceneStage: 0,
+  filmOn: true,
+  monument: null,
+  hoverMon: null,
+  ui: null,
   nextIdx: null,
   kmh: 0,
   readout: { kind: "at", idx: 0 },
@@ -159,7 +204,7 @@ export const useTrain = create<TrainState>((set, get) => ({
     sim.target = sim.stationS[idx];
     sim.throttle = 0;
     sim.braking = false;
-    set({ dismissed: null, introDone: true });
+    set({ dismissed: null, introDone: true, monument: null });
   },
   jump: (i) => {
     const { sim } = get();
@@ -169,7 +214,8 @@ export const useTrain = create<TrainState>((set, get) => ({
     sim.v = 0;
     sim.target = null;
     sim.camInit = false;
-    set({ dismissed: null });
+    sim.film = { phase: "idle", idx, t: 0, cooldown: 0, startedAt: -10 };
+    set({ dismissed: null, monument: null, scenePhase: "idle", sceneIdx: idx, sceneStage: 0, overlay: false });
   },
   setThrottle: (t) => {
     const { sim } = get();
@@ -177,6 +223,7 @@ export const useTrain = create<TrainState>((set, get) => ({
     if (t !== 0) {
       sim.target = null;
       if (!get().introDone) set({ introDone: true });
+      if (get().monument) set({ monument: null });
     }
   },
   setBraking: (b) => {
@@ -198,6 +245,7 @@ export const useTrain = create<TrainState>((set, get) => ({
     sim.target = clamp(base + delta, S_MIN, sim.LEN - 6);
     sim.throttle = 0;
     if (!get().introDone) set({ introDone: true });
+    if (get().monument) set({ monument: null });
   },
   snapTarget: () => {
     const { sim } = get();
@@ -206,29 +254,61 @@ export const useTrain = create<TrainState>((set, get) => ({
     if (Math.abs(sim.stationS[i] - sim.target) < ASSIST_RADIUS) sim.target = sim.stationS[i];
   },
   setDocked: (idx) => {
-    const st = get();
-    if (idx === st.dockedIdx) return;
-    if (idx === null) set({ dockedIdx: null, dockOpen: false });
-    else set({ dockedIdx: idx, dockOpen: st.dismissed !== idx && st.introDone });
+    if (idx !== get().dockedIdx) set({ dockedIdx: idx });
   },
   setReadout: (readout, nextIdx) => set({ readout, nextIdx }),
   setKmh: (kmh) => {
     if (kmh !== get().kmh) set({ kmh });
   },
-  openDock: () => {
-    const { dockedIdx } = get();
-    if (dockedIdx !== null) set({ dockOpen: true, dismissed: null });
+  startScene: (i) => {
+    const { sim } = get();
+    sim.film = { phase: "cut", idx: i, t: 0, cooldown: 0, startedAt: performance.now() };
+    sim.hold.yaw = sim.hold.pitch = sim.hold.zoom = 0;
+    set({ scenePhase: "cut", sceneIdx: i, sceneStage: 0, overlay: false });
   },
-  closeDock: () => {
-    const { dockedIdx } = get();
-    set({ dockOpen: false, dismissed: dockedIdx });
+  setPhase: (phase) => {
+    const { sim } = get();
+    sim.film.phase = phase;
+    sim.film.t = 0;
+    if (get().scenePhase !== phase) set({ scenePhase: phase });
   },
-  toggleDock: () => {
+  endScene: () => {
     const st = get();
-    if (st.dockedIdx === null) return;
-    if (st.dockOpen) st.closeDock();
-    else st.openDock();
+    const ph = st.sim.film.phase;
+    if (ph === "idle" || ph === "exit") return;
+    st.sim.film.cooldown = 3;
+    st.setPhase("exit");
+    set({ overlay: false });
   },
+  setStage: (n) => {
+    const st = get();
+    if (n === st.sceneStage) return;
+    set({ sceneStage: n, overlay: n >= 1 && st.dismissed !== st.sceneIdx && st.introDone ? true : st.overlay });
+  },
+  showOverlay: () => set({ overlay: true, dismissed: null }),
+  hideOverlay: () => set((st) => ({ overlay: false, dismissed: st.sceneIdx })),
+  toggleOverlay: () => {
+    const st = get();
+    const active = st.scenePhase === "establish" || st.scenePhase === "hold" || (!st.filmOn && st.dockedIdx !== null);
+    if (!active) return;
+    if (st.overlay) st.hideOverlay();
+    else st.showOverlay();
+  },
+  setFilmOn: (filmOn) => set({ filmOn }),
+  openMonument: (monument) => {
+    const { sim } = get();
+    sim.mon.zoom = 0;
+    sim.mon.pitch = 0.3;
+    set({ monument, ui: null, introDone: true });
+  },
+  closeMonument: () => {
+    if (get().monument) set({ monument: null });
+  },
+  setHoverMon: (hoverMon) => {
+    if (hoverMon !== get().hoverMon) set({ hoverMon });
+  },
+  setUi: (ui) => set({ ui }),
+  setEvent: (event) => set({ event, autoLook: false }),
   dismissIntro: () => {
     if (!get().introDone) set({ introDone: true });
   },

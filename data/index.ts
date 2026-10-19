@@ -56,9 +56,9 @@ export type SkillGroup = { name: string; items: string[] };
 
 export type Station = {
   id: StationId;
-  /** Two-digit code shown on chips and signs. */
+  /** Two-digit code shown on the line map and the door labels. */
   code: string;
-  /** Real station name: only on the 3D fascia sign and in the attendant's notes. */
+  /** Real station name: on the screen-door labels, the readout and in the attendant's notes. */
   name: string;
   /** Section name: what the UI shows. */
   section: string;
@@ -80,12 +80,13 @@ export const person = {
 };
 
 export const intro = {
-  kicker: "Portfolio · Expo Line · Vancouver, BC",
-  lead: "Software developer building ML systems and LLM agents that are honest about their limits. The work sits at ten stops along the Expo Line, Waterfront to Patterson. Ride the line, or ask the attendant to take you.",
+  kicker: "Portfolio · Expo Line · Vancouver, 2100",
+  lead: "Software developer building ML systems and LLM agents that are honest about their limits. The work sits at ten stops along the Expo Line through an imagined Vancouver, 2100, Waterfront to Patterson. Ride the line, or ask the attendant to take you.",
   keys: [
     ["W / scroll", "drive forward, the train settles at the next station"],
-    ["1 – 0", "jump to a stop"],
-    ["E", "open the station's section"],
+    ["Drag", "look around a full 360°; click a landmark to circle it"],
+    ["1 – 0", "drive to a stop; each arrival plays as a scene"],
+    ["E", "show or hide the station's section"],
     ["Ask", "the attendant answers from this page and can drive you to the right stop"],
   ] as [string, string][],
 };

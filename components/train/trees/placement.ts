@@ -5,6 +5,7 @@
  * the track; near the guideway the crowns stay below the deck. Pure.
  */
 import { arterialX, arterialZ, BI0, BI1, BJ0, BJ1, district, type Rng, streetX, streetZ } from "../cityModel";
+import { inSetZone } from "../sets/zones";
 import { inLandmark, inPark, streamDist } from "../sites";
 import { groundAt, inWater, sdfAt, slopeAt } from "../terrain";
 import { trackDist, trackNearest } from "../track";
@@ -45,7 +46,7 @@ export function placeTrees(rng: Rng, lowEnd: boolean, lots: LotBox[]): TreeInst[
   }
   const inLot = (x: number, z: number) => (grid.get(`${Math.floor(x / 8)},${Math.floor(z / 8)}`) ?? []).some((l) => Math.abs(x - l.x) < l.w / 2 + 0.4 && Math.abs(z - l.z) < l.d / 2 + 0.4);
   // cheapest tests first: the track distance scans the alignment
-  const ok = (x: number, z: number) => !inWater(x, z) && !inLot(x, z) && !inLandmark(x, z, 1) && slopeAt(x, z) < 0.45 && trackDist(x, z) >= 12;
+  const ok = (x: number, z: number) => !inWater(x, z) && !inLot(x, z) && !inLandmark(x, z, 1) && !inSetZone(x, z) && slopeAt(x, z) < 0.45 && trackDist(x, z) >= 12;
   const add = (x: number, z: number, id: SpeciesId, s: number) => {
     const sp = SPECIES_INDEX[id];
     const gy = groundAt(x, z);

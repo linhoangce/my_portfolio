@@ -7,7 +7,7 @@ import { stations } from "@/data";
 import { PEOPLE_VARIANTS } from "./constants";
 import { inLandmark, inPark } from "./sites";
 import { inWater } from "./terrain";
-import { frameAt, groundAt, makeFrame, stationS, trackDist } from "./track";
+import { frameAt, groundAt, LEN, makeFrame, stationS, trackDist } from "./track";
 
 /* ------------------------------------------------------------------ random */
 /** Seeded so the same city is built on every visit (and in every screenshot). */
@@ -158,6 +158,13 @@ export function buildPeople(rng: Rng, PEOPLE_N: number): { people: Person[]; cou
       add({ x: p.x, y: p.y + 1.4, z: p.z, move: 0, dir: 1, axis: "x", origin: 0 });
     }
   });
+  // a few on the BC Parkway, the greenway under the guideway, where the deck is high enough to walk beneath
+  for (let k = 0; k < 60 && people.length < PEOPLE_N; k++) {
+    frameAt(rng.next() * LEN, f);
+    if (inWater(f.p.x, f.p.z) || f.p.y - groundAt(f.p.x, f.p.z) < 5) continue;
+    const p = f.p.clone().addScaledVector(f.r, (rng.next() - 0.5) * 2.4);
+    add({ x: p.x, y: groundAt(p.x, p.z), z: p.z, move: 0, dir: 1, axis: "x", origin: 0 });
+  }
   let tries = 0;
   while (people.length < PEOPLE_N && tries++ < PEOPLE_N * 30) {
     const axis: "x" | "z" = rng.next() < 0.5 ? "x" : "z";
