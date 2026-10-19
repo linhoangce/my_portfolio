@@ -1,83 +1,71 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
-import { BufferGeometry, Color, InstancedMesh, Matrix4, PlaneGeometry, Quaternion, Vector3 } from "three";
+import { BufferGeometry, InstancedBufferAttribute, InstancedMesh, Matrix4, PlaneGeometry, Quaternion, Vector3 } from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
 import { Rng } from "./cityModel";
-import { getCityData } from "./cityData";
-import { colourCrowns } from "./lookModel";
-import { useTrain } from "./store";
-import { groundAt, UP } from "./track";
+import { getTreeData } from "./cityData";
+import { UP } from "./track";
+import { SPECIES } from "./trees/species";
 import { useWorld } from "./world";
 
-/** Two crossed quads carrying the painted silhouette (6.4 × 8 deciduous, 5 × 10 evergreen). */
-function crossQuad(w: number, h: number): BufferGeometry {
-  const a = new PlaneGeometry(w, h);
-  a.translate(0, h / 2, 0);
-  const b = a.clone();
-  b.rotateY(Math.PI / 2);
-  const g = mergeGeometries([a, b], false);
-  a.dispose();
-  b.dispose();
+/** Three planes crossed at 60°, base at the origin, normals bent outward and up so a crown shades like a volume. */
+function crossGeo(): BufferGeometry {
+  const parts = [0, 1, 2].map((k) => {
+    const p = new PlaneGeometry(1, 1, 1, 2);
+    p.translate(0, 0.5, 0);
+    p.rotateY((k * Math.PI) / 3);
+    return p;
+  });
+  const g = mergeGeometries(parts, false);
+  for (const p of parts) p.dispose();
+  const pos = g.attributes.position;
+  const nrm = g.attributes.normal;
+  const n = new Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    n.set(pos.getX(i) * 0.9, 0.55 + pos.getY(i) * 0.6, pos.getZ(i) * 0.9).normalize();
+    nrm.setXYZ(i, n.x, n.y, n.z);
+  }
   return g;
 }
 
-/** Painted trees, instanced: evergreens with a fixed colour, deciduous crowns recoloured per season by the look. */
+/** Every tree in one instanced mesh: species, seed and hue in an instance attribute, season and leaf fall in the shader. */
 export function Trees() {
   const world = useWorld();
-  const { lowEnd, mats } = world;
-  const data = useMemo(() => getCityData(lowEnd), [lowEnd]);
+  const { lowEnd, trees } = world;
+  const data = useMemo(() => getTreeData(lowEnd), [lowEnd]);
 
-  const built = useMemo(() => {
+  const mesh = useMemo(() => {
     const rng = new Rng(4);
-    const evers = data.trees.filter((t) => t.ever);
-    const decids = data.trees.filter((t) => !t.ever);
-    const everMesh = new InstancedMesh(crossQuad(5, 10), mats.ever, Math.max(1, evers.length));
-    const decidMesh = new InstancedMesh(crossQuad(6.4, 8), mats.decid, Math.max(1, decids.length));
+    const n = data.length;
+    const m = new InstancedMesh(crossGeo(), trees.mat, Math.max(1, n));
+    const attr = new Float32Array(Math.max(1, n) * 4);
     const m4 = new Matrix4();
     const q = new Quaternion();
     const sc = new Vector3();
     const p = new Vector3();
-    const c = new Color();
-    const place = (mesh: InstancedMesh, list: typeof evers) =>
-      list.forEach((t, i) => {
-        p.set(t.x, groundAt(t.x, t.z) - 0.2, t.z);
-        q.setFromAxisAngle(UP, rng.next() * 6.28);
-        sc.set(t.s, t.s * (0.9 + rng.next() * 0.4), t.s);
-        m4.compose(p, q, sc);
-        mesh.setMatrixAt(i, m4);
-      });
-    place(everMesh, evers);
-    place(decidMesh, decids);
-    evers.forEach((_, i) => everMesh.setColorAt(i, c.setHSL(0.34 + rng.next() * 0.06, 0.32 + rng.next() * 0.18, 0.22 + rng.next() * 0.14)));
-    everMesh.count = evers.length;
-    decidMesh.count = decids.length;
-    everMesh.castShadow = decidMesh.castShadow = false;
-    everMesh.receiveShadow = decidMesh.receiveShadow = true;
-    return { everMesh, decidMesh, decids };
-  }, [data, mats]);
+    data.forEach((t, i) => {
+      const [w, h] = SPECIES[t.sp].size;
+      q.setFromAxisAngle(UP, rng.next() * Math.PI * 2);
+      m4.compose(p.set(t.x, t.y, t.z), q, sc.set(w * t.s, h * t.s * (0.9 + rng.next() * 0.25), w * t.s));
+      m.setMatrixAt(i, m4);
+      attr.set([t.sp, rng.next(), rng.next(), 0], i * 4);
+    });
+    m.geometry.setAttribute("aTree", new InstancedBufferAttribute(attr, 4));
+    m.count = n;
+    m.castShadow = false;
+    m.receiveShadow = true;
+    return m;
+  }, [data, trees]);
 
-  useEffect(() => {
-    world.refs.decid = built.decidMesh;
-    world.refs.decidList = built.decids;
-    const season = useTrain.getState().season;
-    colourCrowns(world, season);
-    world.look.lastSeason = season;
-    return () => {
-      world.refs.decid = null;
-      world.refs.decidList = [];
-      built.everMesh.geometry.dispose();
-      built.decidMesh.geometry.dispose();
-      built.everMesh.dispose();
-      built.decidMesh.dispose();
-    };
-  }, [world, built]);
-
-  return (
-    <>
-      <primitive object={built.everMesh} />
-      <primitive object={built.decidMesh} />
-    </>
+  useEffect(
+    () => () => {
+      mesh.geometry.dispose();
+      mesh.dispose();
+    },
+    [mesh],
   );
+
+  return <primitive object={mesh} />;
 }

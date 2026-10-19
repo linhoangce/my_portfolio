@@ -25,7 +25,6 @@ import {
   ShaderMaterial,
   SphereGeometry,
   type SpotLight,
-  type InstancedMesh,
   type Texture,
   Vector3,
   type WebGLRenderer,
@@ -33,10 +32,12 @@ import {
 } from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 
-import { type Facade, FACADES, Rng, type Tree } from "./cityModel";
+import { type Facade, FACADES, Rng } from "./cityModel";
 import type { Season } from "./lookTypes";
 import type { LookTargets } from "./lookModel";
-import { facadeSet, foliageTexture, groundTexture, personTexture, windowTextures } from "./textures";
+import { facadeSet, groundTexture, personTexture, windowTextures } from "./textures";
+import { paintTreeAtlas } from "./trees/atlas";
+import { createTreeShading, type TreeShading } from "./trees/treeMaterial";
 import { PEOPLE_VARIANTS } from "./constants";
 
 export type SkyUniforms = { top: IUniform<Color>; hor: IUniform<Color> };
@@ -57,9 +58,8 @@ export type World = {
     city: Record<Facade, MeshStandardMaterial>;
     houseBody: MeshStandardMaterial;
     houseRoof: MeshStandardMaterial;
-    ever: MeshStandardMaterial;
-    decid: MeshStandardMaterial;
     park: MeshStandardMaterial;
+    forestFloor: MeshStandardMaterial;
     landmark: MeshStandardMaterial;
     mast: MeshStandardMaterial;
     sail: MeshStandardMaterial;
@@ -98,12 +98,11 @@ export type World = {
   refs: {
     mountain: Mesh | null;
     mountainCols: { summer: BufferAttribute; winter: BufferAttribute } | null;
-    decid: InstancedMesh | null;
-    decidList: Tree[];
     wheels: Mesh[];
     bloom: { strength: number } | null;
   };
   look: { cur: LookTargets | null; tgt: LookTargets | null; lastSeason: Season | null };
+  trees: TreeShading;
   sunDir: Vector3;
 };
 
@@ -157,9 +156,8 @@ export function createWorld(gl: WebGLRenderer, scene: Scene, lowEnd: boolean): W
     city,
     houseBody: new MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }),
     houseRoof: new MeshStandardMaterial({ color: 0xffffff, roughness: 0.95 }),
-    ever: new MeshStandardMaterial({ map: foliageTexture("ever", rng), alphaTest: 0.5, side: 2, roughness: 1, color: 0xffffff }),
-    decid: new MeshStandardMaterial({ map: foliageTexture("decid", rng), alphaTest: 0.5, side: 2, roughness: 1, color: 0xffffff }),
     park: new MeshStandardMaterial({ color: 0x5f8f4a, roughness: 1 }),
+    forestFloor: new MeshStandardMaterial({ color: 0x46613d, roughness: 1 }),
     landmark: new MeshStandardMaterial({ color: 0xffffff, roughness: 0.6 }),
     mast: new MeshStandardMaterial({ color: 0x8e95a3, roughness: 0.5, metalness: 0.6 }),
     sail: new MeshStandardMaterial({ color: 0xffffff, roughness: 0.5, side: 2 }),
@@ -271,7 +269,8 @@ export function createWorld(gl: WebGLRenderer, scene: Scene, lowEnd: boolean): W
     lights: { hemi, sun, stationLight, spots: [] },
     sky: { mesh: skyMesh, mat: skyMat, disc, stars },
     precip: { rain, rainPos, rainVel, RAIN_N, snow, snowPos, SNOW_N },
-    refs: { mountain: null, mountainCols: null, decid: null, decidList: [], wheels: [], bloom: null },
+    refs: { mountain: null, mountainCols: null, wheels: [], bloom: null },
+    trees: createTreeShading(paintTreeAtlas(), lowEnd),
     look: { cur: null, tgt: null, lastSeason: null },
     sunDir: new Vector3(0, 1, 0),
   };

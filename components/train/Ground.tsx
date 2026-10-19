@@ -3,6 +3,7 @@
 import { useEffect, useMemo } from "react";
 import { BufferAttribute, BufferGeometry, Float32BufferAttribute } from "three";
 
+import { district } from "./cityModel";
 import { PARKS } from "./sites";
 import { groundAt, inWater, sdfAt, terrainRaster } from "./terrain";
 import { useWorld } from "./world";
@@ -108,20 +109,58 @@ function lawn(px: number, pz: number, r: number): BufferGeometry {
   return geo;
 }
 
+/** Stanley Park's forest floor: an 8-unit grid over the park's land, following the ground, so no street shows through. */
+function forestFloor(): BufferGeometry {
+  const x0 = -470;
+  const z0 = -420;
+  const step = 8;
+  const nx = 41;
+  const nz = 48;
+  const pos: number[] = [];
+  const on: boolean[] = [];
+  for (let j = 0; j < nz; j++) {
+    for (let i = 0; i < nx; i++) {
+      const x = x0 + i * step;
+      const z = z0 + j * step;
+      pos.push(x, groundAt(x, z) + 0.08, z);
+      on.push(!inWater(x, z) && district(x, z) === "forest");
+    }
+  }
+  const idx: number[] = [];
+  for (let j = 0; j < nz - 1; j++) {
+    for (let i = 0; i < nx - 1; i++) {
+      const a = j * nx + i;
+      const b = a + 1;
+      const c = a + nx;
+      const d = c + 1;
+      if (on[a] && on[b] && on[c]) idx.push(a, c, b);
+      if (on[b] && on[c] && on[d]) idx.push(b, c, d);
+    }
+  }
+  const geo = new BufferGeometry();
+  geo.setAttribute("position", new Float32BufferAttribute(pos, 3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  return geo;
+}
+
 export function Ground() {
   const { mats } = useWorld();
   const geo = useMemo(() => buildGround(), []);
   const lawns = useMemo(() => PARKS.map((p) => lawn(p.x, p.z, p.r)), []);
+  const forest = useMemo(() => forestFloor(), []);
   useEffect(
     () => () => {
       geo.dispose();
       for (const l of lawns) l.dispose();
+      forest.dispose();
     },
-    [geo, lawns],
+    [geo, lawns, forest],
   );
   return (
     <>
       <mesh geometry={geo} material={mats.ground} receiveShadow />
+      <mesh geometry={forest} material={mats.forestFloor} receiveShadow />
       {lawns.map((l, i) => (
         <mesh key={PARKS[i].name} geometry={l} material={mats.park} receiveShadow />
       ))}

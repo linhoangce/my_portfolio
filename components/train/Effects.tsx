@@ -2,7 +2,7 @@
 
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo } from "react";
-import { Vector2 } from "three";
+import { HalfFloatType, Vector2, WebGLRenderTarget } from "three";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
@@ -10,7 +10,7 @@ import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPa
 
 import { useWorld } from "./world";
 
-/** Desktop-only bloom (strength eased by the look: 0.22 at night, 0.1 by day) through three's own composer. */
+/** Desktop-only bloom (strength eased by the look: 0.22 at night, 0.1 by day) through three's own composer, multisampled. */
 export function Effects() {
   const world = useWorld();
   const gl = useThree((s) => s.gl);
@@ -20,7 +20,8 @@ export function Effects() {
   const viewport = useThree((s) => s.viewport);
 
   const built = useMemo(() => {
-    const composer = new EffectComposer(gl);
+    // a 4× MSAA target: without it the composer renders aliased and the trees' alpha-to-coverage has nothing to work with
+    const composer = new EffectComposer(gl, new WebGLRenderTarget(size.width, size.height, { type: HalfFloatType, samples: 4 }));
     composer.addPass(new RenderPass(scene, camera));
     const bloom = new UnrealBloomPass(new Vector2(size.width, size.height), 0.24, 0.45, 1.0);
     composer.addPass(bloom);

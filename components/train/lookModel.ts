@@ -3,7 +3,9 @@
  * discrete things (ground map, mountain snow, particles, crowns) and `tickLook` eases every colour, density and
  * intensity toward the target so a change rolls in over a couple of seconds instead of snapping.
  */
-import { Color, Matrix4, Quaternion, Vector3 } from "three";
+import { Color } from "three";
+
+import { setTreeTargets, tickTrees } from "./trees/treeMaterial";
 
 import type { Season, Theme, Weather } from "./lookTypes";
 import type { World } from "./world";
@@ -121,12 +123,6 @@ export const WEATHER: Record<Weather, WeatherDef> = {
   },
 };
 
-export const SEASON_CROWNS: Record<Season, number[]> = {
-  spring: [0x9ccf6a, 0xb7df7a, 0x8cc364, 0xe9a7c4, 0xf2c2d6],
-  summer: [0x3f8a3c, 0x4d9a45, 0x2f6e30, 0x5aa34f],
-  fall: [0xd9762b, 0xc9452b, 0xe0b23a, 0x8c5a2b, 0xb8862c],
-  winter: [0x6b5747, 0x7a6655, 0x5c4b40],
-};
 export const PARK_COLOR: Record<Season, number> = { spring: 0x6faa52, summer: 0x5f8f4a, fall: 0x8c8a3a, winter: 0xb9c0c4 };
 
 export type LookTargets = {
@@ -154,8 +150,9 @@ export type LookTargets = {
   houseBody: Color;
   houseRoof: Color;
   park: Color;
-  ever: Color;
-  decid: Color;
+  forestFloor: Color;
+  /** The forest's overall tone (dimmer at night). */
+  treeTone: Color;
   trainWin: number;
   head: number;
   spot: number;
@@ -201,8 +198,8 @@ export function lookTargets({ theme, season, weather }: LookInput): LookTargets 
     houseBody: Cc(light ? 0xffffff : 0x8d93a0),
     houseRoof: Cc(snowy ? (light ? 0xe8ecf0 : 0x9aa2ac) : light ? 0xffffff : 0x7b8290),
     park: Cc(snowy ? (light ? 0xd5dbe0 : 0x6f767e) : PARK_COLOR[season]),
-    ever: Cc(snowy ? 0xd8e2e6 : light ? 0xffffff : 0x9aa3ad),
-    decid: Cc(light ? 0xffffff : 0x8f96a0),
+    forestFloor: Cc(weather === "snow" ? (light ? 0xcfd6db : 0x5f666e) : light ? 0x46613d : 0x1f2a1e),
+    treeTone: Cc(light ? 0xffffff : 0x8f96a0),
     trainWin: t.trainWin,
     head: t.head,
     spot: t.spot,
@@ -211,30 +208,6 @@ export function lookTargets({ theme, season, weather }: LookInput): LookTargets 
     edge: t.edge,
     stationLight: t.stationLight,
   };
-}
-
-const m4 = new Matrix4();
-const q = new Quaternion();
-const sc = new Vector3();
-const p = new Vector3();
-const col = new Color();
-
-/** Recolour the deciduous crowns for the season (bare crowns shrink to 78 % in winter). */
-export function colourCrowns(world: World, season: Season): void {
-  const mesh = world.refs.decid;
-  if (!mesh) return;
-  const pal = SEASON_CROWNS[season];
-  const k = season === "winter" ? 0.78 : 1;
-  world.refs.decidList.forEach((t, i) => {
-    mesh.setColorAt(i, col.setHex(pal[t.cidx % pal.length]));
-    mesh.getMatrixAt(i, m4);
-    m4.decompose(p, q, sc);
-    sc.set(t.s * k, t.s * (season === "winter" ? 0.9 : 1.05), t.s * k);
-    m4.compose(p, q, sc);
-    mesh.setMatrixAt(i, m4);
-  });
-  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-  mesh.instanceMatrix.needsUpdate = true;
 }
 
 /** Discrete switches for a new theme / season / weather, then a new eased target. */
@@ -256,10 +229,8 @@ export function applyLook(world: World, input: LookInput): void {
   }
   world.precip.rain.visible = input.weather === "rain";
   world.precip.snow.visible = input.weather === "snow";
-  if (input.season !== world.look.lastSeason) {
-    colourCrowns(world, input.season);
-    world.look.lastSeason = input.season;
-  }
+  setTreeTargets(world.trees, input.season, input.weather);
+  world.look.lastSeason = input.season;
   world.look.tgt = lookTargets(input);
   if (!world.look.cur) world.look.cur = lookTargets(input);
 }
@@ -306,8 +277,8 @@ export function tickLook(world: World, dt: number, instant: boolean, dockedIdx: 
   mats.houseBody.color.copy(c.houseBody);
   mats.houseRoof.color.copy(c.houseRoof);
   mats.park.color.copy(c.park);
-  mats.ever.color.copy(c.ever);
-  mats.decid.color.copy(c.decid);
+  mats.forestFloor.color.copy(c.forestFloor);
+  tickTrees(world.trees, dt, instant, c.treeTone);
   mats.window.emissiveIntensity = c.trainWin;
   mats.head.emissiveIntensity = c.head;
   mats.tail.emissiveIntensity = c.tail;

@@ -159,50 +159,6 @@ export function facadeSet(kind: Facade, rng: Rng): FacadeTextures {
   return { map: texture(c, true), emissiveMap: texture(e, true) };
 }
 
-/**
- * Painted trees: a canvas silhouette with the trunk included, soft overlapping leaf clumps for broadleaf trees or
- * layered ragged conifer fronds, in near-neutral luminance so the per-instance season colour sets the hue.
- */
-export function foliageTexture(kind: "decid" | "ever", rng: Rng): CanvasTexture {
-  const W = 256;
-  const H = 320;
-  const [c, g] = canvas(W, H);
-  g.fillStyle = "#5a4535";
-  g.fillRect(W / 2 - 7, H * 0.55, 14, H * 0.45);
-  if (kind === "decid") {
-    const cx = W / 2;
-    const cy = H * 0.38;
-    for (let i = 0; i < 160; i++) {
-      const a = rng.next() * 6.28;
-      const r = Math.pow(rng.next(), 0.55) * 96;
-      const x = cx + Math.cos(a) * r * 1.08;
-      const y = cy + Math.sin(a) * r * 0.92;
-      const rad = 12 + rng.next() * 24;
-      const l = 120 + rng.next() * 110 + (cy - y) * 0.45;
-      g.fillStyle = `rgb(${(l * 0.86) | 0},${l | 0},${(l * 0.72) | 0})`;
-      g.beginPath();
-      g.arc(x, y, rad, 0, 6.28);
-      g.fill();
-    }
-  } else {
-    for (let t = 0; t < 8; t++) {
-      const y0 = 24 + t * 30;
-      const w = 22 + t * 15;
-      const l = 120 + t * 10 + rng.next() * 25;
-      g.fillStyle = `rgb(${(l * 0.8) | 0},${l | 0},${(l * 0.78) | 0})`;
-      g.beginPath();
-      g.moveTo(W / 2, y0 - 26);
-      for (let k = 0; k <= 14; k++) {
-        const u = k / 14;
-        g.lineTo(W / 2 - w + 2 * w * u, y0 + 18 + (k % 2 ? 16 : 2) + rng.next() * 7);
-      }
-      g.closePath();
-      g.fill();
-    }
-  }
-  return texture(c, false, 8);
-}
-
 /** A painted person (coat, trousers, hair, a bag or an umbrella) from a seed; six variants are built. */
 export function personTexture(seed: number): CanvasTexture {
   const W = 96;

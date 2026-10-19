@@ -203,21 +203,18 @@ function buildingGeo(x: number, z: number, w: number, hgt: number, d: number, co
 }
 
 export type House = { x: number; z: number; w: number; d: number; h: number; rot: number; body: number; roof: number };
-export type Tree = { x: number; z: number; ever: boolean; s: number; cidx: number };
 export type Lot = { x: number; z: number; w: number; d: number; h: number };
 export type CityData = {
   geos: Record<Facade, BufferGeometry | null>;
   houses: House[];
-  trees: Tree[];
   /** Building footprints, kept for the geometry checks. */
   lots: Lot[];
 };
 
-/** Lots inside blocks between the painted streets, merged per facade family; houses and trees as instance lists. */
+/** Lots inside blocks between the painted streets, merged per facade family; houses as an instance list. */
 export function buildCity(rng: Rng, lowEnd: boolean): CityData {
   const geosBy: Record<Facade, BufferGeometry[]> = { glass: [], balcony: [], brick: [], concrete: [] };
   const houses: House[] = [];
-  const trees: Tree[] = [];
   const lots: Lot[] = [];
 
   // each lot stands on the lowest ground under it (yb) and measures its height from the highest (yt)
@@ -333,49 +330,6 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityData {
     }
   }
 
-  // trees: boulevard trees along the sidewalks of every block, then the parks, the Grandview Cut and Stanley Park
-  const cap = lowEnd ? 9000 : 16000;
-  const treeOK = (x: number, z: number) => !inWater(x, z) && !inLandmark(x, z, 1) && trackDist(x, z) >= 12;
-  const addTree = (x: number, z: number, ever: boolean, s: number) =>
-    trees.push({ x, z, ever, s, cidx: 1 + Math.floor(rng.next() * 1000) });
-  for (let i = BI0; i <= BI1 && trees.length < cap; i++) {
-    for (let j = BJ0; j <= BJ1 && trees.length < cap; j++) {
-      const name = district(streetX(i) + 11, streetZ(j) + 11);
-      const zone = ZONE[name];
-      if (zone.build === 0 && !zone.house) continue;
-      const p = Math.min(0.9, zone.tree * 0.55 + (name === "downtown" ? 0.15 : 0)) * (lowEnd ? 0.6 : 1);
-      const ox = setX(i) - 0.9;
-      const oz = setZ(j) - 0.9; // on the sidewalk's inner edge
-      for (let t = 2.5; t < STREET_STEP - 2; t += 5.5) {
-        for (const side of [-1, 1]) {
-          const x1 = streetX(i) + side * ox;
-          const z1 = streetZ(j) + t;
-          if (rng.next() < p && treeOK(x1, z1) && !inPark(x1, z1)) addTree(x1, z1, rng.next() < zone.ever * 0.5, 0.7 + rng.next() * 0.5);
-          const x2 = streetX(i) + t;
-          const z2 = streetZ(j) + side * oz;
-          if (rng.next() < p && treeOK(x2, z2) && !inPark(x2, z2)) addTree(x2, z2, rng.next() < zone.ever * 0.5, 0.7 + rng.next() * 0.5);
-        }
-      }
-    }
-  }
-  const X0 = -500;
-  const X1 = 900;
-  const Z0 = -430;
-  const Z1 = 820;
-  const TSTEP = 6;
-  for (let gx = X0; gx < X1 && trees.length < cap; gx += TSTEP) {
-    for (let gz = Z0; gz < Z1 && trees.length < cap; gz += TSTEP) {
-      const x = gx + rng.next() * TSTEP;
-      const z = gz + rng.next() * TSTEP;
-      if (!treeOK(x, z)) continue;
-      const name = district(x, z);
-      const zone = ZONE[name];
-      const p = name === "forest" ? 0.9 : name === "park" ? 0.55 : name === "cut" ? 0.6 : 0;
-      if (rng.next() > p) continue;
-      addTree(x, z, rng.next() < zone.ever, 0.8 + rng.next() * 0.9);
-    }
-  }
-
   const geos = { glass: null, balcony: null, brick: null, concrete: null } as Record<Facade, BufferGeometry | null>;
   for (const k of FACADES) {
     if (geosBy[k].length) {
@@ -383,7 +337,7 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityData {
       for (const g of geosBy[k]) g.dispose();
     }
   }
-  return { geos, houses, trees, lots };
+  return { geos, houses, lots };
 }
 
 /* ------------------------------------------------------------------ traffic */
