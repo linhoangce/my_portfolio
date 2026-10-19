@@ -3,27 +3,83 @@
 import { useFrame } from "@react-three/fiber";
 import { useRef } from "react";
 
-import { ACC, BRAKE, CROSS_LEN, DOCK_DIST, DOCK_V, DRAG, KMH_PER_UNIT, LANE, METRES_PER_UNIT, ONCOMING_DWELL, ONCOMING_RESEAT, ONCOMING_SPEED, S_MIN, TRAIN_LEN, VMAX } from "./constants";
+import { ACC, BRAKE, CAR, CROSS_LEN, DOCK_DIST, DOCK_V, DRAG, KMH_PER_UNIT, LANE, LOOP_V, METRES_PER_UNIT, ONCOMING_DWELL, ONCOMING_RESEAT, ONCOMING_SPEED, TRAIN_LEN, VMAX } from "./constants";
 import { stepFilm } from "./scene/director";
 import { type Readout, type Sim, useTrain } from "./store";
-import { CROSSOVERS, LEN, nearestStation, stationS } from "./track";
+import { CROSSOVERS, frameAt, LEN, LOOPS, makeFrame, nearestStation, stationS } from "./track";
 
 const clamp = (x: number, a: number, b: number) => Math.min(b, Math.max(a, x));
+/** From the lead car's centre to the back of the last car. */
+const TAIL = TRAIN_LEN - CAR / 2;
+
+/** Step v toward a wanted speed: shedding speed at the brake rate, gaining it at the (target) acceleration rate, in either direction. */
+const approach = (v: number, want: number, dt: number) => {
+  const dv = want - v;
+  const shedding = v !== 0 && Math.sign(dv) !== Math.sign(v) && Math.abs(want) < Math.abs(v) + 1e-9;
+  return v + (shedding ? clamp(dv, -BRAKE * dt, BRAKE * dt) : clamp(dv, -ACC * 1.3 * dt, ACC * 1.3 * dt));
+};
+
+/** Where the train is relative to the turning loops: heading round one, or back on the line with its tail still in one. */
+export function loopState(sim: Sim): "out" | "tail" | null {
+  const far = sim.s > LEN;
+  const near = sim.s < 0;
+  if ((far && sim.travelDir > 0) || (near && sim.travelDir < 0)) return "out";
+  const tail = sim.s - sim.travelDir * TAIL;
+  return tail > LEN || tail < 0 ? "tail" : null;
+}
 
 /**
  * Right-hand running: outbound on the right track, inbound on the left. A reversing train keeps its track
  * (wrong-way running, as the automated line does when single-tracking) until it reaches the next scissors
  * crossover, where it takes the diagonal across. Reversing mid-crossover rereads the same diagonal from the other end.
+ *
+ * Past either end the train runs a turning loop on its own at LOOP_V and comes back on the other track, heading for
+ * the terminus it just passed; until its last car is back on the line it cannot stop or reverse.
  */
 export function updateDrive(sim: Sim, dt: number): void {
   const prevS = sim.s;
+  if (sim.loopHold && sim.throttle !== sim.loopHold) sim.loopHold = 0;
+  const throttle = sim.loopHold ? 0 : sim.throttle;
+  const loop = loopState(sim);
+  if (loop === "out") {
+    sim.target = null;
+    sim.v += clamp(sim.travelDir * LOOP_V - sim.v, -BRAKE * dt, ACC * dt);
+    sim.s += sim.v * dt;
+    const far = sim.s > LEN;
+    const x = far ? sim.s - LEN : -sim.s;
+    const L = far ? LOOPS.far.L : LOOPS.near.L;
+    if (x >= L) {
+      // round the loop and onto the other track: the same train, now heading back
+      const e = x - L;
+      sim.s = far ? LEN - e : e;
+      sim.travelDir = far ? -1 : 1;
+      sim.v = sim.travelDir * Math.abs(sim.v);
+      sim.laneFrom = sim.laneTo = LANE * sim.travelDir;
+      sim.target = sim.stationS[far ? sim.stationS.length - 1 : 0];
+      // a key held through the loop would send the train straight back round it: it counts again once released
+      sim.loopHold = sim.throttle;
+      sim.s2 = clamp(sim.s + sim.travelDir * ONCOMING_RESEAT, stationS[0], stationS[stationS.length - 1]);
+      sim.dwell2 = 0;
+    }
+    return;
+  }
+  if (loop === "tail") {
+    // no braking to a stop or reversing with cars still in the loop: keep rolling back onto the line
+    if (throttle * sim.travelDir > 0) sim.v += throttle * ACC * dt;
+    else if (sim.target !== null && (sim.target - sim.s) * sim.travelDir > 0) {
+      const d = sim.target - sim.s;
+      sim.v = approach(sim.v, Math.sign(d) * Math.min(VMAX, Math.sqrt(2 * BRAKE * 0.9 * Math.abs(d))), dt);
+    }
+    if (sim.v * sim.travelDir < 6) sim.v = sim.travelDir * 6;
+    sim.v = clamp(sim.v, -VMAX, VMAX);
+    sim.s += sim.v * dt;
+    return;
+  }
   if (sim.braking) sim.v -= clamp(sim.v, -BRAKE * dt, BRAKE * dt);
-  else if (sim.throttle !== 0) sim.v += sim.throttle * ACC * dt;
+  else if (throttle !== 0) sim.v += throttle * ACC * dt;
   else if (sim.target !== null) {
     const d = sim.target - sim.s;
-    const desired = Math.sign(d) * Math.min(VMAX, Math.sqrt(2 * BRAKE * 0.9 * Math.abs(d)));
-    const dv = desired - sim.v;
-    sim.v += clamp(dv, -BRAKE * dt, ACC * 1.3 * dt);
+    sim.v = approach(sim.v, Math.sign(d) * Math.min(VMAX, Math.sqrt(2 * BRAKE * 0.9 * Math.abs(d))), dt);
     if (Math.abs(d) < 0.12 && Math.abs(sim.v) < 1) {
       sim.s = sim.target;
       sim.v = 0;
@@ -35,16 +91,6 @@ export function updateDrive(sim: Sim, dt: number): void {
   }
   sim.v = clamp(sim.v, -VMAX, VMAX);
   sim.s += sim.v * dt;
-  if (sim.s < S_MIN) {
-    sim.s = S_MIN;
-    sim.v = 0;
-    sim.target = null;
-  }
-  if (sim.s > LEN - 6) {
-    sim.s = LEN - 6;
-    sim.v = 0;
-    sim.target = null;
-  }
   const want: 0 | 1 | -1 =
     sim.target !== null && Math.abs(sim.target - sim.s) > 0.5
       ? sim.target > sim.s
@@ -65,7 +111,7 @@ export function updateDrive(sim: Sim, dt: number): void {
     }
     sim.travelDir = want;
     // the other train now comes the other way on the other track
-    sim.s2 = clamp(sim.s + sim.travelDir * ONCOMING_RESEAT, 40, LEN - 40);
+    sim.s2 = clamp(sim.s + sim.travelDir * ONCOMING_RESEAT, stationS[0], stationS[stationS.length - 1]);
     sim.dwell2 = 0;
   }
   if (sim.laneFrom === sim.laneTo && sim.laneTo !== LANE * sim.travelDir) {
@@ -82,11 +128,34 @@ export function updateDrive(sim: Sim, dt: number): void {
   if (sim.laneFrom !== sim.laneTo && (sim.s - sim.crossStart) * sim.travelDir > CROSS_LEN + TRAIN_LEN) sim.laneFrom = sim.laneTo;
 }
 
-/** The oncoming train: 30 u/s the other way, a 5 s dwell at each station, looping end to end. */
+const fo = makeFrame();
+/** Within sight of the camera (the oncoming train never vanishes or appears where it can be seen). */
+const seen = (sim: Sim, s: number) => {
+  frameAt(s, fo);
+  return Math.hypot(fo.p.x - sim.cam[0], fo.p.z - sim.cam[1]) < 300;
+};
+
+/**
+ * The oncoming train: 30 u/s the other way with a 5 s dwell at each station. At the terminus it waits at the platform
+ * until neither end of the line is in view, then re-enters service from the other end.
+ */
 export function updateOncoming(sim: Sim, dt: number): void {
   const d2 = -sim.travelDir;
   if (sim.dwell2 > 0) {
     sim.dwell2 -= dt;
+    return;
+  }
+  const first = stationS[0];
+  const last = stationS[stationS.length - 1];
+  const terminus = d2 > 0 ? last : first;
+  if ((sim.s2 - terminus) * d2 >= -1e-6) {
+    const other = d2 > 0 ? first : last;
+    sim.s2 = terminus;
+    if (seen(sim, terminus) || seen(sim, other)) sim.dwell2 = 0.5;
+    else {
+      sim.s2 = other;
+      sim.dwell2 = ONCOMING_DWELL;
+    }
     return;
   }
   const before = sim.s2;
@@ -98,7 +167,6 @@ export function updateOncoming(sim: Sim, dt: number): void {
       break;
     }
   }
-  if (sim.s2 < 40 || sim.s2 > LEN - 40) sim.s2 = d2 > 0 ? 40 : LEN - 40;
 }
 
 const sameReadout = (a: Readout, b: Readout) =>
@@ -137,7 +205,8 @@ export function Drive() {
         const dd = (stationS[i] - sim.s) * dir;
         if (dd > 1 && (nextIdx === null || dd < (stationS[nextIdx] - sim.s) * dir)) nextIdx = i;
       }
-      if (nextIdx === null) readout = { kind: "end" };
+      if (loopState(sim)) readout = { kind: "loop", idx: sim.s > stationS[stationS.length - 1] ? stationS.length - 1 : 0 };
+      else if (nextIdx === null) readout = { kind: "end" };
       else {
         const metres = Math.abs(stationS[nextIdx] - sim.s) * METRES_PER_UNIT;
         readout = { kind: "next", idx: nextIdx, metres: metres >= 1000 ? Math.round(metres / 100) * 100 : Math.round(metres) };

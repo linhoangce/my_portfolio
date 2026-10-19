@@ -2,7 +2,7 @@ import { CatmullRomCurve3, MathUtils, Vector3 } from "three";
 
 import { stations } from "@/data";
 
-import { CROSS_LEN, CUT, DECK, K } from "./constants";
+import { CROSS_LEN, CUT, DECK, K, LANE } from "./constants";
 import { addModifier, lerp, rectPad } from "./terrain";
 import { TRACK_RAW } from "./trackData";
 import { solveProfile } from "./trackProfile";
@@ -43,7 +43,6 @@ export const controlPoints: Vector3[] = TRACK.map(([x, z], i) => new Vector3(x, 
 export const curve = new CatmullRomCurve3(controlPoints, false, "centripetal", 0.5);
 curve.arcLengthDivisions = 6000;
 export const LEN = curve.getLength();
-export const S_MAX = LEN - 6;
 
 export type Frame = { p: Vector3; t: Vector3; r: Vector3 };
 export const makeFrame = (): Frame => ({ p: new Vector3(), t: new Vector3(), r: new Vector3() });
@@ -65,7 +64,128 @@ for (let i = 0; i <= SAMPLES; i++) {
   frameAt((i / SAMPLES) * LEN, f);
   samples.push(f);
 }
-const coarse = samples.filter((_, i) => i % 4 === 0);
+/* ------------------------------------------------------------------ turning loops */
+
+export type LoopEnd = "near" | "far";
+/** A balloon loop at one end of the line, level at the end's deck height: out on one track, back on the other. */
+export type Loop = { end: LoopEnd; curve: CatmullRomCurve3; L: number; samples: Frame[] };
+
+type P2 = [number, number];
+const right2 = ([x, z]: P2): P2 => [-z, x];
+
+/**
+ * The train leaves the end on the right-hand track (lateral +LANE of the outward heading), runs a neck out to a circle
+ * of radius R, goes round it turning left, and comes back down a second neck onto the other track. The circle's centre
+ * is straight ahead unless given; `alpha` sets how far round the circle the necks join it (the "light bulb" shape).
+ */
+function buildLoop(end: LoopEnd, R: number, alpha: number, centre?: P2, neck = 26): Loop {
+  const e = frameAt(end === "far" ? LEN : 0, makeFrame());
+  const sgn = end === "far" ? 1 : -1;
+  const hl = Math.hypot(e.t.x, e.t.z);
+  const o: P2 = [(e.t.x / hl) * sgn, (e.t.z / hl) * sgn];
+  const ro = right2(o);
+  const E: P2 = [e.p.x, e.p.z];
+  const C: P2 = centre ?? [E[0] + o[0] * (neck + R * Math.sin(alpha)), E[1] + o[1] * (neck + R * Math.sin(alpha))];
+  const gl = Math.hypot(C[0] - E[0], C[1] - E[1]);
+  const g: P2 = [(C[0] - E[0]) / gl, (C[1] - E[1]) / gl];
+  const rg = right2(g);
+  const ca = Math.cos(alpha);
+  const sa = Math.sin(alpha);
+  // radial directions of the two joins: the right and left sides of the circle (seen from the end), turned back by alpha
+  const nIn: P2 = [rg[0] * ca - g[0] * sa, rg[1] * ca - g[1] * sa];
+  const nOut: P2 = [-rg[0] * ca - g[0] * sa, -rg[1] * ca - g[1] * sa];
+  const Pin: P2 = [C[0] + R * nIn[0], C[1] + R * nIn[1]];
+  const Pout: P2 = [C[0] + R * nOut[0], C[1] + R * nOut[1]];
+  // travelling round with the centre on the left, the heading at radial direction n is (n.z, -n.x)
+  const head = (n: P2): P2 => [n[1], -n[0]];
+  const Ein: P2 = [E[0] + ro[0] * LANE, E[1] + ro[1] * LANE];
+  const Eout: P2 = [E[0] - ro[0] * LANE, E[1] - ro[1] * LANE];
+  const pts: P2[] = [];
+  const bezier = (a: P2, ha: P2, b: P2, hb: P2) => {
+    const chord = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const k = chord * 0.42;
+    const c1: P2 = [a[0] + ha[0] * k, a[1] + ha[1] * k];
+    const c2: P2 = [b[0] - hb[0] * k, b[1] - hb[1] * k];
+    const n = Math.max(8, Math.ceil(chord));
+    for (let i = 0; i < n; i++) {
+      const u = i / n;
+      const v = 1 - u;
+      pts.push([
+        v * v * v * a[0] + 3 * v * v * u * c1[0] + 3 * v * u * u * c2[0] + u * u * u * b[0],
+        v * v * v * a[1] + 3 * v * v * u * c1[1] + 3 * v * u * u * c2[1] + u * u * u * b[1],
+      ]);
+    }
+  };
+  bezier(Ein, o, Pin, head(nIn));
+  const a0 = Math.atan2(nIn[1], nIn[0]);
+  let sweep = a0 - Math.atan2(nOut[1], nOut[0]);
+  while (sweep <= 0) sweep += Math.PI * 2;
+  const na = Math.ceil((sweep * R) / 1.2);
+  for (let i = 0; i < na; i++) {
+    const a = a0 - (sweep * i) / na;
+    pts.push([C[0] + R * Math.cos(a), C[1] + R * Math.sin(a)]);
+  }
+  bezier(Pout, head(nOut), Eout, [-o[0], -o[1]]);
+  pts.push(Eout);
+  const curve = new CatmullRomCurve3(
+    pts.map(([x, z]) => new Vector3(x, e.p.y, z)),
+    false,
+    "centripetal",
+  );
+  curve.arcLengthDivisions = 3000;
+  const L = curve.getLength();
+  const list: Frame[] = [];
+  const n = Math.ceil(L / 1.5);
+  for (let i = 0; i <= n; i++) {
+    const f = makeFrame();
+    curve.getPointAt(i / n, f.p);
+    curve.getTangentAt(i / n, f.t).normalize();
+    f.r.crossVectors(f.t, UP).normalize();
+    list.push(f);
+  }
+  return { end, curve, L, samples: list };
+}
+
+/** West of Waterfront the loop swings north over Burrard Inlet; east of Patterson it runs straight on over Central Park. */
+export const LOOPS: Record<LoopEnd, Loop> = {
+  near: buildLoop("near", 16, 0.6, [82, -34]),
+  far: buildLoop("far", 17, 0.7),
+};
+
+const lp = new Vector3();
+/** A loop's frame at distance t along it (extrapolated straight beyond either end); `sgn` orients t along +s. */
+function loopFrameAt(loop: Loop, t: number, sgn: number, out: Frame): Frame {
+  const u = MathUtils.clamp(t / loop.L, 0, 1);
+  loop.curve.getPointAt(u, out.p);
+  loop.curve.getTangentAt(u, out.t).normalize();
+  if (t < 0) out.p.addScaledVector(out.t, t);
+  else if (t > loop.L) out.p.addScaledVector(lp.copy(out.t), t - loop.L);
+  out.t.multiplyScalar(sgn);
+  out.r.crossVectors(out.t, UP).normalize();
+  return out;
+}
+
+/**
+ * The frame of a train at arc position sc travelling in direction dir: on the line between 0 and LEN, round a loop
+ * beyond either end. Past an end, the distance x beyond it maps to the loop from its entry while heading out
+ * (outbound past the far end, inbound past the near end) and from its exit while coming back, so a train that has
+ * turned round is continuous when the drive model flips its direction. The tangent points along +s either way.
+ */
+export function trainFrameAt(sc: number, dir: number, lane: number, out: Frame): Frame {
+  if (sc > LEN) {
+    const x = sc - LEN;
+    return loopFrameAt(LOOPS.far, dir > 0 ? x : LOOPS.far.L - x, dir > 0 ? 1 : -1, out);
+  }
+  if (sc < 0) {
+    const x = -sc;
+    return loopFrameAt(LOOPS.near, dir < 0 ? x : LOOPS.near.L - x, dir > 0 ? 1 : -1, out);
+  }
+  return frameAt(sc, out, lane);
+}
+
+/** Every track sample, the loops included, for the clearance rules (buildings, trees, cameras). */
+export const PATH_SAMPLES: Frame[] = [...samples, ...LOOPS.near.samples, ...LOOPS.far.samples];
+const coarse = [...samples.filter((_, i) => i % 4 === 0), ...LOOPS.near.samples.filter((_, i) => i % 3 === 0), ...LOOPS.far.samples.filter((_, i) => i % 3 === 0)];
 
 /** Deck height at arc length s. */
 export const deckY = (s: number): number => samples[Math.round(MathUtils.clamp(s / LEN, 0, 1) * SAMPLES)].p.y;

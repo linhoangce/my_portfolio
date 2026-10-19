@@ -2,7 +2,7 @@ import { create } from "zustand";
 
 import { stations } from "@/data";
 
-import { ASSIST_RADIUS, DRAG, LANE, S_MIN } from "./constants";
+import { ASSIST_RADIUS, DRAG, LANE } from "./constants";
 import { type EventId, LOOK_CYCLE, type Season, SEASONS, type Weather, WEATHERS, cycleNext } from "./lookTypes";
 import type { LandmarkKey } from "./sites";
 
@@ -42,6 +42,10 @@ export type Sim = {
   film: { phase: ScenePhase; idx: number; t: number; cooldown: number; startedAt: number };
   /** Simulated seconds per real second; the headless checks raise it, the physics is sub-stepped so it stays exact. */
   warp: number;
+  /** The throttle that was held when the train came out of a turning loop; ignored until released. */
+  loopHold: number;
+  /** The camera's ground position, written by the rig each frame (the oncoming train stays out of its sight when it reappears). */
+  cam: [number, number];
   /** Debug only: a fixed camera (position, look target) for the headless checks. */
   freeCam: { pos: [number, number, number]; look: [number, number, number] } | null;
   /** Registered by the scene once the curve exists. */
@@ -49,7 +53,8 @@ export type Sim = {
   LEN: number;
 };
 
-export type Readout = { kind: "at"; idx: number } | { kind: "next"; idx: number; metres: number } | { kind: "end" };
+/** "loop": turning round past either end of the line, heading back to the terminus `idx`. */
+export type Readout = { kind: "at"; idx: number } | { kind: "next"; idx: number; metres: number } | { kind: "loop"; idx: number } | { kind: "end" };
 
 export type Env = { lowEnd: boolean; phone: boolean; reduced: boolean; coarse: boolean };
 
@@ -156,6 +161,8 @@ export const useTrain = create<TrainState>((set, get) => ({
     // the Waterfront shot holds behind the intro card
     film: { phase: "hold", idx: 0, t: 0, cooldown: 0, startedAt: -10 },
     warp: 1,
+    loopHold: 0,
+    cam: [0, 0],
     freeCam: null,
     stationS: [],
     LEN: 0,
@@ -193,7 +200,7 @@ export const useTrain = create<TrainState>((set, get) => ({
     sim.stationS = stationS;
     sim.LEN = LEN;
     sim.s = stationS[0];
-    sim.s2 = LEN - 60;
+    sim.s2 = stationS[stationS.length - 1];
     sim.v = 0;
     sim.target = null;
   },
@@ -242,7 +249,8 @@ export const useTrain = create<TrainState>((set, get) => ({
     const { sim } = get();
     if (!sim.stationS.length) return;
     const base = sim.target ?? sim.s + sim.v / DRAG;
-    sim.target = clamp(base + delta, S_MIN, sim.LEN - 6);
+    // a little past either end, so scrolling on at a terminus runs the turning loop
+    sim.target = clamp(base + delta, -2, sim.LEN + 2);
     sim.throttle = 0;
     if (!get().introDone) set({ introDone: true });
     if (get().monument) set({ monument: null });

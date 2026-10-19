@@ -11,7 +11,7 @@ import { SHOT_S } from "./scene/director";
 import { shotFor } from "./scene/shots";
 import { BLOCKERS, LANDMARKS } from "./sites";
 import { type TrainState, useTrain } from "./store";
-import { frameAt, groundAt, makeFrame, stationS, UP } from "./track";
+import { frameAt, groundAt, makeFrame, stationS, trainFrameAt, UP } from "./track";
 import { laneAt } from "./Train";
 
 type Mode = "chase" | "station" | "cab" | "shot" | "hold" | "monument" | "free";
@@ -102,7 +102,7 @@ export function CameraRig() {
       sim.orbit.idle = 0;
     }
 
-    frameAt(sim.s, fA, laneAt(sim, sim.s));
+    trainFrameAt(sim.s, sim.travelDir, laneAt(sim, sim.s), fA);
     const head = fA.p;
     const relative = mode === "chase" || mode === "station" || mode === "cab";
     if (mode === "free" && sim.freeCam) {
@@ -144,7 +144,10 @@ export function CameraRig() {
       // chase: the base offset as angles relative to the train, plus the visitor's orbit (yaw unbounded) and zoom
       const dir = sim.travelDir;
       const c = phone ? CAM.chasePhone : CAM.chase;
-      const back = c.back + Math.abs(sim.v) * 0.1;
+      // pull back and up as the train gets going, so the whole set and the line ahead are in view on the move
+      const going = Math.min(1, Math.abs(sim.v) / 15);
+      const back = c.back + going * 13 * (phone ? 1.2 : 1) + Math.abs(sim.v) * 0.12;
+      const up = c.up + going * 4;
       // ride on the right of the train unless a landmark is there and the left is clear, then swing over
       const blocked = (side: number) => {
         tmp.copy(head).addScaledVector(fA.r, c.right * 1.6 * side * dir).addScaledVector(fA.t, -back * dir * 0.8);
@@ -153,13 +156,13 @@ export function CameraRig() {
       if (blocked(sim.camSide) && !blocked(-sim.camSide)) sim.camSide = sim.camSide > 0 ? -1 : 1;
       else if (sim.camSide < 0 && !blocked(1)) sim.camSide = 1;
       const yaw0 = Math.atan2(c.right * sim.camSide, back);
-      const pitch0 = Math.atan2(c.up, Math.hypot(c.right, back));
-      const dist = Math.hypot(c.right, back, c.up) * Math.exp(sim.orbit.zoom);
+      const pitch0 = Math.atan2(up, Math.hypot(c.right, back));
+      const dist = Math.hypot(c.right, back, up) * Math.exp(sim.orbit.zoom);
       const yaw = yaw0 + sim.orbit.yaw;
       const pitch = clamp(pitch0 + sim.orbit.pitch, -0.05, 1.45);
       h.copy(fA.t).multiplyScalar(-dir * Math.cos(yaw)).addScaledVector(fA.r, Math.sin(yaw) * dir).setY(0).normalize();
       want.copy(head).addScaledVector(h, Math.cos(pitch) * dist).addScaledVector(UP, Math.sin(pitch) * dist);
-      wantLook.copy(head).addScaledVector(fA.t, -10 * dir).addScaledVector(UP, 1.6);
+      wantLook.copy(head).addScaledVector(fA.t, -(10 + going * 6) * dir).addScaledVector(UP, 1.6);
       // the view drifts back behind the train after 3 s without input, once it is moving
       if (!sim.dragging && !sim.held) {
         sim.orbit.idle += dt;
@@ -245,6 +248,8 @@ export function CameraRig() {
       });
     }
     camera.position.copy(want);
+    sim.cam[0] = want.x;
+    sim.cam[1] = want.z;
     look.current.copy(wantLook);
     camera.lookAt(wantLook);
 

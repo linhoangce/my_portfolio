@@ -19,6 +19,18 @@ const se = (th: number): [number, number] => {
   return [A * Math.sign(c) * Math.pow(Math.abs(c), 2 / NP), B * Math.sign(s) * Math.pow(Math.abs(s), 2 / NP)];
 };
 
+/** The cross-section as n points round (x, y), centred on the section's middle; the gangway bellows follow it. */
+export function sectionRing(n: number, scale: number): [number, number][] {
+  const out: [number, number][] = [];
+  for (let i = 0; i < n; i++) {
+    const [x, y] = se((i / n) * Math.PI * 2);
+    out.push([x * scale, y * scale]);
+  }
+  return out;
+}
+/** Height of the section's middle above the rail head. */
+export const SECTION_CY = CY;
+
 export type CarGeometry = { body: BufferGeometry; glass: BufferGeometry; line: BufferGeometry };
 
 export function carGeometry(len: number, noseFront: boolean, noseBack: boolean, rings = 30): CarGeometry {

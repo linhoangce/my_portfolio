@@ -4,14 +4,14 @@
  *
  * Arm: the visitor is heading for a stop and is within ~1.6 s of the brake curve (50 units, 20 when slow), or sits
  * docked there with the overlay not dismissed. Cut: 0.28 s dip to black, the camera snaps under it. Establish: the
- * authored shot with the copy revealed in stages. Hold: orbit the set until the visitor drives on. Exit: 1.2 s blend
- * back to the chase, then a 3 s cooldown before another scene can arm.
+ * authored shot (a short push-in on the set) with the copy revealed in stages. Hold: orbit the set until the visitor
+ * drives on. Exit: 1.2 s blend back to the chase; the stop just left cannot re-arm for 3 s, the next one can at once.
  */
 import { DOCK_DIST, DOCK_V } from "../constants";
 import { type TrainState, useTrain } from "../store";
 
 export const CUT_S = 0.28;
-export const SHOT_S = 6;
+export const SHOT_S = 4;
 export const EXIT_S = 1.2;
 
 let plainDocked: number | null = null;
@@ -33,8 +33,9 @@ export function stepFilm(st: TrainState, dt: number): void {
   }
 
   if (film.phase === "idle") {
-    if (!st.introDone || film.cooldown > 0 || st.monument || st.cab) return;
+    if (!st.introDone || st.monument || st.cab) return;
     for (let i = 0; i < sim.stationS.length; i++) {
+      if (film.cooldown > 0 && i === film.idx) continue;
       const d = Math.abs(sim.stationS[i] - sim.s);
       const arriving = sim.target === sim.stationS[i] && d <= (Math.abs(sim.v) < 8 ? 20 : 50);
       // from the train's own position: the store's docked index lags a frame behind a jump
@@ -64,7 +65,7 @@ export function stepFilm(st: TrainState, dt: number): void {
     if (film.t >= (quick ? 0.15 : CUT_S)) st.setPhase("establish");
   } else if (film.phase === "establish") {
     const T = film.t;
-    st.setStage(quick ? 4 : T > 3.8 ? 4 : T > 2.8 ? 3 : T > 1.6 ? 2 : T > 1.0 ? 1 : 0);
+    st.setStage(quick ? 4 : T > 2.4 ? 4 : T > 1.7 ? 3 : T > 1.0 ? 2 : T > 0.5 ? 1 : 0);
     if (T >= (quick ? 0.6 : SHOT_S)) st.setPhase("hold");
   } else if (film.phase === "hold") {
     // the opening hold behind the intro card reveals everything once the card goes

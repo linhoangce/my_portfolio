@@ -5,7 +5,7 @@ import { BoxGeometry, BufferAttribute, BufferGeometry, CatmullRomCurve3, Cylinde
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
 import { CROSS_LEN, LANE } from "./constants";
-import { CROSSOVERS, frameAt, type Frame, groundAt, LEN, makeFrame, SAMPLES, samples, smoothstep01, stationS, UP } from "./track";
+import { CROSSOVERS, frameAt, type Frame, groundAt, LEN, LOOPS, makeFrame, SAMPLES, samples, smoothstep01, stationS, UP } from "./track";
 import { useWorld } from "./world";
 
 /** Extrude a closed 2D profile (lateral, vertical; counter-clockwise) along a run of track frames. */
@@ -51,7 +51,8 @@ const atStation = (s: number) => stationS.some((ss) => Math.abs(s - ss) < 14.5);
 /**
  * The 2100 guideway: a slim white U-girder with a rounded soffit, planted troughs along both outer edges with sword
  * ferns hanging over the fascia, a violet LED line under each trough, the central walkway, reaction plates, rails and
- * scissors crossovers, carried on tapered Y piers scaled to the ground. Nine draw calls.
+ * scissors crossovers, carried on tapered Y piers scaled to the ground; a turning loop with a turnback stop at each end.
+ * Thirteen draw calls.
  */
 export function Guideway() {
   const world = useWorld();
@@ -91,21 +92,21 @@ export function Guideway() {
       [6.3, 1.75],
       [6.02, 1.75],
     ];
-    const deck = mergeAll([ribbon(soffit, all), alongRuns(parapet), alongRuns(mirror(parapet))]);
+    const deckMain = [ribbon(soffit, all), alongRuns(parapet), alongRuns(mirror(parapet))];
     const trough: [number, number][] = [
       [6.3, 0.7],
       [7.4, 0.7],
       [7.4, 1.55],
       [6.3, 1.55],
     ];
-    const planters = mergeAll([alongRuns(trough), alongRuns(mirror(trough))]);
+    const plantersMain = [alongRuns(trough), alongRuns(mirror(trough))];
     const ledStrip: [number, number][] = [
       [6.13, -0.62],
       [6.21, -0.62],
       [6.21, -0.48],
       [6.13, -0.48],
     ];
-    const leds = mergeAll([ribbon(ledStrip, all), ribbon(mirror(ledStrip), all)]);
+    const ledsMain = [ribbon(ledStrip, all), ribbon(mirror(ledStrip), all)];
     const walk = ribbon(
       [
         [-0.9, 0.95],
@@ -115,17 +116,15 @@ export function Guideway() {
       ],
       all,
     );
-    const plates = mergeAll(
-      [-LANE, LANE].map((lane) =>
-        ribbon(
-          [
-            [lane - 0.3, 0.96],
-            [lane + 0.3, 0.96],
-            [lane + 0.3, 1.02],
-            [lane - 0.3, 1.02],
-          ],
-          all,
-        ),
+    const platesMain = [-LANE, LANE].map((lane) =>
+      ribbon(
+        [
+          [lane - 0.3, 0.96],
+          [lane + 0.3, 0.96],
+          [lane + 0.3, 1.02],
+          [lane - 0.3, 1.02],
+        ],
+        all,
       ),
     );
     // two rail pairs plus every crossover diagonal, all one rust-brown mesh
@@ -151,6 +150,153 @@ export function Guideway() {
           }
           tubes.push(new TubeGeometry(new CatmullRomCurve3(pts, false, "catmullrom", 0), 60, 0.07, 5, false));
         }
+      }
+    }
+
+    // the turning loops: a single-track girder with parapets (the inner one starts where the two branches part), a
+    // planted outer edge, rails and a reaction plate, round columns, and a turnback stop on the far side of each loop
+    const loopDeck: BufferGeometry[] = [];
+    const loopPlanters: BufferGeometry[] = [];
+    const loopLeds: BufferGeometry[] = [];
+    const loopPlates: BufferGeometry[] = [];
+    const canopyParts: BufferGeometry[] = [];
+    const paneParts: BufferGeometry[] = [];
+    const platParts: BufferGeometry[] = [];
+    const lampParts: BufferGeometry[] = [];
+    for (const loop of [LOOPS.near, LOOPS.far]) {
+      const fr = loop.samples;
+      const n = fr.length;
+      const tOf = (i: number) => (i / (n - 1)) * loop.L;
+      const between = (a: number, b: number) => fr.filter((_, i) => tOf(i) >= a && tOf(i) <= b);
+      const stop0 = loop.L / 2 - 14;
+      const stop1 = loop.L / 2 + 14;
+      loopDeck.push(
+        ribbon(
+          [
+            [-1.6, -1.6],
+            [1.6, -1.6],
+            [2.9, -1.0],
+            [3.5, -0.3],
+            [3.6, 0.9],
+            [3.6, 0.95],
+            [-3.6, 0.95],
+            [-3.6, 0.9],
+            [-3.5, -0.3],
+            [-2.9, -1.0],
+          ],
+          fr,
+        ),
+        ribbon(
+          [
+            [3.32, 0.95],
+            [3.6, 0.95],
+            [3.6, 1.75],
+            [3.32, 1.75],
+          ],
+          fr,
+        ),
+        ribbon(
+          mirror([
+            [3.32, 0.95],
+            [3.6, 0.95],
+            [3.6, 1.75],
+            [3.32, 1.75],
+          ]),
+          between(24, loop.L - 24),
+        ),
+      );
+      const trough: [number, number][] = [
+        [3.6, 0.7],
+        [4.7, 0.7],
+        [4.7, 1.55],
+        [3.6, 1.55],
+      ];
+      loopPlanters.push(ribbon(trough, between(0, stop0)), ribbon(trough, between(stop1, loop.L)));
+      loopLeds.push(
+        ribbon(
+          [
+            [3.28, -0.62],
+            [3.36, -0.62],
+            [3.36, -0.48],
+            [3.28, -0.48],
+          ],
+          fr,
+        ),
+      );
+      loopPlates.push(
+        ribbon(
+          [
+            [-0.3, 0.96],
+            [0.3, 0.96],
+            [0.3, 1.02],
+            [-0.3, 1.02],
+          ],
+          fr,
+        ),
+      );
+      for (const side of [-1, 1]) {
+        const pts = fr.map((f) => f.p.clone().addScaledVector(f.r, side * 0.72).addScaledVector(UP, 0.98));
+        tubes.push(new TubeGeometry(new CatmullRomCurve3(pts, false, "catmullrom", 0), Math.ceil(loop.L / (lowEnd ? 3 : 1.5)), 0.07, 4, false));
+      }
+      // round columns every 16 units, down to the ground or the seabed
+      for (let t = 8; t < loop.L - 4; t += 16) {
+        const f = fr[Math.round((t / loop.L) * (n - 1))];
+        const gy = groundAt(f.p.x, f.p.z);
+        const h = f.p.y - 1.6 - gy;
+        if (h < 0.5) continue;
+        const c = new CylinderGeometry(0.7, 1.05, h + 0.3, lowEnd ? 8 : 12);
+        c.deleteAttribute("uv");
+        c.translate(f.p.x, gy - 0.3 + (h + 0.3) / 2, f.p.z);
+        loopDeck.push(c);
+      }
+      // the turnback stop: a platform on the outer side under white ribs and a glass spine
+      const run = between(stop0, stop1);
+      platParts.push(
+        ribbon(
+          [
+            [3.6, 0.45],
+            [8.4, 0.45],
+            [8.4, 1.4],
+            [3.6, 1.4],
+          ],
+          run,
+        ),
+      );
+      paneParts.push(
+        ribbon(
+          [
+            [-1.4, 7.05],
+            [7.4, 7.05],
+            [7.4, 7.12],
+            [-1.4, 7.12],
+          ],
+          run,
+        ),
+      );
+      lampParts.push(
+        ribbon(
+          [
+            [5.9, 6.8],
+            [6.1, 6.8],
+            [6.1, 6.88],
+            [5.9, 6.88],
+          ],
+          run,
+        ),
+      );
+      for (let k = 0; k < run.length; k += lowEnd ? 4 : 2) {
+        const f = run[k];
+        const at = (lat: number, up: number) => f.p.clone().addScaledVector(f.r, lat).addScaledVector(UP, up);
+        const pts: Vector3[] = [];
+        for (let j = 0; j <= 12; j++) {
+          const u = j / 12;
+          // an arch from the inner parapet over the track to the platform's outer edge
+          const lat = -3.4 + u * 11.6;
+          pts.push(at(lat, 1.4 + 5.7 * Math.sin(u * Math.PI) ** 0.7));
+        }
+        const rib = new TubeGeometry(new CatmullRomCurve3(pts), 16, 0.12, 5, false);
+        rib.deleteAttribute("uv");
+        canopyParts.push(rib);
       }
     }
     const rails = mergeAll(tubes);
@@ -212,12 +358,20 @@ export function Guideway() {
       o.castShadow = !lowEnd;
       o.receiveShadow = true;
     }
-    return { deck, planters, leds, walk, plates, rails, ferns, col, arm };
+    const deck = mergeAll([...deckMain, ...loopDeck]);
+    const planters = mergeAll([...plantersMain, ...loopPlanters]);
+    const leds = mergeAll([...ledsMain, ...loopLeds]);
+    const plates = mergeAll([...platesMain, ...loopPlates]);
+    const canopy = mergeAll(canopyParts);
+    const panes = mergeAll(paneParts);
+    const plats = mergeAll(platParts);
+    const lamps = mergeAll(lampParts);
+    return { deck, planters, leds, walk, plates, rails, ferns, col, arm, canopy, panes, plats, lamps };
   }, [mats, lowEnd]);
 
   useEffect(
     () => () => {
-      for (const g of [built.deck, built.planters, built.leds, built.walk, built.plates, built.rails]) g.dispose();
+      for (const g of [built.deck, built.planters, built.leds, built.walk, built.plates, built.rails, built.canopy, built.panes, built.plats, built.lamps]) g.dispose();
       for (const o of [built.ferns, built.col, built.arm]) {
         o.geometry.dispose();
         o.dispose();
@@ -234,6 +388,10 @@ export function Guideway() {
       <mesh geometry={built.walk} material={mats.walk} receiveShadow />
       <mesh geometry={built.plates} material={mats.plate} receiveShadow />
       <mesh geometry={built.rails} material={mats.rail} receiveShadow />
+      <mesh geometry={built.canopy} material={mats.canopy} castShadow={!lowEnd} />
+      <mesh geometry={built.panes} material={mats.pane} />
+      <mesh geometry={built.plats} material={mats.plat} receiveShadow />
+      <mesh geometry={built.lamps} material={mats.lamp} />
       <primitive object={built.ferns} />
       <primitive object={built.col} />
       <primitive object={built.arm} />

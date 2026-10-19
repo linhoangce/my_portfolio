@@ -50,11 +50,17 @@ function stationShot(i: number, lowEnd: boolean): ShotPlan {
   const look = stationPoint(i, spec.look);
   const fromLook = stationPoint(i, spec.fromLook ?? spec.look);
   const targets = [focus, deck, ...(set?.anchors.slice(0, 2) ?? [])];
-  // a free shot starts where it is authored (the Granville dolly starts on the guideway, behind the train)
+  // a free shot starts where it is authored (the Granville dolly starts on the guideway, behind the train); the others
+  // are a short push-in that starts just behind where they end, so the cut lands on the set straight away
   const to = search(focus, stationPoint(i, spec.to), targets, lowEnd);
-  const from = spec.free ? stationPoint(i, spec.from) : search(focus, stationPoint(i, spec.from), targets, lowEnd);
+  const from = spec.free ? stationPoint(i, spec.from) : pullBack(to, focus, lowEnd);
   // the hold circles the focus from where the shot ends, so the shot's last look is the focus
-  return { from: { pos: from, look: fromLook }, to: { pos: to, look: spec.free ? look : focus.clone() }, focus, dist: [18, 170] };
+  return {
+    from: { pos: from, look: spec.free ? fromLook : focus.clone().addScaledVector(UP, -1.5) },
+    to: { pos: to, look: spec.free ? look : focus.clone() },
+    focus,
+    dist: [18, 170],
+  };
 }
 
 function scienceWorldShot(lowEnd: boolean): ShotPlan {
@@ -70,10 +76,16 @@ function scienceWorldShot(lowEnd: boolean): ShotPlan {
   const sideSign = trackDist(mid.x + perp.x * 95, mid.z + perp.z * 95) >= trackDist(mid.x - perp.x * 95, mid.z - perp.z * 95) ? 1 : -1;
   const targets = [sw.clone().addScaledVector(UP, 8), sw.clone().addScaledVector(UP, -6), col, station];
   const guessTo = mid.clone().addScaledVector(perp, 95 * sideSign).addScaledVector(UP, 28);
-  const guessFrom = mid.clone().addScaledVector(perp, 135 * sideSign).addScaledVector(v, -30).addScaledVector(UP, 22);
   const to = search(mid, guessTo, targets, lowEnd, "scienceWorld");
-  const from = search(mid, guessFrom, targets, lowEnd, "scienceWorld");
-  return { from: { pos: from, look: mid.clone().addScaledVector(v, -8) }, to: { pos: to, look: mid.clone() }, focus: mid, dist: [30, 200], owns: "scienceWorld" };
+  const from = pullBack(to, mid, lowEnd, 16);
+  return { from: { pos: from, look: mid.clone().addScaledVector(UP, -1.5) }, to: { pos: to, look: mid.clone() }, focus: mid, dist: [30, 200], owns: "scienceWorld" };
+}
+
+/** A start pose `d` behind and a little above the end pose, along the line of sight, kept clear of roofs and ground. */
+function pullBack(to: Vector3, focus: Vector3, lowEnd: boolean, d = 11): Vector3 {
+  const p = to.clone().addScaledVector(to.clone().sub(focus).normalize(), d).addScaledVector(UP, 2.5);
+  p.y = Math.max(p.y, roofAt(p.x, p.z, 1.5, lowEnd) + 3, groundAt(p.x, p.z) + 4);
+  return p;
 }
 
 /**

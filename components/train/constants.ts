@@ -38,7 +38,6 @@ export const VMAX = 46;
 export const ACC = 15;
 export const BRAKE = 24;
 export const DRAG = 0.55;
-export const S_MIN = 6;
 export const ASSIST_RADIUS = 30;
 export const WHEEL_GAIN = 0.16;
 export const SWIPE_GAIN = 0.4;
@@ -51,6 +50,8 @@ export const METRES_PER_UNIT = 9.1;
 export const ONCOMING_SPEED = 30;
 export const ONCOMING_DWELL = 5;
 export const ONCOMING_RESEAT = 420;
+/** Speed round the turning loops at either end. */
+export const LOOP_V = 22;
 
 // Camera
 export const CAM = {

@@ -13,7 +13,7 @@ import { SEA } from "../constants";
 import { inSetZone } from "../sets/zones";
 import { inLandmark, inPark, streamDist } from "../sites";
 import { groundAt, inWater, RASTER, sdfAt } from "../terrain";
-import { samples, trackNearest } from "../track";
+import { PATH_SAMPLES, trackNearest } from "../track";
 import type { SpeciesId } from "../trees/species";
 import { BUILD, type Ctx, PAL } from "./archetypes";
 import { ARCH_BY_ERA, type ArchId, hood, type Hood, TOWERISH, ZONES } from "./eras";
@@ -54,11 +54,11 @@ function corridorRaster() {
   const g = RASTER;
   const d = new Float32Array(g.nx * g.nz).fill(Infinity);
   const y = new Float32Array(g.nx * g.nz);
-  // near the line (where the clearance and height rules bite): each coarse track sample paints the cells within 100
+  // near the line and its turning loops (where the clearance and height rules bite): each track sample paints the cells within 100
   const R = 100;
   const rc = Math.ceil(R / g.step);
-  for (let s = 0; s < samples.length; s += 4) {
-    const p = samples[s].p;
+  for (let s = 0; s < PATH_SAMPLES.length; s += 3) {
+    const p = PATH_SAMPLES[s].p;
     const ci = Math.round((p.x - g.x0) / g.step);
     const cj = Math.round((p.z - g.z0) / g.step);
     for (let j = Math.max(0, cj - rc); j <= Math.min(g.nz - 1, cj + rc); j++) {

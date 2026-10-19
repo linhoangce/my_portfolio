@@ -59,6 +59,12 @@ export function Readout() {
         {kmh > 0 ? <span className="kmh"> · {kmh} km/h</span> : null}
       </>
     );
+  } else if (readout.kind === "loop") {
+    body = (
+      <>
+        Turning loop · back to <b>{stations[readout.idx].section}</b>
+      </>
+    );
   } else body = "End of the line";
 
   const ev = event ? EVENT_META[event] : null;
