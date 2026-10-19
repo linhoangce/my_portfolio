@@ -215,6 +215,22 @@ export function Events() {
     eventColour(ev, 0, c.t, B.crownA.emissive);
     eventColour(ev, 1, c.t, B.crownB.emissive);
     mats.edge.forEach((m, i) => (ev && isNight ? eventColour(ev, i % 2, c.t, m.emissive) : m.emissive.copy(VIOLET)));
+    // the guideway's LED line and the train's light line take the event's colours after dark too
+    for (const [m, i] of [
+      [mats.trainLine, 0],
+      [mats.guideLed, 1],
+    ] as const) {
+      if (ev && isNight) eventColour(ev, i, c.t, m.emissive);
+      else m.emissive.copy(VIOLET);
+    }
+    mats.guideLed.emissiveIntensity = 0.3 + (world.look.cur?.edge ?? 0.4) * 1.6;
+    // platform banners fly the event's two colours day and night
+    mats.bannerA.visible = mats.bannerB.visible = !!ev;
+    if (ev) {
+      eventColour(ev, 0, 0, mats.bannerA.color);
+      eventColour(ev, 1, 0, mats.bannerB.color);
+    }
+    mats.underGlow.color.copy(mats.trainLine.emissive);
     // extras
     extras.lanterns.visible = ev === "lunar";
     extras.lanternMat.emissiveIntensity = isNight ? 2.2 : 0.3;

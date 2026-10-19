@@ -185,15 +185,17 @@ export function Mountains() {
 
   const built = useMemo(() => {
     // Mount Baker: hazy lower flanks, grey rock ridges, a glacier cap whose edge wanders around the cone
-    const bakerGeo = new ConeGeometry(460, 430, 30, 10);
+    // about 2.5° tall from downtown, as the real one looks from 110 km: small, far, on the south-east horizon
+    const BH = 170;
+    const bakerGeo = new ConeGeometry(320, BH, 30, 10);
     const bp = bakerGeo.attributes.position;
     const bc = new Float32Array(bp.count * 3);
-    const haze = new Color(0x8597ab);
-    const rock = new Color(0x9ea7b2);
-    const snow = new Color(0xf3f6fa);
+    const haze = new Color(0x9fb3c9);
+    const rock = new Color(0xb4bfcb);
+    const snow = new Color(0xeef3f8);
     const c = new Color();
     for (let i = 0; i < bp.count; i++) {
-      const u = (bp.getY(i) + 215) / 430;
+      const u = (bp.getY(i) + BH / 2) / BH;
       const a = Math.atan2(bp.getZ(i), bp.getX(i));
       if (u < 0.999) {
         const ridge = 1 + (0.06 * Math.sin(a * 7 + u * 3) + 0.04 * Math.sin(a * 13 + 1.3)) * (1 - u);
@@ -206,8 +208,9 @@ export function Mountains() {
     }
     bakerGeo.computeVertexNormals();
     bakerGeo.setAttribute("color", new BufferAttribute(bc, 3));
+    // beyond the fog's reach, so its haze is painted into the colours instead
     const baker = new Mesh(bakerGeo, new MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true, fog: false }));
-    baker.position.set(1900, 190, 1700);
+    baker.position.set(2600, BH / 2 - 25, 2600);
     // Lions Gate: two towers, a deck across the First Narrows, four main cables; concrete and cables as two meshes
     const nw = narrows();
     const len = nw.zS - nw.zN + 40;

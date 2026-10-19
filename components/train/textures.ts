@@ -1,4 +1,4 @@
-/** Canvas-painted textures: ground tiles, facades, foliage, people, train windows, station signs. Client only. */
+/** Canvas-painted textures: ground tiles, people, the train's interior glass, guideway ferns, door labels. Client only. */
 import { CanvasTexture, RepeatWrapping, SRGBColorSpace, type Texture } from "three";
 
 import type { Station } from "@/data";
@@ -116,26 +116,72 @@ export function personTexture(seed: number): CanvasTexture {
   return texture(c);
 }
 
-/** One textured window strip per car: dark glass with a lighter pane by day, the same pane glowing warm at night. */
-export function windowTextures(panesPerSide: number): { map: CanvasTexture; emissiveMap: CanvasTexture } {
-  const W = 256;
+/**
+ * The panoramic glass: by day a dark cabin with a pale sky reflection along the top, at night warm light with rows of
+ * seat backs and the odd passenger's head and shoulders against it.
+ */
+export function interiorTextures(): { map: CanvasTexture; emissiveMap: CanvasTexture } {
+  const W = 512;
   const H = 64;
   const [c, g] = canvas(W, H);
   const [e, h] = canvas(W, H);
-  g.fillStyle = "#1a2230";
+  g.fillStyle = "#16202c";
   g.fillRect(0, 0, W, H);
   h.fillStyle = "#000000";
   h.fillRect(0, 0, W, H);
-  g.fillStyle = "#2b3547";
-  g.fillRect(26, 8, 204, 48);
-  h.fillStyle = "#ffe3b8";
-  h.fillRect(26, 8, 204, 48);
-  const mk = (cv: HTMLCanvasElement) => {
-    const t = texture(cv, true);
-    t.repeat.set(panesPerSide, 1);
-    return t;
-  };
-  return { map: mk(c), emissiveMap: mk(e) };
+  const lg = h.createLinearGradient(0, 0, 0, H);
+  lg.addColorStop(0, "#fff1d6");
+  lg.addColorStop(1, "#ffd49a");
+  h.fillStyle = lg;
+  h.fillRect(0, 6, W, 52);
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 9301 + 49297) % 233280) / 233280);
+  for (let x = 10; x < W; x += 46) {
+    h.fillStyle = "#3a2a1a";
+    h.fillRect(x, 34, 26, 26);
+    g.fillStyle = "#0d141d";
+    g.fillRect(x, 34, 26, 26);
+    if (rnd() < 0.45) {
+      h.fillStyle = "#2a1c12";
+      h.beginPath();
+      h.arc(x + 13, 24, 7, 0, Math.PI * 2);
+      h.fill();
+      h.fillRect(x + 6, 30, 14, 14);
+    }
+  }
+  g.fillStyle = "rgba(160,190,215,0.18)";
+  g.fillRect(0, 0, W, 22);
+  return { map: texture(c, true), emissiveMap: texture(e, true) };
+}
+
+/** A curtain of sword fern fronds draping over the guideway fascia, painted on transparent canvas. */
+export function fernTexture(): CanvasTexture {
+  const [c, g] = canvas(128, 160);
+  let seed = 11;
+  const rnd = () => ((seed = (seed * 9301 + 49297) % 233280) / 233280);
+  for (let k = 0; k < 11; k++) {
+    const x0 = 8 + k * 11 + rnd() * 4;
+    const out = (k % 2 ? 1 : -1) * (6 + rnd() * 10);
+    const len = 95 + rnd() * 55;
+    const green = 135 + Math.floor(rnd() * 40);
+    g.strokeStyle = `rgb(70,${green - 15},55)`;
+    g.lineWidth = 2.5;
+    g.beginPath();
+    g.moveTo(x0, 2);
+    g.quadraticCurveTo(x0 + out * 0.7, len * 0.45, x0 + out, len);
+    g.stroke();
+    for (let t = 0.08; t < 1; t += 0.07) {
+      const x = x0 + out * (0.7 * 2 * t * (1 - t) + t * t);
+      const y = 2 + len * t;
+      g.fillStyle = `rgb(${84 + Math.floor(rnd() * 20)},${green},${62 + Math.floor(rnd() * 12)})`;
+      for (const sd of [-1, 1]) {
+        g.beginPath();
+        g.ellipse(x + sd * 4.5 * (1 - t * 0.5), y + 1.5, 5.5 * (1 - t * 0.55), 1.8, sd * 0.5, 0, Math.PI * 2);
+        g.fill();
+      }
+    }
+  }
+  return texture(c);
 }
 
 export type SignFonts = { sans: string; serif: string; mono: string };
@@ -154,29 +200,27 @@ export function signFonts(): SignFonts {
   };
 }
 
-/** Fascia sign: blue Expo-line band, section name, "code · Linh Hoang" in serif violet, the real station name small. */
-export function paintSign(cv: HTMLCanvasElement, st: Station, fonts: SignFonts): void {
+/** The station's name as a thin light line on the top rail of its platform screen doors. */
+export function paintDoorLabel(cv: HTMLCanvasElement, st: Station, fonts: SignFonts): void {
   const g = cv.getContext("2d");
   if (!g) return;
-  g.fillStyle = "#0b1019";
-  g.fillRect(0, 0, 1024, 512);
-  g.fillStyle = "#1657b3";
-  g.fillRect(0, 0, 1024, 26);
+  g.fillStyle = "#0b0f18";
+  g.fillRect(0, 0, cv.width, cv.height);
   g.fillStyle = "#a78bfa";
-  g.fillRect(0, 26, 22, 486);
-  g.fillStyle = "#7f8ca3";
+  g.fillRect(0, cv.height - 4, cv.width, 4);
   g.font = `500 30px ${fonts.mono}`;
-  g.fillText("EXPO LINE · " + st.name.toUpperCase(), 72, 96);
+  g.fillStyle = "#c4b5fd";
+  g.fillText(st.code, 24, 40);
   g.fillStyle = "#eaeff7";
-  g.font = `700 ${st.section.length > 12 ? 80 : 104}px ${fonts.sans}`;
-  g.fillText(st.section, 72, 250);
-  g.fillStyle = "#a78bfa";
-  g.font = `400 90px ${fonts.serif}`;
-  g.fillText(st.code + " · Linh Hoang", 72, 400);
+  g.fillText(st.name.toUpperCase(), 92, 40);
+  g.fillStyle = "#7f8ca3";
+  g.textAlign = "right";
+  g.fillText(st.section, cv.width - 24, 40);
+  g.textAlign = "left";
 }
 
-export function signTexture(st: Station, fonts: SignFonts): { texture: Texture; canvas: HTMLCanvasElement } {
-  const [c] = canvas(1024, 512);
-  paintSign(c, st, fonts);
+export function doorLabel(st: Station, fonts: SignFonts): { texture: Texture; canvas: HTMLCanvasElement } {
+  const [c] = canvas(1024, 60);
+  paintDoorLabel(c, st, fonts);
   return { texture: texture(c), canvas: c };
 }

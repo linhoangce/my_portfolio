@@ -4,6 +4,7 @@
  */
 import { createContext, useContext } from "react";
 import {
+  AdditiveBlending,
   BackSide,
   BufferAttribute,
   BufferGeometry,
@@ -37,7 +38,7 @@ import { Rng } from "./cityModel";
 import { createEventLights, type EventLights } from "./eventLights";
 import type { Season } from "./lookTypes";
 import type { LookTargets } from "./lookModel";
-import { groundTexture, personTexture, windowTextures } from "./textures";
+import { fernTexture, groundTexture, interiorTextures, personTexture } from "./textures";
 import { paintTreeAtlas } from "./trees/atlas";
 import { createTreeShading, type TreeShading } from "./trees/treeMaterial";
 import { PEOPLE_VARIANTS } from "./constants";
@@ -70,14 +71,25 @@ export type World = {
     post: MeshStandardMaterial;
     lamp: MeshStandardMaterial;
     edge: MeshStandardMaterial[];
+    /** The 2100 kit: white U-girder and Y piers, planters and hanging ferns, glass panes, timber, living roofs. */
+    girder: MeshStandardMaterial;
+    planter: MeshStandardMaterial;
+    /** Lamp-post banners in the event's two colours; hidden when no event is on. */
+    bannerA: MeshStandardMaterial;
+    bannerB: MeshStandardMaterial;
+    fern: MeshStandardMaterial;
+    pane: MeshStandardMaterial;
+    timber: MeshStandardMaterial;
+    roofGreen: MeshStandardMaterial;
+    /** The LED line along the guideway fascia and the light line along each car; colours follow the event at night. */
+    guideLed: MeshStandardMaterial;
+    trainLine: MeshStandardMaterial;
+    underGlow: MeshBasicMaterial;
     body: MeshPhysicalMaterial;
     trim: MeshStandardMaterial;
-    band: MeshStandardMaterial;
-    glass: MeshPhysicalMaterial;
     window: MeshStandardMaterial;
     head: MeshStandardMaterial;
     tail: MeshStandardMaterial;
-    wheel: MeshStandardMaterial;
     car: MeshStandardMaterial;
     carTrim: MeshStandardMaterial;
     people: MeshStandardMaterial[];
@@ -97,7 +109,6 @@ export type World = {
   refs: {
     mountain: Mesh | null;
     mountainCols: { summer: BufferAttribute; winter: BufferAttribute } | null;
-    wheels: Mesh[];
     bloom: { strength: number } | null;
   };
   look: { cur: LookTargets | null; tgt: LookTargets | null; lastSeason: Season | null };
@@ -124,7 +135,7 @@ export function createWorld(gl: WebGLRenderer, scene: Scene, lowEnd: boolean): W
   scene.fog = new FogExp2(0x000000, 0.003);
 
   const groundTex = { day: groundTexture(false, rng), night: groundTexture(true, rng) };
-  const winTex = windowTextures(5.2);
+  const winTex = interiorTextures();
 
   const ground = new MeshStandardMaterial({ map: groundTex.night, roughness: 1, vertexColors: true });
   ground.envMap = envTex;
@@ -150,23 +161,31 @@ export function createWorld(gl: WebGLRenderer, scene: Scene, lowEnd: boolean): W
     post: new MeshStandardMaterial({ color: 0x8e95a3, roughness: 0.5, metalness: 0.6 }),
     lamp: new MeshStandardMaterial({ color: 0x222222, emissive: 0xffdcb0, emissiveIntensity: 1.4 }),
     edge: [],
-    body: new MeshPhysicalMaterial({ color: 0xeef1f5, metalness: 0.2, roughness: 0.35, clearcoat: 0.9, clearcoatRoughness: 0.15, envMap: envTex, envMapIntensity: 0.5 }),
-    trim: new MeshStandardMaterial({ color: 0x2a3039, roughness: 0.7, metalness: 0.4, envMap: envTex, envMapIntensity: 0.25 }),
-    band: new MeshStandardMaterial({ color: 0x1657b3, roughness: 0.5, metalness: 0.2, envMap: envTex, envMapIntensity: 0.3 }),
-    glass: new MeshPhysicalMaterial({ color: 0x0f141c, metalness: 0.2, roughness: 0.1, clearcoat: 1, envMap: envTex, envMapIntensity: 0.9 }),
+    girder: new MeshStandardMaterial({ color: 0xf0f0ec, roughness: 0.55, envMap: envTex, envMapIntensity: 0.25 }),
+    planter: new MeshStandardMaterial({ color: 0x43683a, roughness: 1 }),
+    bannerA: new MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, side: 2 }),
+    bannerB: new MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, side: 2 }),
+    fern: new MeshStandardMaterial({ map: fernTexture(), alphaTest: 0.4, side: 2, roughness: 1 }),
+    pane: new MeshStandardMaterial({ color: 0xd6e6f0, metalness: 0.1, roughness: 0.05, transparent: true, opacity: 0.26, depthWrite: false, side: 2, envMap: envTex, envMapIntensity: 1 }),
+    timber: new MeshStandardMaterial({ color: 0xb98a5a, roughness: 0.7 }),
+    roofGreen: new MeshStandardMaterial({ color: 0x5b8a45, roughness: 1 }),
+    guideLed: new MeshStandardMaterial({ color: 0x1b1530, emissive: 0xa78bfa, emissiveIntensity: 0.6 }),
+    trainLine: new MeshStandardMaterial({ color: 0x1b1530, emissive: 0xa78bfa, emissiveIntensity: 1 }),
+    underGlow: new MeshBasicMaterial({ color: 0xa78bfa, transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false }),
+    body: new MeshPhysicalMaterial({ color: 0xf3f4f6, metalness: 0.15, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.12, envMap: envTex, envMapIntensity: 0.6 }),
+    trim: new MeshStandardMaterial({ color: 0x2a3039, roughness: 0.6, metalness: 0.4, envMap: envTex, envMapIntensity: 0.25 }),
     window: new MeshStandardMaterial({
       map: winTex.map,
       emissiveMap: winTex.emissiveMap,
       emissive: 0xffffff,
       emissiveIntensity: 1.2,
-      roughness: 0.22,
-      metalness: 0.15,
+      roughness: 0.06,
+      metalness: 0.2,
       envMap: envTex,
-      envMapIntensity: 0.5,
+      envMapIntensity: 1.1,
     }),
     head: new MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff5e0, emissiveIntensity: 1.7 }),
     tail: new MeshStandardMaterial({ color: 0x330000, emissive: 0xff2a2a, emissiveIntensity: 2.5 }),
-    wheel: new MeshStandardMaterial({ color: 0x232838, roughness: 0.5, metalness: 0.7 }),
     car: new MeshStandardMaterial({ color: 0xffffff, roughness: 0.45, metalness: 0.35, envMap: envTex, envMapIntensity: 0.5 }),
     carTrim: new MeshStandardMaterial({ color: 0x1a1f26, roughness: 0.35, metalness: 0.2, envMap: envTex, envMapIntensity: 0.6 }),
     people: Array.from({ length: PEOPLE_VARIANTS }, (_, v) => new MeshStandardMaterial({ map: personTexture(v + 1), alphaTest: 0.5, side: 2, roughness: 1 })),
@@ -250,7 +269,7 @@ export function createWorld(gl: WebGLRenderer, scene: Scene, lowEnd: boolean): W
     lights: { hemi, sun, stationLight, spots: [] },
     sky: { mesh: skyMesh, mat: skyMat, disc, stars },
     precip: { rain, rainPos, rainVel, RAIN_N, snow, snowPos, SNOW_N },
-    refs: { mountain: null, mountainCols: null, wheels: [], bloom: null },
+    refs: { mountain: null, mountainCols: null, bloom: null },
     trees: createTreeShading(paintTreeAtlas(), lowEnd),
     buildings: createBuildingMaterials(paintFacadeArrays(lowEnd), envTex),
     events: createEventLights(),
