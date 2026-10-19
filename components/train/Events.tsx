@@ -72,7 +72,7 @@ function points(n: number, size: number, additive: boolean): { pts: Points; pos:
  * The event layer: every frame tick of the monuments' LED patterns, the tower crowns and the station accents, plus the
  * extras each event brings (Chinatown lanterns for Lunar New Year, rainbow crosswalks for Pride, fireworks over
  * English Bay for the Celebration of Light, string lights in the street trees for Bright Nights, diyas along the
- * station canopies for Diwali, marigold garlands for Vaisakhi) and the season's petals or falling leaves around the camera.
+ * station canopies for Diwali, marigold garlands for Vaisakhi).
  */
 export function Events() {
   const world = useWorld();
@@ -181,19 +181,15 @@ export function Events() {
     (fw.pts.material as PointsMaterial).sizeAttenuation = true;
     const vel = new Float32Array(N * P * 3);
     const bursts = Array.from({ length: N }, (_, i) => ({ t: -i * 0.7, life: 2.6 }));
-    // petals in spring, leaves in fall, drifting around the camera
-    const PN = lowEnd ? 300 : 700;
-    const petals = points(PN, 0.42, false);
-    for (let i = 0; i < PN; i++) petals.pos.set([(Math.random() - 0.5) * 100, Math.random() * 40, (Math.random() - 0.5) * 100], i * 3);
-    for (const o of [lights, diyas, garlands, fw, petals]) (o.pts.geometry.attributes.position as BufferAttribute).needsUpdate = true;
-    return { lanterns, lanternMat, rainbow, lights, diyas, garlands, fw, vel, bursts, N, P, petals, PN, petalSeason: "" };
+    for (const o of [lights, diyas, garlands, fw]) (o.pts.geometry.attributes.position as BufferAttribute).needsUpdate = true;
+    return { lanterns, lanternMat, rainbow, lights, diyas, garlands, fw, vel, bursts, N, P };
   }, [lowEnd]);
 
   useEffect(
     () => () => {
       extras.lanterns.geometry.dispose();
       for (const m of extras.rainbow) m.geometry.dispose();
-      for (const o of [extras.lights, extras.diyas, extras.garlands, extras.fw, extras.petals]) o.pts.geometry.dispose();
+      for (const o of [extras.lights, extras.diyas, extras.garlands, extras.fw]) o.pts.geometry.dispose();
     },
     [extras],
   );
@@ -239,7 +235,7 @@ export function Events() {
     extras.lights.pts.visible = ev === "brightnights" && isNight;
     extras.diyas.pts.visible = ev === "diwali" && isNight;
     extras.garlands.pts.visible = ev === "vaisakhi";
-    // fireworks and petals are decoration: real time, only lightly sped up by warp, with drag per second
+    // fireworks are decoration: real time, only lightly sped up by warp, with drag per second
     const dtR = Math.min(delta, 0.05) * Math.min(st.sim.warp, 8);
     const drag = Math.pow(0.4, dtR);
     const fwOn = ev === "light" && isNight;
@@ -282,31 +278,6 @@ export function Events() {
       (fw.pts.geometry.attributes.position as BufferAttribute).needsUpdate = true;
       (fw.pts.geometry.attributes.color as BufferAttribute).needsUpdate = true;
     }
-    const season = st.season;
-    const petalsOn = season === "spring" || season === "fall";
-    extras.petals.pts.visible = petalsOn;
-    if (petalsOn) {
-      const { petals, PN } = extras;
-      if (extras.petalSeason !== season) {
-        extras.petalSeason = season;
-        const pal = season === "spring" ? [0xf7c6d9, 0xf2a9c6, 0xfff0f5] : [0xd9762b, 0xc9452b, 0xe0b23a, 0xb86a3a];
-        for (let i = 0; i < PN; i++) {
-          col.setHex(pal[i % pal.length]);
-          petals.colour.set([col.r, col.g, col.b], i * 3);
-        }
-        (petals.pts.geometry.attributes.color as BufferAttribute).needsUpdate = true;
-      }
-      const t = c.t;
-      for (let i = 0; i < PN; i++) {
-        const j = i * 3;
-        petals.pos[j + 1] -= 2.2 * dtR;
-        petals.pos[j] += Math.sin(t * 1.3 + i) * 0.05;
-        petals.pos[j + 2] += Math.cos(t + i * 0.7) * 0.04;
-        if (petals.pos[j + 1] < 0) petals.pos[j + 1] = 40;
-      }
-      petals.pts.position.copy(state.camera.position).add(new Vector3(0, -20, 0));
-      (petals.pts.geometry.attributes.position as BufferAttribute).needsUpdate = true;
-    }
   }, -40);
 
   return (
@@ -319,7 +290,6 @@ export function Events() {
       <primitive object={extras.diyas.pts} />
       <primitive object={extras.garlands.pts} />
       <primitive object={extras.fw.pts} />
-      <primitive object={extras.petals.pts} />
     </>
   );
 }

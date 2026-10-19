@@ -78,12 +78,13 @@ export function district(x: number, z: number): District {
 export type CarRun = { axis: "x" | "z"; line: number; a: number; b: number; pos: number; dir: 1 | -1; speed: number; off: number };
 
 /** Every street is cut into runs of dry land; cars loop inside a run, one speed per run and direction, evenly spaced, so they never meet. */
-export function buildCars(rng: Rng, CAR_N: number): CarRun[] {
+export function buildCars(rng: Rng, CAR_N: number, streets: (x: number, z: number) => number): CarRun[] {
   type Line = { axis: "x" | "z"; line: number; half: number; lo: number; hi: number };
   const lines: Line[] = [];
-  for (let i = BI0; i <= BI1; i++) lines.push({ axis: "z", line: streetX(i), half: arterialX(i) ? 1.3 : 0.8, lo: -60, hi: 810 });
+  // the north–south local streets are back lanes (see the ground tile): traffic keeps to the arterials there
+  for (let i = BI0; i <= BI1; i++) if (arterialX(i)) lines.push({ axis: "z", line: streetX(i), half: 1.3, lo: -60, hi: 810 });
   for (let j = BJ0; j <= BJ1; j++) lines.push({ axis: "x", line: streetZ(j), half: arterialZ(j) ? 1.3 : 0.8, lo: -310, hi: 890 });
-  const blocked = (x: number, z: number) => inWater(x, z) || inLandmark(x, z, 1) || inPark(x, z);
+  const blocked = (x: number, z: number) => inWater(x, z) || inLandmark(x, z, 1) || inPark(x, z) || streets(x, z) < 0.5;
   type Run = { axis: "x" | "z"; line: number; half: number; a: number; b: number };
   const runs: Run[] = [];
   for (const L of lines) {
@@ -133,14 +134,16 @@ export type Person = {
   axis: "x" | "z";
   dir: 1 | -1;
   move: number;
-  origin: number;
+  /** The stretch of street a walker paces, along its axis: never past a park, a set or the end of the street. */
+  lo: number;
+  hi: number;
   /** Billboard variant and instance index within it. */
   v: number;
   k: number;
 };
 
 /** Fourteen per station on both platforms, the rest walking the sidewalks within 70 units of the line. */
-export function buildPeople(rng: Rng, PEOPLE_N: number): { people: Person[]; counts: number[] } {
+export function buildPeople(rng: Rng, PEOPLE_N: number, streets: (x: number, z: number) => number): { people: Person[]; counts: number[] } {
   const people: Person[] = [];
   const counts = new Array<number>(PEOPLE_VARIANTS).fill(0);
   const add = (h: Omit<Person, "v" | "k">) => {
@@ -155,7 +158,7 @@ export function buildPeople(rng: Rng, PEOPLE_N: number): { people: Person[]; cou
       const along = -11 + rng.next() * 22;
       const lat = side * (7.4 + rng.next() * 2.8);
       const p = f.p.clone().addScaledVector(f.t, along).addScaledVector(f.r, -lat);
-      add({ x: p.x, y: p.y + 1.4, z: p.z, move: 0, dir: 1, axis: "x", origin: 0 });
+      add({ x: p.x, y: p.y + 1.4, z: p.z, move: 0, dir: 1, axis: "x", lo: 0, hi: 0 });
     }
   });
   // a few on the BC Parkway, the greenway under the guideway, where the deck is high enough to walk beneath
@@ -163,13 +166,14 @@ export function buildPeople(rng: Rng, PEOPLE_N: number): { people: Person[]; cou
     frameAt(rng.next() * LEN, f);
     if (inWater(f.p.x, f.p.z) || f.p.y - groundAt(f.p.x, f.p.z) < 5) continue;
     const p = f.p.clone().addScaledVector(f.r, (rng.next() - 0.5) * 2.4);
-    add({ x: p.x, y: groundAt(p.x, p.z), z: p.z, move: 0, dir: 1, axis: "x", origin: 0 });
+    add({ x: p.x, y: groundAt(p.x, p.z), z: p.z, move: 0, dir: 1, axis: "x", lo: 0, hi: 0 });
   }
   let tries = 0;
   while (people.length < PEOPLE_N && tries++ < PEOPLE_N * 30) {
     const axis: "x" | "z" = rng.next() < 0.5 ? "x" : "z";
     const i = Math.floor(BI0 + rng.next() * (BI1 - BI0));
     const j = Math.floor(BJ0 + rng.next() * (BJ1 - BJ0));
+    if (axis === "z" && !arterialX(i)) continue;
     const line = axis === "x" ? streetZ(j) : streetX(i);
     const walk = (axis === "x" ? arterialZ(j) : arterialX(i)) ? 3.0 : 2.0;
     const side = rng.next() < 0.5 ? walk : -walk;
@@ -177,8 +181,17 @@ export function buildPeople(rng: Rng, PEOPLE_N: number): { people: Person[]; cou
     const x = axis === "x" ? pos : line + side;
     const z = axis === "x" ? line + side : pos;
     const d = trackDist(x, z);
-    if (d < 9 || d > 70 || inWater(x, z) || inLandmark(x, z, 2) || inPark(x, z)) continue;
-    add({ x, y: groundAt(x, z), z, axis, dir: rng.next() < 0.5 ? 1 : -1, move: 0.8 + rng.next() * 0.6, origin: pos });
+    if (d < 9 || d > 70 || inWater(x, z) || inLandmark(x, z, 2) || inPark(x, z) || streets(x, z) < 0.5) continue;
+    const open = (a: number) => {
+      const ax = axis === "x" ? a : x;
+      const az = axis === "x" ? z : a;
+      return !inWater(ax, az) && !inLandmark(ax, az, 1) && !inPark(ax, az) && streets(ax, az) >= 0.5;
+    };
+    let lo = pos;
+    let hi = pos;
+    while (lo > pos - 30 && open(lo - 2)) lo -= 2;
+    while (hi < pos + 30 && open(hi + 2)) hi += 2;
+    add({ x, y: groundAt(x, z), z, axis, dir: rng.next() < 0.5 ? 1 : -1, move: hi - lo > 6 ? 0.8 + rng.next() * 0.6 : 0, lo, hi });
   }
   return { people, counts };
 }

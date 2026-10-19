@@ -13,7 +13,6 @@ import {
   Matrix4,
   Mesh,
   MeshStandardMaterial,
-  Quaternion,
   SphereGeometry,
   TorusGeometry,
   Vector3,
@@ -25,11 +24,7 @@ import { LANDMARKS, type LandmarkKey, type PlacedLandmark } from "./sites";
 import { groundAt } from "./terrain";
 import { type World, useWorld } from "./world";
 
-const UPV = new Vector3(0, 1, 0);
 const m4 = new Matrix4();
-const q = new Quaternion();
-const one = new Vector3(1, 1, 1);
-const p = new Vector3();
 const SMALL = new Set<LandmarkKey>(["gate", "cauldron", "orca", "steamClock"]);
 
 
@@ -54,7 +49,7 @@ const curtainTexture = () =>
 
 /** Sized against the train (one car ≈ 17 m), not the compressed street grid, so they read at the right scale from the guideway. */
 function buildLandmark(l: PlacedLandmark, world: World): Built {
-  const { mats, events, lowEnd } = world;
+  const { events, lowEnd } = world;
   const g = new Group();
   const centre = new Vector3(l.px, 0, l.pz);
   const key: LandmarkKey = l.key;

@@ -33,6 +33,7 @@ import {
 
 import { SEA } from "./constants";
 import { registerPattern } from "./eventLights";
+import { EVENT_META } from "./lookTypes";
 import { canvasTexture, cap, merge, type P2, paint, roundRect, walls } from "./shapes";
 import type { PlacedLandmark } from "./sites";
 import { sdfAt } from "./terrain";
@@ -202,6 +203,14 @@ export function buildCanadaPlace(l: PlacedLandmark, world: World): Built {
     paint(new BoxGeometry(0.12, 0.8, 74).translate(-13.4, lower + 0.4, 0), 0xe6e9ec),
   ];
   for (let z = -36; z <= 36; z += 4) for (const x of [-15.5, 15.5]) solid.push(paint(new CylinderGeometry(0.35, 0.35, 3.2, 6).translate(x, water + 0.6, z), 0x6b6a64));
+  // lamp standards along the promenade and the upper walk, their lamps lit after dark
+  const lampAt: [number, number, number][] = [];
+  for (let z = -36; z <= 36; z += 6) for (const x of [-14.7, 14.7]) lampAt.push([x, deck + 2.7, z]);
+  for (let z = -34; z <= 34; z += 8.5) for (const x of [-13, 13]) lampAt.push([x, lower + 1.7, z]);
+  for (const [x, y, z] of lampAt) solid.push(paint(new CylinderGeometry(0.05, 0.07, 2.6, 4).translate(x, y - 1.35, z), 0x3a3f46));
+  const lampMat = new MeshBasicMaterial({ color: 0xffe2b0, toneMapped: false });
+  const lamps = new InstancedMesh(new IcosahedronGeometry(0.24, 0), lampMat, lampAt.length);
+  lampAt.forEach(([x, y, z], i) => lamps.setMatrixAt(i, m4.makeTranslation(x, y, z)));
   // the hotel at the shore end
   const hz = shore * 31;
   const hotel = roundRect(16, 11, 2.2);
@@ -216,6 +225,26 @@ export function buildCanadaPlace(l: PlacedLandmark, world: World): Built {
   // the sails: five peaks along the centreline, a mast through each
   const masts = [-26, -13, 0, 13, 26];
   const sailMat = new MeshStandardMaterial({ color: 0xfbfbf9, roughness: 0.65, side: DoubleSide, emissive: 0xfff1d8, emissiveIntensity: 0 });
+  // after dark each sail is floodlit in its own colour: blue, green, white, orange and red, or the event's colours
+  const sailCols = { value: masts.map(() => new Color()) };
+  const sailTint = { value: 0 };
+  sailMat.onBeforeCompile = (sh) => {
+    sh.uniforms.uSail = sailCols;
+    sh.uniforms.uTint = sailTint;
+    sh.vertexShader = sh.vertexShader
+      .replace("#include <common>", "#include <common>\nvarying float vSailZ;")
+      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvSailZ = position.z;");
+    sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nuniform vec3 uSail[5];\nuniform float uTint;\nvarying float vSailZ;").replace(
+      "#include <emissivemap_fragment>",
+      [
+        "#include <emissivemap_fragment>",
+        "float sf = clamp( ( vSailZ + 26.0 ) / 13.0, 0.0, 4.0 );",
+        "int s0 = int( floor( sf ) );",
+        "vec3 sc = mix( uSail[ s0 ], uSail[ min( s0 + 1, 4 ) ], smoothstep( 0.4, 0.6, fract( sf ) ) );",
+        "totalEmissiveRadiance *= mix( vec3( 1.0 ), sc, uTint );",
+      ].join("\n"),
+    );
+  };
   const roof = new Mesh(sailRoof(12.5, 34, upper, masts, 9.5, lowEnd ? 14 : 24, lowEnd ? 48 : 90), sailMat);
   roof.castShadow = !lowEnd;
   const mastGeo: BufferGeometry[] = masts.map((z) => paint(new CylinderGeometry(0.16, 0.24, 13.5, 8).translate(0, upper + 6.4, z), 0xf3f4f6));
@@ -237,10 +266,16 @@ export function buildCanadaPlace(l: PlacedLandmark, world: World): Built {
   shipGroup.add(shipSolid, shipCabins);
   shipGroup.position.set(15.5 + 4.4 + 0.4, water + 0.05, 0);
   shipGroup.rotation.y = shore > 0 ? Math.PI : 0;
-  g.add(solidMesh, terminal, hotelMesh, roof, shipGroup);
-  // the fabric is translucent: a little light through it by day, lit from within after dark
-  events.followers.push((level) => {
-    sailMat.emissiveIntensity = 0.12 + 0.3 * nightOf(level);
+  g.add(solidMesh, terminal, hotelMesh, roof, shipGroup, lamps);
+  // the fabric is translucent: a little light through it by day, floodlit in colour after dark
+  const SAILS_LIT = [0x2f6bff, 0x2fd36b, 0xffffff, 0xff7a2a, 0xff2a2a];
+  events.followers.push((level, ev) => {
+    const n = nightOf(level);
+    sailMat.emissiveIntensity = 0.12 + 0.85 * n;
+    sailTint.value = n;
+    const pal = ev ? EVENT_META[ev].colours : SAILS_LIT;
+    sailCols.value.forEach((c, k) => c.setHex(pal[k % pal.length]));
+    lampMat.color.setHex(0xffe2b0).multiplyScalar(0.25 + 1.5 * n);
   });
   return { group: g };
 }

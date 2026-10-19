@@ -38,7 +38,7 @@ import { Rng } from "./cityModel";
 import { createEventLights, type EventLights } from "./eventLights";
 import type { Season } from "./lookTypes";
 import type { LookTargets } from "./lookModel";
-import { fernTexture, groundTexture, interiorTextures, personTexture } from "./textures";
+import { fernTexture, groundTexture, interiorTextures, personTexture, streetLightTexture } from "./textures";
 import { paintTreeAtlas } from "./trees/atlas";
 import { createTreeShading, type TreeShading } from "./trees/treeMaterial";
 import { PEOPLE_VARIANTS } from "./constants";
@@ -140,6 +140,27 @@ export function createWorld(gl: WebGLRenderer, scene: Scene, lowEnd: boolean): W
   const ground = new MeshStandardMaterial({ map: groundTex.night, roughness: 1, vertexColors: true });
   ground.envMap = envTex;
   ground.envMapIntensity = 0;
+  // street lights: a glow map on the same tile, brought up with the windows after dark
+  ground.emissiveMap = streetLightTexture();
+  ground.emissive.set(0xffffff);
+  ground.emissiveIntensity = 0;
+  // the street tile and its lights show only where the vertex `street` weight says the city is; elsewhere plain
+  // ground (grass by day, near-black by night), whose colour applyLook sets with the map
+  const groundPlain = { value: new Color(0x10161f) };
+  ground.userData.plain = groundPlain;
+  ground.onBeforeCompile = (shader) => {
+    shader.uniforms.uPlain = groundPlain;
+    shader.vertexShader = shader.vertexShader
+      .replace("#include <common>", "#include <common>\nattribute float street;\nvarying float vStreet;")
+      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvStreet = street;");
+    shader.fragmentShader = shader.fragmentShader
+      .replace("#include <common>", "#include <common>\nuniform vec3 uPlain;\nvarying float vStreet;")
+      .replace(
+        "#include <map_fragment>",
+        "#ifdef USE_MAP\n  vec4 sampledDiffuseColor = texture2D( map, vMapUv );\n  diffuseColor *= mix( vec4( uPlain, 1.0 ), sampledDiffuseColor, clamp( vStreet, 0.0, 1.0 ) );\n#endif",
+      )
+      .replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\ntotalEmissiveRadiance *= clamp( vStreet, 0.0, 1.0 );");
+  };
 
   const mats: World["mats"] = {
     concrete: new MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }),

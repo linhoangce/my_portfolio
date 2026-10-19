@@ -224,6 +224,8 @@ export function applyLook(world: World, input: LookInput): void {
   world.sky.stars.visible = t.stars && wd.disc;
   world.mats.ground.map = world.tex.ground[t.ground];
   world.mats.ground.needsUpdate = true;
+  // the plain ground beyond the streets: a muted grass by day, near-black at night (as the tile's lots are)
+  (world.mats.ground.userData.plain as { value: Color } | undefined)?.value.setHex(t.ground === "day" ? 0x97a48a : 0x10161f);
   if (world.refs.mountain && world.refs.mountainCols) {
     world.refs.mountain.geometry.setAttribute("color", world.refs.mountainCols[winter ? "winter" : "summer"]);
   }
@@ -271,7 +273,10 @@ export function tickLook(world: World, dt: number, instant: boolean, dockedIdx: 
   mats.ground.color.copy(c.groundCol);
   mats.ground.roughness = c.groundRough;
   mats.ground.envMapIntensity = c.groundEnv;
+  mats.ground.emissiveIntensity = c.windows;
   mats.water.color.copy(c.water);
+  // the environment map is a lit room: its light panels glare on the water after dark, so the reflection fades
+  mats.water.envMapIntensity = 0.45 - 0.4 * c.windows;
   mats.mountain.color.copy(c.mountain);
   mats.concrete.color.copy(c.concrete);
   mats.plat.color.copy(c.platform);

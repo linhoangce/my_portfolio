@@ -6,11 +6,13 @@ import {
   BoxGeometry,
   Color,
   CylinderGeometry,
+  DoubleSide,
   ExtrudeGeometry,
   Group,
   InstancedMesh,
   Matrix4,
   Mesh,
+  MeshBasicMaterial,
   MeshStandardMaterial,
   PlaneGeometry,
   Quaternion,
@@ -20,13 +22,13 @@ import {
 } from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
-import { inLandmark, inPark, inWater, Rng } from "./cityModel";
+import { Rng } from "./cityModel";
 import { getLifeData } from "./cityData";
 import { PEOPLE_VARIANTS, SEA } from "./constants";
 import { merged } from "./merge";
 import { sdfAt } from "./terrain";
 import { groundAt, UP } from "./track";
-import { sailboat, seabus, yacht } from "./vessels";
+import { boatLights, carLights, sailboat, seabus, yacht } from "./vessels";
 import { useWorld } from "./world";
 
 const CAR_COLOURS = [0xffffff, 0xe8e8e8, 0xc9ccd1, 0x2b2f36, 0x1f2a44, 0x8c1d1d, 0x3a5fa8, 0x6b7280, 0xd9d2c3, 0x111111, 0x9ca3af, 0x7f1d1d];
@@ -73,6 +75,11 @@ export function Life() {
     data.cars.forEach((_, i) => carMesh.setColorAt(i, c.setHex(rng.pick(CAR_COLOURS))));
     carMesh.count = carTrim.count = n;
     carMesh.castShadow = !lowEnd;
+    // head and tail lights after dark, riding on the bodies' own instance matrices
+    const lightMat = new MeshBasicMaterial({ vertexColors: true, toneMapped: false, side: DoubleSide });
+    const carLamps = new InstancedMesh(carLights(), lightMat, Math.max(1, n));
+    carLamps.instanceMatrix = carMesh.instanceMatrix;
+    carLamps.count = n;
     glass.dispose();
     for (const w of wheels) w.dispose();
 
@@ -124,7 +131,14 @@ export function Life() {
       ),
     );
     boatMeshes.forEach((m, kind) => (m.count = perKind[kind]));
-    return { carMesh, carTrim, peopleMeshes, boats, boatMeshes, boatMat, plane, planeT: 0 };
+    const boatLamps = boatMeshes.map((b, kind) => {
+      const m = new InstancedMesh(boatLights(kind), lightMat, 4);
+      m.instanceMatrix = b.instanceMatrix;
+      m.count = b.count;
+      m.frustumCulled = false;
+      return m;
+    });
+    return { carMesh, carTrim, carLamps, peopleMeshes, boats, boatMeshes, boatLamps, boatMat, lightMat, plane, planeT: 0 };
   }, [data, mats, lowEnd]);
 
   useEffect(
@@ -135,10 +149,11 @@ export function Life() {
       built.carTrim.dispose();
       built.peopleMeshes[0].geometry.dispose();
       for (const m of built.peopleMeshes) m.dispose();
-      for (const m of built.boatMeshes) {
+      for (const m of [...built.boatMeshes, ...built.boatLamps, built.carLamps]) {
         m.geometry.dispose();
         m.dispose();
       }
+      built.lightMat.dispose();
       built.plane.traverse((o) => {
         if (o instanceof Mesh) o.geometry.dispose();
       });
@@ -169,7 +184,7 @@ export function Life() {
         const nx = h.axis === "x" ? h.x + d : h.x;
         const nz = h.axis === "x" ? h.z : h.z + d;
         const along = h.axis === "x" ? nx : nz;
-        if (Math.abs(along - h.origin) > 30 || inWater(nx, nz) || inLandmark(nx, nz, 1) || inPark(nx, nz)) h.dir = h.dir > 0 ? -1 : 1;
+        if (along < h.lo || along > h.hi) h.dir = h.dir > 0 ? -1 : 1;
         else {
           h.x = nx;
           h.z = nz;
@@ -183,7 +198,7 @@ export function Life() {
     }
     for (const m of built.peopleMeshes) m.instanceMatrix.needsUpdate = true;
     const t = state.clock.elapsedTime;
-    built.boats.forEach((b, i) => {
+    built.boats.forEach((b) => {
       // turn around before the shore
       if (sdfAt(b.x + b.dir * 12, b.z) > -6) b.dir = b.dir > 0 ? -1 : 1;
       b.x += b.dir * b.speed * dt;
@@ -194,8 +209,12 @@ export function Life() {
       built.boatMeshes[b.kind].setMatrixAt(b.k, m4);
     });
     for (const m of built.boatMeshes) m.instanceMatrix.needsUpdate = true;
-    // white hulls take the city's night tone rather than glowing in the dark
+    // white hulls take the city's night tone rather than glowing in the dark; the lamps come on with the windows
     built.boatMat.color.copy(world.buildings.solid.color);
+    const lit = world.buildings.solid.emissiveIntensity;
+    built.lightMat.color.setScalar(1.6 * lit);
+    built.carLamps.visible = lit > 0.02;
+    for (const m of built.boatLamps) m.visible = lit > 0.02;
     built.planeT += dt * 0.12;
     const R = 190;
     const cx = 120;
@@ -209,11 +228,15 @@ export function Life() {
     <>
       <primitive object={built.carMesh} />
       <primitive object={built.carTrim} />
+      <primitive object={built.carLamps} />
       {built.peopleMeshes.map((m, v) => (
         <primitive key={`people${v}`} object={m} />
       ))}
       {built.boatMeshes.map((m, i) => (
         <primitive key={`boat${i}`} object={m} />
+      ))}
+      {built.boatLamps.map((m, i) => (
+        <primitive key={`lamp${i}`} object={m} />
       ))}
       <primitive object={built.plane} />
     </>

@@ -22,7 +22,10 @@ const texture = (cv: HTMLCanvasElement, repeat = false, anisotropy = 4): CanvasT
   return t;
 };
 
-/** One 512 px tile = 44 units: an arterial (4 lanes) and a local street (2 lanes) with sidewalks over varied lot colours. */
+/**
+ * One 512 px tile = 44 units: arterials (4 lanes) on the tile edges, a local street (2 lanes) across the middle and a
+ * back lane down it, with sidewalks over varied lot colours.
+ */
 export function groundTexture(night: boolean, rng: Rng): CanvasTexture {
   const [c, g] = canvas(512, 512);
   g.fillStyle = night ? "#141a26" : "#a9a69e";
@@ -34,30 +37,70 @@ export function groundTexture(night: boolean, rng: Rng): CanvasTexture {
     const y = rng.next() * 512;
     g.fillRect(x, y, 20 + rng.next() * 60, 16 + rng.next() * 50);
   }
-  // the arterial sits on the tile edge, so it is drawn at both 0 and 512 to wrap
-  for (const [o, half] of [
-    [0, 30],
-    [512, 30],
-    [256, 18],
-  ]) {
-    g.fillStyle = night ? "#2f3747" : "#cfccc4";
-    g.fillRect(o - half - 10, 0, 2 * half + 20, 512);
-    g.fillRect(0, o - half - 10, 512, 2 * half + 20); // sidewalks
-    g.fillStyle = night ? "#1f2532" : "#5d6168";
-    g.fillRect(o - half, 0, 2 * half, 512);
-    g.fillRect(0, o - half, 512, 2 * half); // asphalt
+  // the arterial sits on the tile edge, so it is drawn at both 0 and 512 to wrap; the east–west local street crosses
+  // the middle, and the north–south one is a back lane (Vancouver's long blocks, not squares)
+  const street = (o: number, half: number, vertical: boolean) => {
+    const rect = (a: number, w: number, fill: string) => {
+      g.fillStyle = fill;
+      if (vertical) g.fillRect(a, 0, w, 512);
+      else g.fillRect(0, a, 512, w);
+    };
+    rect(o - half - 10, 2 * half + 20, night ? "#2f3747" : "#cfccc4"); // sidewalks
+    rect(o - half, 2 * half, night ? "#1f2532" : "#5d6168"); // asphalt
     g.fillStyle = night ? "#3a4152" : "#d8d2b0";
     for (let y = 0; y < 512; y += 28) {
-      g.fillRect(o - 1, y, 2, 14);
-      g.fillRect(y, o - 1, 14, 2);
-    } // centre lines
+      if (vertical) g.fillRect(o - 1, y, 2, 14);
+      else g.fillRect(y, o - 1, 14, 2);
+    } // centre line
     if (half > 20) {
       g.fillStyle = night ? "#2a3140" : "#8a8e95";
-      g.fillRect(o - half + 14, 0, 1, 512);
-      g.fillRect(o + half - 14, 0, 1, 512);
-      g.fillRect(0, o - half + 14, 512, 1);
-      g.fillRect(0, o + half - 14, 512, 1);
+      for (const d of [-half + 14, half - 14]) {
+        if (vertical) g.fillRect(o + d, 0, 1, 512);
+        else g.fillRect(0, o + d, 512, 1);
+      }
     } // lane lines
+  };
+  for (const o of [0, 512]) {
+    street(o, 30, true);
+    street(o, 30, false);
+  }
+  street(256, 18, false);
+  g.fillStyle = night ? "#1b202b" : "#7b7d80";
+  g.fillRect(256 - 6, 0, 12, 512); // the lane
+  const t = texture(c, true, 8);
+  t.repeat.set(65, 55);
+  return t;
+}
+
+/**
+ * The street lights on the same tile: a warm pool on the pavement under each lamp and the lamp itself a bright dot,
+ * black elsewhere (the ground's glow map, brought up after dark).
+ */
+export function streetLightTexture(): CanvasTexture {
+  const [c, g] = canvas(512, 512);
+  g.fillStyle = "#000";
+  g.fillRect(0, 0, 512, 512);
+  g.globalCompositeOperation = "lighter";
+  const pool = (x: number, y: number, r: number, a: number) => {
+    const gr = g.createRadialGradient(x, y, 0, x, y, r);
+    gr.addColorStop(0, `rgba(255,190,110,${a})`);
+    gr.addColorStop(0.5, `rgba(255,170,90,${a * 0.45})`);
+    gr.addColorStop(1, "rgba(255,170,90,0)");
+    g.fillStyle = gr;
+    g.fillRect(x - r, y - r, 2 * r, 2 * r);
+    g.fillStyle = "rgba(255,240,210,1)";
+    g.fillRect(x - 2.5, y - 2.5, 5, 5);
+  };
+  for (let k = 0; k < 4; k++) {
+    const t = 64 + k * 128;
+    // both sidewalks of the arterials (which wrap across the tile edge), then the local street, then the lane
+    for (const side of [35, 477]) {
+      pool(side, t, 42, 0.55);
+      pool(t, side, 42, 0.55);
+    }
+    pool(t + 32, 256 - 23, 34, 0.45);
+    pool(t + 32, 256 + 23, 34, 0.45);
+    pool(256, t, 20, 0.25);
   }
   const t = texture(c, true, 8);
   t.repeat.set(65, 55);

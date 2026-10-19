@@ -370,7 +370,7 @@ function cedar(c: Ctx, a: number, l: number, base: number, height: number, crown
   c.group.add(inst);
 }
 
-// ------------------------------------------------------------------ 01 About · Burrard: the cedar atrium and its skill rings
+// ------------------------------------------------------------------ 01 About · Burrard: the cedar atrium
 function about(c: Ctx): Partial<BuiltSet> {
   const { mats } = c.world;
   const L0 = 28;
@@ -390,37 +390,8 @@ function about(c: Ctx): Partial<BuiltSet> {
   ], deckY);
   // a moss wall behind
   c.add(new MeshStandardMaterial({ color: 0x4d6b35, roughness: 1 }), new BoxGeometry(1, 7, 18), c.L(0, L0 + 11, g + 3.5));
-  // four slowly orbiting skill rings with glyph tiles
-  const ringMat = glowMat(0xa78bfa, 1.2);
-  const tileMat = new MeshStandardMaterial({ color: 0xeaeff7, emissive: 0xc4b5fd, emissiveIntensity: 0.5, roughness: 0.4 });
-  const rings: Group[] = [];
-  const anchors: Vector3[] = [];
-  for (let k = 0; k < 4; k++) {
-    const r = new Group();
-    const y = deckY + 3 + k * 3.6;
-    // clear of the crown, which narrows as the rings rise
-    const rad = 6.6 + (k % 2) * 1.0 - k * 0.3;
-    r.add(new Mesh(new TorusGeometry(rad, 0.09, 6, 64), ringMat));
-    const tiles = new InstancedMesh(new BoxGeometry(0.8, 0.8, 0.12), tileMat, 8);
-    const m4 = new Matrix4();
-    for (let j = 0; j < 8; j++) {
-      const ang = (j / 8) * Math.PI * 2;
-      m4.compose(new Vector3(Math.cos(ang) * rad, Math.sin(ang) * rad, 0), new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), ang), new Vector3(1, 1, 1));
-      tiles.setMatrixAt(j, m4);
-    }
-    r.add(tiles);
-    r.position.set(...c.L(0, L0, y));
-    r.rotation.set(Math.PI / 2 + (k - 1.5) * 0.12, 0, k * 0.8);
-    c.group.add(r);
-    rings.push(r);
-    // spread around the trunk so the four captions do not stack
-    const az = (k - 1.5) * 0.7;
-    anchors.push(new Vector3(...c.L(Math.sin(az) * (rad + 0.6), L0 - Math.cos(az) * (rad + 0.6), y)));
-  }
   return {
-    anchors,
     focus: new Vector3(...c.L(0, L0 - 6, deckY + 6)),
-    update: (t) => rings.forEach((r, k) => (r.rotation.z = k * 0.8 + t * (0.12 + k * 0.03) * (k % 2 ? -1 : 1))),
     shot: { from: [-30, 64, 6], to: [-22, 56, 30], look: [0, 22, 16], fromLook: [0, 26, 8] },
   };
 }

@@ -922,6 +922,13 @@ html:has(.scene-ov.open) .ask {
   max-width: none;
   overflow-wrap: anywhere;
 }
+/* on a desktop whose view has crowded the signposts, the links line up in a row above the lower bar */
+.caps.docked.wide {
+  inset: auto 0 calc(clamp(64px, 10vh, 110px) + 14px) 0;
+  grid-template-columns: repeat(4, minmax(0, 210px));
+  justify-content: center;
+  padding: 0 16px;
+}
 .cap.flip .chip-c {
   left: auto;
   right: -8px;

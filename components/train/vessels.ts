@@ -233,3 +233,75 @@ export function quadcopter(): BufferGeometry {
 export function quadcopterLights(): BufferGeometry {
   return merge([box(0.14, 0.08, 0.06, 0, -0.04, 0.47, 0xffffff), box(0.14, 0.08, 0.06, 0, -0.04, -0.47, 0xff3b30)]);
 }
+
+/* ------------------------------------------------------------------ lights after dark */
+
+const WARM = 0xffcf8f;
+const PORT = 0xff3b30;
+const STARBOARD = 0x2fd36b;
+const MAST = 0xfff8ec;
+
+/** Lit window panes along an outline: one pane per segment with a mullion gap, set just proud of the glass. */
+function panes(ring: P2[], y0: number, y1: number, col: number, gap = 0.14): BufferGeometry {
+  const cx = ring.reduce((t, p) => t + p[0], 0) / ring.length;
+  const cz = ring.reduce((t, p) => t + p[1], 0) / ring.length;
+  const pos: number[] = [];
+  for (let i = 0; i < ring.length; i++) {
+    const [ax, az] = ring[i];
+    const [bx, bz] = ring[(i + 1) % ring.length];
+    const len = Math.hypot(bx - ax, bz - az);
+    if (len < 0.3) continue;
+    let nx = (bz - az) / len;
+    let nz = -(bx - ax) / len;
+    if (nx * ((ax + bx) / 2 - cx) + nz * ((az + bz) / 2 - cz) < 0) {
+      nx = -nx;
+      nz = -nz;
+    }
+    const g = Math.min(gap / len, 0.3);
+    const p0 = [ax + (bx - ax) * g + nx * 0.03, az + (bz - az) * g + nz * 0.03];
+    const p1 = [bx - (bx - ax) * g + nx * 0.03, bz - (bz - az) * g + nz * 0.03];
+    pos.push(p0[0], y0, p0[1], p1[0], y0, p1[1], p1[0], y1, p1[1], p0[0], y0, p0[1], p1[0], y1, p1[1], p0[0], y1, p0[1]);
+  }
+  const geo = new Geo();
+  geo.setAttribute("position", new Float32BufferAttribute(pos, 3));
+  return paint(geo, col);
+}
+
+/** Navigation lights: red to port (+x, bow along +z), green to starboard, a white masthead light and a stern light. */
+function navLights(halfBeam: number, y: number, bowZ: number, sternZ: number, mastY: number, mastZ: number): BufferGeometry[] {
+  return [
+    box(0.16, 0.16, 0.22, halfBeam, y, bowZ, PORT),
+    box(0.16, 0.16, 0.22, -halfBeam, y, bowZ, STARBOARD),
+    box(0.2, 0.2, 0.2, 0, mastY, mastZ, MAST),
+    box(0.2, 0.16, 0.12, 0, y, sternZ, MAST),
+  ];
+}
+
+/** What each harbour craft shows after dark (0 SeaBus, 1 sailboat, 2 yacht): lit windows and its running lights. */
+export function boatLights(kind: number): BufferGeometry {
+  if (kind === 0) {
+    const body = outline((z) => 2.9 * Math.sqrt(Math.max(0, 1 - (z / 9.3) ** 4)), -9.3, 9.3, 0.9);
+    const parts = [panes(body, 1.7, 2.45, WARM)];
+    for (const z of [-5.5, 5.5]) parts.push(box(2.46, 0.6, 1.66, 0, 3.4, z, WARM));
+    // double-ended: running lights at both ends, a masthead light on each wheelhouse
+    parts.push(...navLights(2.5, 3.0, 8.4, -8.4, 4.0, 5.5), box(0.2, 0.2, 0.2, 0, 4.0, -5.5, MAST));
+    return merge(parts);
+  }
+  if (kind === 1) {
+    return merge([box(1.36, 0.12, 1.4, 0, 1.08, -0.5, WARM), ...navLights(0.75, 0.85, 2.8, -3.35, 8.8, 0.6)]);
+  }
+  const hw = (z: number) => (z > 0.5 ? 1.9 * Math.pow(Math.max(0, 1 - ((z - 0.5) / 5) ** 2), 0.65) : 1.9 * (1 - 0.08 * ((z - 0.5) / 5) ** 2));
+  return merge([
+    panes(outline(hw, -5, 5.5, 0.6), 0.84, 0.96, WARM),
+    panes(outline((z) => hw(z) - 0.35, -4.2, 2.2, 0.6), 1.55, 2.05, WARM),
+    ...navLights(1.75, 1.4, 3.6, -5.05, 3.85, -1.6),
+  ]);
+}
+
+/** The cars' head and tail lights (bow along +x as the car body is built): two warm white in front, two red behind. */
+export function carLights(): BufferGeometry {
+  return merge([
+    ...[-0.36, 0.36].map((z) => box(0.06, 0.12, 0.24, 1.24, 0.46, z, 0xfff3d6)),
+    ...[-0.4, 0.4].map((z) => box(0.06, 0.1, 0.26, -1.24, 0.5, z, 0xff2a1f)),
+  ]);
+}

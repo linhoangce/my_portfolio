@@ -3,6 +3,7 @@
 import { useEffect, useMemo } from "react";
 import { BufferAttribute, BufferGeometry, Float32BufferAttribute } from "three";
 
+import { getCityData, getStreetMask } from "./cityData";
 import { district } from "./cityModel";
 import { PARKS } from "./sites";
 import { groundAt, inWater, sdfAt, terrainRaster } from "./terrain";
@@ -11,9 +12,12 @@ import { useWorld } from "./world";
 /**
  * The city ground: the frozen terrain raster as one mesh, indexed on the same triangles groundAt interpolates
  * (each cell split along b–c), with a hillshade in the vertex colours so slopes read, sand at the shore and an
- * 8-unit skirt that hides the seam against the far terrain. UVs keep the street tile's original anchor.
+ * 8-unit skirt that hides the seam against the far terrain. UVs keep the street tile's original anchor; a `street`
+ * weight per vertex says where the tile shows at all (see getStreetMask).
  */
-function buildGround(stride: number): BufferGeometry {
+let streetMs = 0;
+
+function buildGround(stride: number, streets: (x: number, z: number) => number): BufferGeometry {
   const { grid: g0, hf: hf0 } = terrainRaster();
   // the low-end budget draws every other raster vertex (a quarter of the triangles)
   const g = { ...g0, step: g0.step * stride, nx: Math.floor((g0.nx - 1) / stride) + 1, nz: Math.floor((g0.nz - 1) / stride) + 1 };
@@ -75,6 +79,12 @@ function buildGround(stride: number): BufferGeometry {
     col[k * 3 + 2] = shade * (1 - 0.2 * sand);
   }
   geo.setAttribute("color", new BufferAttribute(col, 3));
+  // where the street tile shows (the material blends it into plain ground elsewhere); the skirt gets none
+  const st = new Float32Array(n + ring);
+  const t0 = performance.now();
+  for (let k = 0; k < n; k++) st[k] = streets(pos[k * 3], pos[k * 3 + 2]);
+  streetMs = performance.now() - t0;
+  geo.setAttribute("street", new BufferAttribute(st, 1));
   return geo;
 }
 
@@ -150,7 +160,12 @@ function forestFloor(): BufferGeometry {
 
 export function Ground() {
   const { mats, lowEnd } = useWorld();
-  const geo = useMemo(() => buildGround(lowEnd ? 2 : 1), [lowEnd]);
+  const geo = useMemo(() => {
+    const g = buildGround(lowEnd ? 2 : 1, getStreetMask(lowEnd));
+    // reported with the city's build phases
+    getCityData(lowEnd).phases.streets = Math.round(streetMs);
+    return g;
+  }, [lowEnd]);
   const lawns = useMemo(() => PARKS.map((p) => lawn(p.x, p.z, p.r)), []);
   const forest = useMemo(() => forestFloor(), []);
   useEffect(
