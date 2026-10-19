@@ -3,7 +3,7 @@ import { create } from "zustand";
 import { stations } from "@/data";
 
 import { ASSIST_RADIUS, DRAG, LANE, S_MIN } from "./constants";
-import { LOOK_CYCLE, type Season, SEASONS, type Weather, WEATHERS, cycleNext } from "./lookTypes";
+import { type EventId, LOOK_CYCLE, type Season, SEASONS, type Weather, WEATHERS, cycleNext } from "./lookTypes";
 
 /**
  * Hot-path numbers, mutated in place by Drive, the camera rig and the controls every frame.
@@ -40,7 +40,7 @@ export type Readout = { kind: "at"; idx: number } | { kind: "next"; idx: number;
 
 export type Env = { lowEnd: boolean; phone: boolean; reduced: boolean; coarse: boolean };
 
-type LookPatch = { season?: Season; weather?: Weather; auto?: boolean };
+type LookPatch = { season?: Season; weather?: Weather; event?: EventId | null; auto?: boolean };
 
 export type TrainState = {
   sim: Sim;
@@ -58,6 +58,8 @@ export type TrainState = {
   textOpen: boolean;
   season: Season;
   weather: Weather;
+  /** The Vancouver event the city is lit for, or none. */
+  event: EventId | null;
   autoLook: boolean;
   cycleIdx: number;
   quality: { dpr: number; bloom: boolean };
@@ -134,6 +136,7 @@ export const useTrain = create<TrainState>((set, get) => ({
   textOpen: false,
   season: LOOK_CYCLE[0][0],
   weather: LOOK_CYCLE[0][1],
+  event: LOOK_CYCLE[0][2],
   autoLook: true,
   cycleIdx: 0,
   quality: { dpr: 1.75, bloom: true },
@@ -231,10 +234,11 @@ export const useTrain = create<TrainState>((set, get) => ({
   },
   toggleCab: () => set((st) => ({ cab: !st.cab })),
   setAskOpen: (askOpen) => set({ askOpen }),
-  setLook: ({ season, weather, auto }) =>
+  setLook: ({ season, weather, event, auto }) =>
     set((st) => ({
       season: season ?? st.season,
       weather: weather ?? st.weather,
+      event: event === undefined ? st.event : event,
       autoLook: auto ?? false,
     })),
   cycleSeason: () => set((st) => ({ season: cycleNext(SEASONS, st.season), autoLook: false })),
@@ -243,8 +247,8 @@ export const useTrain = create<TrainState>((set, get) => ({
   advanceCycle: () =>
     set((st) => {
       const cycleIdx = (st.cycleIdx + 1) % LOOK_CYCLE.length;
-      const [season, weather] = LOOK_CYCLE[cycleIdx];
-      return { cycleIdx, season, weather };
+      const [season, weather, event] = LOOK_CYCLE[cycleIdx];
+      return { cycleIdx, season, weather, event };
     }),
   setQuality: (q) => set((st) => ({ quality: { ...st.quality, ...q } })),
 }));

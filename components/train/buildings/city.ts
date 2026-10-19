@@ -10,7 +10,7 @@ import { CylinderGeometry, type BufferGeometry, SphereGeometry } from "three";
 
 import { arterialX, arterialZ, BI0, BI1, BJ1, type Rng, streetX, streetZ } from "../cityModel";
 import { SEA } from "../constants";
-import { inLandmark, inPark } from "../sites";
+import { inLandmark, inPark, streamDist } from "../sites";
 import { groundAt, inWater, RASTER, sdfAt } from "../terrain";
 import { trackNearest } from "../track";
 import type { SpeciesId } from "../trees/species";
@@ -153,7 +153,7 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
           const d = ld - 1.2;
           if (lowEnd && !big && rng.next() < 0.3) continue;
           const pts = [[x - w / 2, z - d / 2], [x + w / 2, z - d / 2], [x - w / 2, z + d / 2], [x + w / 2, z + d / 2], [x, z], [x, z - d / 2], [x, z + d / 2], [x - w / 2, z], [x + w / 2, z]];
-          if (pts.some(([px, pz]) => inWater(px, pz) || inPark(px, pz) || inLandmark(px, pz, 2) || inHero(px, pz) || cor.dist(px, pz) < CLEAR)) continue;
+          if (pts.some(([px, pz]) => inWater(px, pz) || inPark(px, pz) || inLandmark(px, pz, 2) || inHero(px, pz) || cor.dist(px, pz) < CLEAR || streamDist(px, pz) < 9)) continue;
           if (rng.next() > zone.build) continue;
           const { yb, yt } = ground(x, z, w, d);
           if (yt - yb > 0.42 * Math.max(w, d) + 0.6) continue;

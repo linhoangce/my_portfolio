@@ -6,7 +6,7 @@ import type { InstancedMesh, Mesh } from "three";
 
 import { stations } from "@/data";
 
-import type { Season, Weather } from "./lookTypes";
+import type { EventId, Season, Weather } from "./lookTypes";
 import { useTrain } from "./store";
 import { BLOCKERS } from "./cityModel";
 import { getCityData } from "./cityData";
@@ -33,7 +33,7 @@ export type TrainDebug = {
   LEN: number;
   driveTo: (i: number) => void;
   jump: (i: number) => void;
-  look: (season?: Season, weather?: Weather) => void;
+  look: (season?: Season, weather?: Weather, event?: EventId | null) => void;
   warp: (k: number) => void;
   /** Current eased scene background as a hex string (theme and weather checks). */
   bg: () => string;
@@ -129,7 +129,7 @@ export function Debug() {
       LEN,
       driveTo: (i) => st().driveTo(i),
       jump: (i) => st().jump(i),
-      look: (season, weather) => st().setLook({ season, weather, auto: false }),
+      look: (season, weather, event) => st().setLook({ season, weather, event, auto: false }),
       warp: (k) => {
         st().sim.warp = Math.max(0.1, Math.min(40, k));
       },
@@ -162,6 +162,7 @@ export function Debug() {
           dockOpen: s.dockOpen,
           season: s.season,
           weather: s.weather,
+          event: s.event,
           autoLook: s.autoLook,
           cab: s.cab,
           introDone: s.introDone,

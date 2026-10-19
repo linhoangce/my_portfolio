@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { BoxGeometry, BufferAttribute, BufferGeometry, Color, ConeGeometry, CylinderGeometry, Mesh, MeshStandardMaterial } from "three";
+import { useFrame } from "@react-three/fiber";
+import { BoxGeometry, BufferAttribute, BufferGeometry, Color, ConeGeometry, CylinderGeometry, Euler, Group, InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, Quaternion, SphereGeometry, TorusGeometry, Vector3 } from "three";
 
 import { FAR_V, SEA, TERRAIN_V } from "./constants";
+import { registerPattern } from "./eventLights";
 import { merged } from "./merge";
 import { useTrain } from "./store";
 import { RASTER, sdfAt } from "./terrain";
@@ -16,7 +18,7 @@ type FarModule = typeof import("./terrainFar");
  * Burnaby Mountain, the suburbs and the strait, coloured by height and slope with a summer and a winter snowline.
  * The city rectangle is lowered under the city mesh. Mount Baker stays a stylised cone on the south-east horizon.
  */
-function buildFar(mod: FarModule, stride: number): { geometry: BufferGeometry; summer: BufferAttribute; winter: BufferAttribute } {
+function buildFar(mod: FarModule, stride: number): { geometry: BufferGeometry; summer: BufferAttribute; winter: BufferAttribute; heightAt: (x: number, z: number) => number } {
   const g0 = mod.DEM_FAR;
   // the low-end budget takes every other far sample
   const g = { ...g0, step: g0.step * stride, nx: Math.floor((g0.nx - 1) / stride) + 1, nz: Math.floor((g0.nz - 1) / stride) + 1 };
@@ -84,7 +86,65 @@ function buildFar(mod: FarModule, stride: number): { geometry: BufferGeometry; s
   const s = new BufferAttribute(summer, 3);
   const w = new BufferAttribute(winter, 3);
   geometry.setAttribute("color", s);
-  return { geometry, summer: s, winter: w };
+  // bilinear height on the far mesh (world units), for things standing on it beyond the city
+  const heightAt = (x: number, z: number) => {
+    const fx = Math.min(g.nx - 1.001, Math.max(0, (x - g.x0) / g.step));
+    const fz = Math.min(g.nz - 1.001, Math.max(0, (z - g.z0) / g.step));
+    const i = Math.floor(fx);
+    const j = Math.floor(fz);
+    const u = fx - i;
+    const v = fz - j;
+    const k = j * g.nx + i;
+    const y = (kk: number) => pos[kk * 3 + 1];
+    return (y(k) * (1 - u) + y(k + 1) * u) * (1 - v) + (y(k + g.nx) * (1 - u) + y(k + g.nx + 1) * u) * v;
+  };
+  return { geometry, summer: s, winter: w, heightAt };
+}
+
+/** A gondola from Brentwood up Burnaby Mountain to the university, on the real far terrain: pylons, cable, moving cabins. */
+function buildGondola(heightAt: (x: number, z: number) => number): { group: Group; cabins: InstancedMesh; path: Vector3[] } {
+  const a = new Vector3(900, 0, 240);
+  const b = new Vector3(1530, 0, 85);
+  const group = new Group();
+  const n = 7;
+  const tops: Vector3[] = [];
+  const pylonMat = new MeshStandardMaterial({ color: 0xd9dde2, roughness: 0.5, metalness: 0.3 });
+  for (let i = 0; i < n; i++) {
+    const p = a.clone().lerp(b, i / (n - 1));
+    const gy = heightAt(p.x, p.z);
+    const h = 18;
+    const pylon = new Mesh(new CylinderGeometry(0.6, 1.1, h, 8), pylonMat);
+    pylon.position.set(p.x, gy + h / 2, p.z);
+    group.add(pylon);
+    tops.push(new Vector3(p.x, gy + h, p.z));
+  }
+  const path: Vector3[] = [];
+  for (let i = 0; i < n - 1; i++) {
+    for (let k = 0; k < 12; k++) {
+      const u = k / 12;
+      path.push(tops[i].clone().lerp(tops[i + 1], u).add(new Vector3(0, -Math.sin(u * Math.PI) * 3, 0)));
+    }
+  }
+  path.push(tops[n - 1].clone());
+  const up = new Vector3(0, 1, 0);
+  const cableMesh = new Mesh(
+    merged(
+      path.slice(0, -1).map((p0, i) => {
+        const p1 = path[i + 1];
+        const d = p1.clone().sub(p0);
+        const L = d.length();
+        d.normalize();
+        // the rotation that takes +y onto the segment, as the Euler angles merged() expects
+        const e = new Euler().setFromQuaternion(new Quaternion().setFromUnitVectors(up, d));
+        return { geo: new CylinderGeometry(0.12, 0.12, L, 4), position: p0.clone().add(p1).multiplyScalar(0.5).toArray() as [number, number, number], rotation: [e.x, e.y, e.z] as [number, number, number] };
+      }),
+    ),
+    new MeshStandardMaterial({ color: 0x3a3f46, roughness: 0.5 }),
+  );
+  group.add(cableMesh);
+  const cabins = new InstancedMesh(new BoxGeometry(2.2, 2, 3), new MeshStandardMaterial({ color: 0xa78bfa, roughness: 0.4, emissive: 0x7c5cff, emissiveIntensity: 0.3 }), 12);
+  group.add(cabins);
+  return { group, cabins, path };
 }
 
 /** The First Narrows from the real coastline: where the shore crossing nearest x −218 runs out of water. */
@@ -107,6 +167,7 @@ function narrows(): { x: number; zS: number; zN: number } {
 
 export function Mountains() {
   const world = useWorld();
+  const cabinM = useMemo(() => new Matrix4(), []);
   const [far, setFar] = useState<ReturnType<typeof buildFar> | null>(null);
 
   useEffect(() => {
@@ -120,9 +181,32 @@ export function Mountains() {
   }, [world.lowEnd]);
 
   const farMesh = useMemo(() => (far ? new Mesh(far.geometry, world.mats.mountain) : null), [far, world]);
+  const gondola = useMemo(() => (far ? buildGondola(far.heightAt) : null), [far]);
 
   const built = useMemo(() => {
-    const baker = new Mesh(new ConeGeometry(460, 430, 7), new MeshStandardMaterial({ color: 0xe9eef5, roughness: 1, flatShading: true, fog: false }));
+    // Mount Baker: hazy lower flanks, grey rock ridges, a glacier cap whose edge wanders around the cone
+    const bakerGeo = new ConeGeometry(460, 430, 30, 10);
+    const bp = bakerGeo.attributes.position;
+    const bc = new Float32Array(bp.count * 3);
+    const haze = new Color(0x8597ab);
+    const rock = new Color(0x9ea7b2);
+    const snow = new Color(0xf3f6fa);
+    const c = new Color();
+    for (let i = 0; i < bp.count; i++) {
+      const u = (bp.getY(i) + 215) / 430;
+      const a = Math.atan2(bp.getZ(i), bp.getX(i));
+      if (u < 0.999) {
+        const ridge = 1 + (0.06 * Math.sin(a * 7 + u * 3) + 0.04 * Math.sin(a * 13 + 1.3)) * (1 - u);
+        bp.setX(i, bp.getX(i) * ridge);
+        bp.setZ(i, bp.getZ(i) * ridge);
+      }
+      const line = 0.52 + 0.07 * Math.sin(a * 9) + 0.04 * Math.sin(a * 4 + 2);
+      c.copy(haze).lerp(rock, Math.min(1, u / line)).lerp(snow, Math.min(1, Math.max(0, (u - line) / 0.06)));
+      bc.set([c.r, c.g, c.b], i * 3);
+    }
+    bakerGeo.computeVertexNormals();
+    bakerGeo.setAttribute("color", new BufferAttribute(bc, 3));
+    const baker = new Mesh(bakerGeo, new MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true, fog: false }));
     baker.position.set(1900, 190, 1700);
     // Lions Gate: two towers, a deck across the First Narrows, four main cables; concrete and cables as two meshes
     const nw = narrows();
@@ -138,25 +222,60 @@ export function Mountains() {
       new MeshStandardMaterial({ color: 0x5f8a6f, roughness: 0.6 }),
     );
     bridge.position.set(nw.x, 0, 0);
+    // the main cables hang in catenaries (main span and side spans); the necklace lights sit on the same curves
+    const curves: Vector3[][] = [];
+    const sag = (z0: number, z1: number, y0: number, y1: number, dip: number) => {
+      for (const xo of [-2.4, 2.4]) {
+        const c: Vector3[] = [];
+        for (let k = 0; k <= 22; k++) {
+          const u = k / 22;
+          c.push(new Vector3(xo, y0 + (y1 - y0) * u - Math.sin(u * Math.PI) * dip, z0 + (z1 - z0) * u));
+        }
+        curves.push(c);
+      }
+    };
+    sag(mid - span / 2, mid + span / 2, 58, 58, 24);
+    sag(mid - len / 2, mid - span / 2, 27, 58, 4);
+    sag(mid + span / 2, mid + len / 2, 58, 27, 4);
+    const up = new Vector3(0, 1, 0);
     const cables = new Mesh(
       merged(
-        (
-          [
-            [mid - span / 2, mid + span / 2],
-            [mid - span / 2, mid - len / 2],
-            [mid + span / 2, mid + len / 2],
-          ] as [number, number][]
-        ).flatMap(([z0, z1]) =>
-          [-2.4, 2.4].map((xo) => {
-            const L = Math.abs(z1 - z0);
-            return { geo: new CylinderGeometry(0.3, 0.3, Math.hypot(L, 30), 6), position: [xo, 42, (z0 + z1) / 2] as [number, number, number], rotation: [Math.atan2(L, 30) * (z1 > z0 ? 1 : -1), 0, 0] as [number, number, number] };
+        curves.flatMap((c) =>
+          c.slice(0, -1).map((a, k) => {
+            const d = c[k + 1].clone().sub(a);
+            const L = d.length();
+            const e = new Euler().setFromQuaternion(new Quaternion().setFromUnitVectors(up, d.normalize()));
+            return { geo: new CylinderGeometry(0.3, 0.3, L, 6), position: a.clone().add(c[k + 1]).multiplyScalar(0.5).toArray() as [number, number, number], rotation: [e.x, e.y, e.z] as [number, number, number] };
           }),
         ),
       ),
       world.mats.mast,
     );
     cables.position.set(nw.x, 0, 0);
-    return { baker, bridge, cables };
+    const necklace = curves.flat().map((v) => new Vector3(v.x + nw.x, v.y + 0.45, v.z));
+    const neck = new InstancedMesh(new SphereGeometry(0.35, 6, 4), new MeshBasicMaterial({ color: 0xffffff, toneMapped: false }), necklace.length);
+    const m4 = new Matrix4();
+    necklace.forEach((p, i) => {
+      m4.makeTranslation(p.x, p.y, p.z);
+      neck.setMatrixAt(i, m4);
+      neck.setColorAt(i, new Color(0xffffff));
+    });
+    registerPattern(world.events, neck, "ring", necklace, new Vector3(nw.x, 0, mid));
+    // tidal turbines in the First Narrows: buoys with a light and a wake ring
+    const turbines = new Group();
+    for (let k = 0; k < 6; k++) {
+      const x = nw.x - 30 + (k % 3) * 30;
+      const z = mid - 14 + Math.floor(k / 3) * 28;
+      const buoy = new Mesh(new CylinderGeometry(1.2, 1.6, 2.4, 10), new MeshStandardMaterial({ color: 0xf2c94c, roughness: 0.5 }));
+      buoy.position.set(x, SEA + 0.6, z);
+      const lamp = new Mesh(new SphereGeometry(0.4, 8, 6), world.events.glowB);
+      lamp.position.set(x, SEA + 2.2, z);
+      const wake = new Mesh(new TorusGeometry(3, 0.12, 4, 24), new MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, roughness: 0.4 }));
+      wake.rotation.x = Math.PI / 2;
+      wake.position.set(x, SEA + 0.05, z);
+      turbines.add(buoy, lamp, wake);
+    }
+    return { baker, bridge, cables, neck, turbines };
   }, [world]);
 
   useEffect(() => {
@@ -173,10 +292,25 @@ export function Mountains() {
 
   useEffect(
     () => () => {
-      for (const m of [built.baker, built.bridge, built.cables]) m.geometry.dispose();
+      for (const m of [built.baker, built.bridge, built.cables, built.neck]) m.geometry.dispose();
     },
     [built],
   );
+
+  // gondola cabins loop up and down the cable
+  useFrame((state) => {
+    if (!gondola) return;
+    const t = state.clock.elapsedTime;
+    const P = gondola.path;
+    for (let i = 0; i < 12; i++) {
+      const u = ((t * 0.01 + i / 12) % 1) * (P.length - 1);
+      const k = Math.floor(u);
+      const p = P[k].clone().lerp(P[Math.min(P.length - 1, k + 1)], u - k);
+      cabinM.makeTranslation(p.x, p.y - 2, p.z);
+      gondola.cabins.setMatrixAt(i, cabinM);
+    }
+    gondola.cabins.instanceMatrix.needsUpdate = true;
+  });
 
   return (
     <>
@@ -184,6 +318,9 @@ export function Mountains() {
       <primitive object={built.baker} />
       <primitive object={built.bridge} />
       <primitive object={built.cables} />
+      <primitive object={built.neck} />
+      <primitive object={built.turbines} />
+      {gondola ? <primitive object={gondola.group} /> : null}
     </>
   );
 }

@@ -119,6 +119,31 @@ export function groundAt(x: number, z: number): number {
   return u + v <= 1 ? a + (b - a) * u + (c - a) * v : d + (c - d) * (1 - u) + (b - d) * (1 - v);
 }
 
+/**
+ * Height of the ground mesh as drawn: the low-end mesh keeps every `stride`-th raster point with the same diagonal,
+ * so ribbons laid on it (streams, paths) must follow it rather than the full raster.
+ */
+export function surfaceAt(x: number, z: number, stride: number): number {
+  if (stride === 1) return groundAt(x, z);
+  const hf = frozen ?? freeze();
+  const g = RASTER;
+  const nx = Math.floor((g.nx - 1) / stride) + 1;
+  const nz = Math.floor((g.nz - 1) / stride) + 1;
+  const fx = (x - g.x0) / (g.step * stride);
+  const fz = (z - g.z0) / (g.step * stride);
+  if (fx < 0 || fz < 0 || fx >= nx - 1 || fz >= nz - 1) return groundAt(x, z);
+  const i = Math.floor(fx);
+  const j = Math.floor(fz);
+  const u = fx - i;
+  const v = fz - j;
+  const at = (ii: number, jj: number) => hf[jj * stride * g.nx + ii * stride];
+  const a = at(i, j);
+  const b = at(i + 1, j);
+  const c = at(i, j + 1);
+  const d = at(i + 1, j + 1);
+  return u + v <= 1 ? a + (b - a) * u + (c - a) * v : d + (c - d) * (1 - u) + (b - d) * (1 - v);
+}
+
 /** Rise over run of the ground at (x, z), from the raster. */
 export function slopeAt(x: number, z: number): number {
   const e = RASTER.step;

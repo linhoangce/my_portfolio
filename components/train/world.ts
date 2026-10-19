@@ -34,6 +34,7 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
 
 import { createBuildingMaterials, paintFacadeArrays, type BuildingMaterials } from "./buildings/facadeArray";
 import { Rng } from "./cityModel";
+import { createEventLights, type EventLights } from "./eventLights";
 import type { Season } from "./lookTypes";
 import type { LookTargets } from "./lookModel";
 import { groundTexture, personTexture, windowTextures } from "./textures";
@@ -102,6 +103,7 @@ export type World = {
   look: { cur: LookTargets | null; tgt: LookTargets | null; lastSeason: Season | null };
   trees: TreeShading;
   buildings: BuildingMaterials;
+  events: EventLights;
   sunDir: Vector3;
 };
 
@@ -251,6 +253,7 @@ export function createWorld(gl: WebGLRenderer, scene: Scene, lowEnd: boolean): W
     refs: { mountain: null, mountainCols: null, wheels: [], bloom: null },
     trees: createTreeShading(paintTreeAtlas(), lowEnd),
     buildings: createBuildingMaterials(paintFacadeArrays(lowEnd), envTex),
+    events: createEventLights(),
     look: { cur: null, tgt: null, lastSeason: null },
     sunDir: new Vector3(0, 1, 0),
   };

@@ -10,6 +10,7 @@ import { CAM } from "./constants";
 import { Debug } from "./Debug";
 import { Drive } from "./Drive";
 import { Effects } from "./Effects";
+import { Events } from "./Events";
 import { Ground } from "./Ground";
 import { Guideway } from "./Guideway";
 import { Landmarks } from "./Landmarks";
@@ -17,6 +18,7 @@ import { Life } from "./Life";
 import { Lights } from "./Lights";
 import { Look } from "./Look";
 import { Mountains } from "./Mountains";
+import { Nature } from "./Nature";
 import { Perf } from "./Perf";
 import { Precipitation } from "./Precipitation";
 import { Sky } from "./Sky";
@@ -59,6 +61,8 @@ export default function Scene({ onContextLost }: { onContextLost?: () => void })
         <City />
         <Trees />
         <Landmarks />
+        <Events />
+        <Nature />
         <Guideway />
         <Stations />
         <Train />

@@ -63,5 +63,6 @@ export const POOLS: Record<string, [SpeciesId, number][]> = {
   forest: [["cedar", 30], ["fir", 30], ["hemlock", 25], ["bigleaf", 10], ["alder", 5]],
   cut: [["cedar", 25], ["fir", 20], ["alder", 25], ["bigleaf", 20], ["hemlock", 10]],
   northShore: [["fir", 35], ["cedar", 25], ["hemlock", 25], ["alder", 10], ["bigleaf", 5]],
+  stream: [["alder", 35], ["bigleaf", 25], ["cedar", 25], ["hemlock", 10], ["dogwood", 5]],
   undergrowth: [["fern", 7], ["rhodo", 2], ["fern", 1]],
 };

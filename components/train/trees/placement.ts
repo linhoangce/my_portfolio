@@ -5,7 +5,7 @@
  * the track; near the guideway the crowns stay below the deck. Pure.
  */
 import { arterialX, arterialZ, BI0, BI1, BJ0, BJ1, district, type Rng, streetX, streetZ } from "../cityModel";
-import { inLandmark, inPark } from "../sites";
+import { inLandmark, inPark, streamDist } from "../sites";
 import { groundAt, inWater, sdfAt, slopeAt } from "../terrain";
 import { trackDist, trackNearest } from "../track";
 import { POOLS, SPECIES, SPECIES_INDEX, type SpeciesId } from "./species";
@@ -87,7 +87,9 @@ export function placeTrees(rng: Rng, lowEnd: boolean, lots: LotBox[]): TreeInst[
       const z = gz + rng.next() * STEP;
       const name = district(x, z);
       const northShore = z < -150 && sdfAt(x, z) > 2;
-      if (!northShore && name !== "forest" && name !== "park" && name !== "cut" && name !== "flats") continue;
+      const bank = x > 40 && x < 270 && z > 150 && z < 270 ? streamDist(x, z) : 99;
+      if (!northShore && bank > 15 && name !== "forest" && name !== "park" && name !== "cut" && name !== "flats") continue;
+      if (bank < 3.2) continue;
       if (!ok(x, z)) continue;
       const td = trackDist(x, z);
       let p = 0;
@@ -98,6 +100,9 @@ export function placeTrees(rng: Rng, lowEnd: boolean, lots: LotBox[]): TreeInst[
       } else if (northShore) {
         p = 0.42;
         pool = POOLS.northShore;
+      } else if (bank < 15) {
+        p = 0.45;
+        pool = POOLS.stream;
       } else if (name === "park") p = 0.55;
       else if (name === "cut") {
         p = 0.6;
@@ -110,7 +115,7 @@ export function placeTrees(rng: Rng, lowEnd: boolean, lots: LotBox[]): TreeInst[
       const id = pick(rng, pool);
       const conifer = id === "cedar" || id === "fir" || id === "hemlock";
       add(x, z, id, name === "forest" && conifer ? 1.0 + rng.next() * 1.3 : 0.8 + rng.next() * (conifer ? 0.8 : 0.45));
-      if ((name === "forest" || name === "cut" || name === "park") && rng.next() < (lowEnd ? 0.25 : 0.5)) {
+      if ((name === "forest" || name === "cut" || name === "park" || bank < 15) && rng.next() < (lowEnd ? 0.25 : 0.5)) {
         const fx = x + rng.next() * 4 - 2;
         const fz = z + rng.next() * 4 - 2;
         if (ok(fx, fz)) add(fx, fz, pick(rng, POOLS.undergrowth), 0.7 + rng.next() * 0.6);
