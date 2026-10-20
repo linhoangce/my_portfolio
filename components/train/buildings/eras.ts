@@ -63,9 +63,9 @@ export type Zone = {
 };
 
 export const ZONES: Partial<Record<Hood, Zone>> = {
-  downtown: { era: [0.1, 0.25, 0.65], h: [[8, 16], [30, 70], [48, 112]], split: 1, build: 0.95 },
-  westend: { era: [0.2, 0.35, 0.45], h: [[8, 14], [24, 50], [30, 72]], split: 1, build: 0.85 },
-  yaletown: { era: [0.25, 0.35, 0.4], h: [[8, 14], [24, 55], [36, 80]], split: 1, build: 0.9 },
+  downtown: { era: [0.24, 0.4, 0.36], h: [[8, 30], [26, 62], [34, 88]], split: 1, build: 0.95 },
+  westend: { era: [0.22, 0.48, 0.3], h: [[8, 20], [22, 48], [26, 64]], split: 1, build: 0.85 },
+  yaletown: { era: [0.36, 0.38, 0.26], h: [[8, 14], [24, 52], [30, 70]], split: 1, build: 0.9 },
   gastown: { era: [0.85, 0.1, 0.05], h: [[7, 13], [14, 22], [22, 36]], split: 2, build: 0.97 },
   chinatown: { era: [0.85, 0.1, 0.05], h: [[6, 10], [12, 20], [20, 34]], split: 2, build: 0.97 },
   strathcona: { era: [0.8, 0.12, 0.08], h: [[3, 5], [8, 14], [14, 28]], split: 3, build: 0.92, houses: true },
@@ -100,13 +100,48 @@ export type ArchId =
   | "twins"
   | "biodome"
   | "wave"
+  | "edwardian"
+  | "decoTower"
+  | "civic"
+  | "timberTerraces"
+  | "pixelTwist"
   | "house";
 
-export const ARCH_BY_ERA: Record<0 | 1 | 2, ArchId[]> = {
-  0: ["heritageBrick", "heritageBrick", "warehouse", "chinatownBlock", "flatiron"],
-  1: ["pointTower", "pointTower", "slab60s", "office", "colourPanels", "townhouses", "brickBaseTower"],
-  2: ["helix", "needle", "stacked", "ziggurat", "vforest", "twins", "biodome", "wave"],
+/**
+ * Archetypes per era with weights. Vancouver is mostly point towers, slabs and old blocks, so those carry the most
+ * weight; the sculptural 2100 forms are spread thin so no one of them repeats down a street.
+ */
+export const ARCH_BY_ERA: Record<0 | 1 | 2, [ArchId, number][]> = {
+  0: [
+    ["heritageBrick", 1.2],
+    ["warehouse", 0.7],
+    ["chinatownBlock", 0.3],
+    ["flatiron", 0.3],
+    ["edwardian", 1.5],
+    ["decoTower", 0.6],
+    ["civic", 0.35],
+  ],
+  1: [
+    ["pointTower", 2.6],
+    ["slab60s", 0.9],
+    ["office", 0.7],
+    ["colourPanels", 0.5],
+    ["townhouses", 0.5],
+    ["brickBaseTower", 0.8],
+  ],
+  2: [
+    ["timberTerraces", 1.0],
+    ["pixelTwist", 0.6],
+    ["helix", 0.6],
+    ["vforest", 0.8],
+    ["twins", 0.45],
+    ["biodome", 0.6],
+    ["wave", 0.6],
+    ["ziggurat", 0.3],
+    ["stacked", 0.3],
+    ["needle", 0.25],
+  ],
 };
 
 /** Archetypes that read as towers need a big enough lot and height. */
-export const TOWERISH = new Set<ArchId>(["pointTower", "office", "brickBaseTower", "helix", "needle", "twins", "vforest", "wave"]);
+export const TOWERISH = new Set<ArchId>(["pointTower", "office", "brickBaseTower", "helix", "needle", "twins", "vforest", "wave", "decoTower", "pixelTwist"]);

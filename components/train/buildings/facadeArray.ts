@@ -1,5 +1,5 @@
 /**
- * Façades as one texture array: twelve families and five roofs, each a layer of a DataArrayTexture. RGB is the
+ * Façades as one texture array: seventeen families and five roofs, each a layer of a DataArrayTexture. RGB is the
  * painted colour and alpha a tint mask (walls take the building's tint, glass and window frames keep their own
  * colour); a second array holds the lit windows for the night, eight floors by eight bays per layer. Two materials
  * (solid and glass) read both arrays through a small shader patch, so every building in a chunk is one draw call.
@@ -32,6 +32,11 @@ export type FamilyId =
   | "green"
   | "diagrid"
   | "solar"
+  | "vancouver"
+  | "pixel"
+  | "fins"
+  | "deco"
+  | "stone"
   | "roof"
   | "copper"
   | "garden"
@@ -52,14 +57,24 @@ export const FAMILY: Record<FamilyId, { layer: number; bay: number; floor: numbe
   green: { layer: 9, bay: 2.6, floor: 1.9, glass: false },
   diagrid: { layer: 10, bay: 3.2, floor: 1.8, glass: true },
   solar: { layer: 11, bay: 2.4, floor: 1.7, glass: true },
-  roof: { layer: 12, bay: 3, floor: 3, glass: false },
-  copper: { layer: 13, bay: 3, floor: 3, glass: false },
-  garden: { layer: 14, bay: 3, floor: 3, glass: false },
-  shingle: { layer: 15, bay: 3, floor: 3, glass: false },
-  tile: { layer: 16, bay: 3, floor: 3, glass: false },
+  /** Vancouverism: blue-green glass, a white slab edge at every floor, glass balconies. */
+  vancouver: { layer: 12, bay: 2.4, floor: 1.7, glass: true },
+  /** Vancouver House's staggered white balcony frames over dark glass. */
+  pixel: { layer: 13, bay: 2.6, floor: 1.7, glass: true },
+  /** Mass timber: warm vertical fins over glass, a white balcony band at every floor. */
+  fins: { layer: 14, bay: 2.2, floor: 1.8, glass: false },
+  /** Art Deco terracotta: unbroken piers, recessed spandrels with chevrons. */
+  deco: { layer: 15, bay: 2.2, floor: 2.0, glass: false },
+  /** Beaux-Arts and Edwardian stone: tall windows under lintels and keystones, sills, coursed joints. */
+  stone: { layer: 16, bay: 2.6, floor: 2.1, glass: false },
+  roof: { layer: 17, bay: 3, floor: 3, glass: false },
+  copper: { layer: 18, bay: 3, floor: 3, glass: false },
+  garden: { layer: 19, bay: 3, floor: 3, glass: false },
+  shingle: { layer: 20, bay: 3, floor: 3, glass: false },
+  tile: { layer: 21, bay: 3, floor: 3, glass: false },
 };
-const LAYERS = 17;
-const FACADE_LAYERS = 12;
+const LAYERS = 22;
+const FACADE_LAYERS = 17;
 
 type Painter = { g: CanvasRenderingContext2D; m: CanvasRenderingContext2D; S: number; wins: [number, number, number, number][] };
 
@@ -234,6 +249,95 @@ function paintLayer(kind: FamilyId, P: Painter, R: Rng): void {
       both("#9aa6b8", keep, 0, q, 512, 3);
     }
     cells(() => P.wins.push([40, 160, 176, 70]));
+  } else if (kind === "vancouver") {
+    const gr = g.createLinearGradient(0, 0, 512 * k, 512 * k);
+    gr.addColorStop(0, "#86bcc8");
+    gr.addColorStop(0.5, "#5d95a8");
+    gr.addColorStop(1, "#7db2c2");
+    g.fillStyle = gr;
+    g.fillRect(0, 0, S, S);
+    rect(m, wall, 0, 0, 512, 512);
+    cells((x, y) => {
+      both("#4b7a8c", wall, x + 126, y, 4, 224);
+      both("#4b7a8c", wall, x, y, 3, 224);
+      rect(g, "rgba(255,255,255,0.12)", x + 8, y + 18, 112, 70);
+      // a glass balcony on alternate bays, its white rail cap catching the light
+      if ((x + y) % 512 === 0) {
+        rect(g, "rgba(214,236,240,0.55)", x + 6, y + 176, 244, 48);
+        both("#f3f4f1", keep, x + 6, y + 172, 244, 5);
+      }
+      both("#f1f2ee", keep, x, y + 224, 256, 32);
+      rect(g, "rgba(0,0,0,0.18)", x, y + 252, 256, 4);
+      P.wins.push([6, 10, 118, 210], [134, 10, 118, 210]);
+    });
+  } else if (kind === "pixel") {
+    both("#2a3846", keep, 0, 0, 512, 512);
+    // floor-high boxes, white frames over dark glass, each floor shifted half a bay from the one below
+    for (let row = 0; row < 2; row++) {
+      const y = row * 256;
+      const off = row ? 128 : 0;
+      for (let q = -1; q < 2; q++) {
+        const x = off + q * 256;
+        both("#eeeeea", wall, x + 8, y + 14, 240, 228);
+        rect(g, "rgba(0,0,0,0.28)", x + 8, y + 214, 240, 28);
+        both("#2f4152", keep, x + 30, y + 34, 196, 170);
+        rect(g, "rgba(170,200,220,0.28)", x + 30, y + 34, 196, 46);
+        rect(g, "#d9d8d2", x + 8, y + 14, 240, 6);
+      }
+    }
+    P.wins.push([30, 34, 196, 170]);
+  } else if (kind === "fins") {
+    both("#c99a5c", wall, 0, 0, 512, 512);
+    cells((x, y) => {
+      rect(g, "#3f5661", x, y + 30, 256, 168);
+      rect(g, "rgba(255,255,255,0.14)", x, y + 30, 256, 52);
+      for (let q = 0; q < 10; q++) both(q % 3 ? "#d9a96a" : "#c4914f", wall, x + 4 + q * 26, y + 30, 9, 168);
+      // the white balcony band, and a few planters on it
+      both("#f5f4ef", keep, x, y + 198, 256, 30);
+      rect(g, "rgba(0,0,0,0.2)", x, y + 228, 256, 7);
+      for (let q = 0; q < 3; q++) {
+        g.fillStyle = q % 2 ? "#5d8a45" : "#6f9a52";
+        g.beginPath();
+        g.arc((x + 40 + q * 80 + R.next() * 30) * k, (y + 196) * k, (9 + R.next() * 8) * k, Math.PI, 0);
+        g.fill();
+      }
+      P.wins.push([8, 34, 112, 160], [136, 34, 112, 160]);
+    });
+  } else if (kind === "deco") {
+    both("#dcc6a4", wall, 0, 0, 512, 512);
+    cells((x, y) => {
+      both("#2b333c", keep, x + 56, y + 36, 144, 140);
+      rect(g, "#46525e", x + 126, y + 36, 4, 140);
+      // the spandrel, with a chevron in relief
+      rect(g, "#b99b76", x + 56, y + 176, 144, 80);
+      g.strokeStyle = "#e6d3b2";
+      g.lineWidth = 5 * k;
+      g.beginPath();
+      g.moveTo((x + 70) * k, (y + 236) * k);
+      g.lineTo((x + 128) * k, (y + 194) * k);
+      g.lineTo((x + 186) * k, (y + 236) * k);
+      g.stroke();
+      // the piers run up unbroken, catching the light on one side
+      rect(g, "#ead9bc", x, y, 40, 256);
+      rect(g, "rgba(0,0,0,0.12)", x + 40, y, 8, 256);
+      rect(g, "rgba(0,0,0,0.08)", x + 200, y, 8, 256);
+      P.wins.push([56, 36, 144, 140]);
+    });
+  } else if (kind === "stone") {
+    both("#e2dbcc", wall, 0, 0, 512, 512);
+    for (let y = 0; y < 512; y += 32) rect(g, "rgba(90,70,40,0.07)", 0, y, 512, 3);
+    for (let y = 0; y < 512; y += 32) for (let x = (y / 32) % 2 ? 0 : 40; x < 512; x += 80) rect(g, "rgba(90,70,40,0.05)", x, y, 3, 32);
+    cells((x, y) => {
+      both("#2a3139", keep, x + 80, y + 58, 96, 150);
+      rect(g, "#5b6670", x + 126, y + 58, 4, 150);
+      rect(g, "#5b6670", x + 80, y + 124, 96, 4);
+      // lintel and keystone above, sill below
+      rect(g, "#f3ede1", x + 70, y + 44, 116, 14);
+      rect(g, "#f3ede1", x + 120, y + 34, 16, 24);
+      rect(g, "#f3ede1", x + 72, y + 208, 112, 10);
+      rect(g, "rgba(0,0,0,0.14)", x + 72, y + 218, 112, 5);
+      P.wins.push([80, 58, 96, 150]);
+    });
   } else if (kind === "roof") {
     both("#8a8c8d", wall, 0, 0, 512, 512);
     for (let i = 0; i < 900; i++) rect(g, `rgba(0,0,0,${R.next() * 0.08})`, R.next() * 512, R.next() * 512, 4, 4);
@@ -301,7 +405,7 @@ export function paintFacadeArrays(lowEnd: boolean): FacadeArrays {
     e.fillStyle = "#000";
     e.fillRect(0, 0, E, E);
     if (L < FACADE_LAYERS) {
-      const share = kind === "dark" ? 0.4 : kind === "warehouse" ? 0.45 : 0.32;
+      const share = kind === "dark" ? 0.4 : kind === "warehouse" ? 0.45 : kind === "pixel" || kind === "vancouver" ? 0.38 : 0.32;
       const ke = E / 1024;
       for (let cy = 0; cy < 8; cy++) {
         for (let cx = 0; cx < 8; cx++) {
@@ -363,7 +467,7 @@ function patch(mat: MeshStandardMaterial, arrays: FacadeArrays, house = false): 
     sh.uniforms.uFacadeE = { value: arrays.emissive };
     sh.vertexShader = sh.vertexShader
       .replace("#include <common>", `#include <common>\nattribute float aLayer;\nattribute vec3 aTint;\n${house ? "attribute vec3 aTint2;\n" : ""}varying float vLayer;\nvarying vec3 vTint;\nvarying vec2 vFUv;`)
-      .replace("#include <uv_vertex>", `#include <uv_vertex>\nvLayer = aLayer;\nvTint = ${house ? "aLayer > 11.5 ? aTint2 : aTint" : "aTint"};\nvFUv = uv;`);
+      .replace("#include <uv_vertex>", `#include <uv_vertex>\nvLayer = aLayer;\nvTint = ${house ? "aLayer > 16.5 ? aTint2 : aTint" : "aTint"};\nvFUv = uv;`);
     sh.fragmentShader = sh.fragmentShader
       .replace(
         "#include <common>",

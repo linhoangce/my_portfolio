@@ -48,7 +48,7 @@ import { merged, type Part } from "../merge";
 import { cap, type P2, walls } from "../shapes";
 import { monumentFocus } from "../monuments";
 import { groundAt } from "../terrain";
-import { frameAt, makeFrame, stationS, trackDist, UP } from "../track";
+import { frameAt, makeFrame, PATH_SAMPLES, stationS, trackDist, UP } from "../track";
 import type { World } from "../world";
 import { fromStation, SET_SIDE, SET_TREES, STATION_FRAMES } from "./zones";
 
@@ -89,6 +89,14 @@ const fontOf = () => {
 };
 
 const glowMat = (c: number, i = 1.6) => new MeshStandardMaterial({ color: 0x111111, emissive: c, emissiveIntensity: i, roughness: 0.6 });
+
+/** How far a point of this set (along, lateral toward its side) is from the nearest track, the turning loops included. */
+function trackClear(c: Ctx, a: number, l: number): number {
+  const [x, z] = fromStation(c.i, a, l);
+  let d = Infinity;
+  for (const f of PATH_SAMPLES) d = Math.min(d, (f.p.x - x) ** 2 + (f.p.z - z) ** 2);
+  return Math.sqrt(d);
+}
 
 /** Columns from a raised deck down to the ground. */
 function legs(c: Ctx, mat: Material, pts: [number, number][], top: number, r = 0.45) {
@@ -467,23 +475,30 @@ function cedar(c: Ctx, a: number, l: number, base: number, height: number, crown
 // ------------------------------------------------------------------ 01 About · Burrard: the cedar atrium
 function about(c: Ctx): Partial<BuiltSet> {
   const { mats } = c.world;
-  const L0 = 28;
+  // the line bends back past the cedar toward Granville: it stands as near its spot as the guideway allows, and the
+  // canopy reaches out over the track, high enough for the trains to run under it
+  let L0 = 28;
+  while (L0 > 19 && trackClear(c, 0, L0) < 10) L0 -= 0.5;
   const g = c.G(0, L0);
-  // a mass-timber canopy with an oculus the cedar grows through, on four columns
+  // a mass-timber canopy with an oculus the cedar grows through, on columns that keep off the guideway
   const deckY = Math.max(g + 9, 1.4 + 7);
   cedar(c, 0, L0, g, 36, deckY + 0.9);
   const annulus = (r0: number, r1: number, h: number) =>
     new LatheGeometry([new Vector2(r0, 0), new Vector2(r1, 0), new Vector2(r1, h), new Vector2(r0, h), new Vector2(r0, 0)], 40);
   c.add(mats.timber, annulus(3.2, 10, 0.6), c.L(0, L0, deckY - 0.6));
   c.add(mats.roofGreen, annulus(3.4, 9.7, 0.3), c.L(0, L0, deckY));
-  legs(c, mats.timber, [
-    [-7, L0 - 7],
-    [7, L0 - 7],
-    [-7, L0 + 7],
-    [7, L0 + 7],
-  ], deckY);
-  // a moss wall behind
-  c.add(new MeshStandardMaterial({ color: 0x4d6b35, roughness: 1 }), new BoxGeometry(1, 7, 18), c.L(0, L0 + 11, g + 3.5));
+  // up to four columns on a ring under the deck, each the clear spot nearest a diagonal
+  const ring = Array.from({ length: 16 }, (_, k) => (k / 16) * Math.PI * 2).filter((th) => trackClear(c, Math.cos(th) * 7.5, L0 + Math.sin(th) * 7.5) > 9);
+  const posts: [number, number][] = [];
+  for (const want of [0.25, 0.75, 1.25, 1.75].map((q) => q * Math.PI)) {
+    const best = ring.reduce<number | null>((b, th) => (b === null || Math.abs(Math.sin((th - want) / 2)) < Math.abs(Math.sin((b - want) / 2)) ? th : b), null);
+    if (best === null) break;
+    ring.splice(ring.indexOf(best), 1);
+    posts.push([Math.cos(best) * 7.5, L0 + Math.sin(best) * 7.5]);
+  }
+  legs(c, mats.timber, posts, deckY);
+  // a moss wall behind, where the track leaves room
+  if ([-9, 0, 9].every((a) => trackClear(c, a, L0 + 11) > 9)) c.add(new MeshStandardMaterial({ color: 0x4d6b35, roughness: 1 }), new BoxGeometry(1, 7, 18), c.L(0, L0 + 11, g + 3.5));
   return {
     focus: new Vector3(...c.L(0, L0 - 6, deckY + 6)),
     shot: { from: [-30, 64, 6], to: [-22, 56, 30], look: [0, 22, 16], fromLook: [0, 26, 8] },

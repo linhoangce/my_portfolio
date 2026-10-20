@@ -157,21 +157,25 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
   const last = new Map<string, string>();
   let buildMs = 0;
   const archMs: Record<string, number> = {};
-  const pickArch = (zone: NonNullable<(typeof ZONES)[Hood]>, name: Hood, big: boolean, cell: string, left: string, up: string): { era: 0 | 1 | 2; arch: ArchId } => {
+  const pickArch = (zone: NonNullable<(typeof ZONES)[Hood]>, name: Hood, big: boolean, cell: string, near: string[]): { era: 0 | 1 | 2; arch: ArchId } => {
     let era: 0 | 1 | 2 = 0;
     let arch: ArchId = "heritageBrick";
-    for (let tries = 0; tries < 4; tries++) {
+    for (let tries = 0; tries < 6; tries++) {
       const r = rng.next();
       era = r < zone.era[0] ? 0 : r < zone.era[0] + zone.era[1] ? 1 : 2;
       if (zone.houses && era === 0) arch = "house";
       else if (name === "chinatown" && era === 0) arch = rng.next() < 0.8 ? "chinatownBlock" : "heritageBrick";
       else if (name === "gastown" && era === 0) arch = rng.next() < 0.55 ? "heritageBrick" : "warehouse";
+      else if (name === "yaletown" && era === 0) arch = rng.next() < 0.7 ? "warehouse" : "heritageBrick";
       else {
-        const list = ARCH_BY_ERA[era].filter((a) => big || !TOWERISH.has(a));
-        arch = list[Math.floor(rng.next() * list.length)] ?? "townhouses";
+        const list = ARCH_BY_ERA[era].filter(([a]) => big || !TOWERISH.has(a));
+        const total = list.reduce((t, [, wt]) => t + wt, 0);
+        let roll = rng.next() * total;
+        arch = list.find(([, wt]) => (roll -= wt) < 0)?.[0] ?? "townhouses";
       }
       const key = `${arch}${era}`;
-      if (arch === "house" || (last.get(left) !== key && last.get(up) !== key)) {
+      // never the same as the lot to the left, above or on either upper diagonal
+      if (arch === "house" || near.every((n) => last.get(n) !== key)) {
         last.set(cell, key);
         break;
       }
@@ -210,7 +214,9 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
           if (yt - yb > 0.42 * Math.max(w, d) + 0.6) continue;
           const dist = Math.min(...pts.map(([px, pz]) => cor.dist(px, pz)));
           const cell = `${i * 3 + c},${j * 3 + r}`;
-          const { era, arch } = pickArch(zone, name, big && w > 13 && d > 13, cell, `${i * 3 + c - 1},${j * 3 + r}`, `${i * 3 + c},${j * 3 + r - 1}`);
+          const ci = i * 3 + c;
+          const cj = j * 3 + r;
+          const { era, arch } = pickArch(zone, name, big && w > 13 && d > 13, cell, [`${ci - 1},${cj}`, `${ci},${cj - 1}`, `${ci - 1},${cj - 1}`, `${ci + 1},${cj - 1}`]);
           if (arch === "house") {
             // detailed templates near the line, the plain one beyond; the far suburbs are thinned
             const far = dist > (lowEnd ? 90 : 150);
@@ -235,7 +241,7 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
           let chosen = arch;
           if (H > allow) {
             H = allow;
-            if (H < 9) chosen = era === 2 ? "stacked" : name === "chinatown" ? "chinatownBlock" : "heritageBrick";
+            if (H < 9) chosen = era === 2 ? "timberTerraces" : era === 1 ? "colourPanels" : name === "chinatown" ? "chinatownBlock" : "heritageBrick";
           }
           if (H < 3) continue;
           const ctx: Ctx = { rng, sink: sinkAt(x, z), x, z, w, d, yb, yt, H, hood: name, terrace: addTerrace };

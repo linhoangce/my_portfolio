@@ -1,7 +1,8 @@
 /**
  * Hero buildings at their mapped spots (Nominatim, km × 110), nudged out of the guideway corridor: the Marine Building,
  * Hotel Vancouver's copper roof, Vancouver House widening as it rises, Living Shangri-La, the Sun Tower's dome,
- * Woodward's red W, the Library's colosseum, the Dominion Building and Telus Garden; plus five invented 2100 icons.
+ * Woodward's red W, the Library's colosseum, the Dominion Building, the Art Gallery and Telus Garden; plus five
+ * invented 2100 icons.
  * Their footprints are reserved before the city fills its lots.
  */
 import { BoxGeometry, Color, CylinderGeometry, Matrix4, Quaternion, SphereGeometry, TorusGeometry, Vector3 } from "three";
@@ -29,12 +30,12 @@ const RAW: Hero[] = [
     r: 8,
     h: 38,
     build: (s, x, z, yb, yt) => {
-      const brown = T(0xa8775a);
-      let ring = walls(s, "brick", fp.rect(13, 13), x, z, yb, yt + 16, { tint: brown, yRef: yt });
+      const brown = T(0xd9a882);
+      let ring = walls(s, "deco", fp.rect(13, 13), x, z, yb, yt + 16, { tint: brown, yRef: yt });
       cap(s, "roof", ring);
-      ring = walls(s, "brick", fp.rect(10, 10), x, z, yt + 16, yt + 26, { tint: brown, yRef: yt });
+      ring = walls(s, "deco", fp.rect(10, 10), x, z, yt + 16, yt + 26, { tint: brown, yRef: yt });
       cap(s, "roof", ring);
-      ring = walls(s, "brick", fp.rect(7.5, 7.5), x, z, yt + 26, yt + 33, { tint: brown, yRef: yt });
+      ring = walls(s, "deco", fp.rect(7.5, 7.5), x, z, yt + 26, yt + 33, { tint: brown, yRef: yt });
       cap(s, "roof", ring);
       walls(s, "copper", fp.rect(5, 5), x, z, yt + 33, yt + 36, { tint: T(0xbfe0d0) });
       hip(s, "copper", x, z, 5, 5, yt + 36, 2.2);
@@ -48,8 +49,8 @@ const RAW: Hero[] = [
     h: 44,
     build: (s, x, z, yb, yt) => {
       const stone = T(0xe0d6c2);
-      walls(s, "concrete", fp.rect(18, 9), x, z, yb, yt + 10, { tint: stone, yRef: yt });
-      const ring = walls(s, "concrete", fp.rect(12, 12), x, z, yb, yt + 32, { tint: stone, yRef: yt });
+      walls(s, "stone", fp.rect(18, 9), x, z, yb, yt + 10, { tint: stone, yRef: yt });
+      const ring = walls(s, "stone", fp.rect(12, 12), x, z, yb, yt + 32, { tint: stone, yRef: yt });
       cap(s, "roof", ring);
       hip(s, "copper", x, z, 12, 12, yt + 32, 9);
       for (const [dx, dz] of [[-6.2, 0], [6.2, 0], [0, -6.2], [0, 6.2]]) box(s, "copper", x + dx, yt + 33, z + dz, Math.abs(dx) ? 0.6 : 2, 1.6, Math.abs(dz) ? 0.6 : 2);
@@ -64,7 +65,7 @@ const RAW: Hero[] = [
     h: 62,
     build: (s, x, z, yb, yt) => {
       // a narrow base that widens into a full rectangle as it rises
-      const ring = walls(s, "balcony", fp.rect(16, 11), x, z, yb, yt + 60, { segs: 14, s0: 0.42, s1: 1, r0: 0.35, r1: 0, curve: (t) => Math.pow(t, 0.7), yRef: yt });
+      const ring = walls(s, "pixel", fp.rect(16, 11), x, z, yb, yt + 60, { segs: 14, s0: 0.42, s1: 1, r0: 0.35, r1: 0, curve: (t) => Math.pow(t, 0.7), yRef: yt });
       cap(s, "garden", ring);
     },
   },
@@ -143,6 +144,15 @@ const RAW: Hero[] = [
       cap(s, "roof", ring);
       hip(s, "tile", x, z, 9, 11, yt + 20, 4.5, T(0xb84a32));
     },
+  },
+  {
+    // the old courthouse: stone, a columned portico and the dome over its rotunda
+    name: "Vancouver Art Gallery",
+    x: -62,
+    z: 45,
+    r: 7,
+    h: 14,
+    build: (s, x, z, yb, yt, rng, terrace) => BUILD.civic({ ...ctx(s, x, z, yb, yt, 17, 12, 9, rng, terrace), dome: true }),
   },
   {
     name: "Telus Garden",

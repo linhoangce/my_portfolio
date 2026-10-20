@@ -27,11 +27,8 @@ const swSide = (() => {
   return (sw.px - fr.x) * fr.rx + (sw.pz - fr.z) * fr.rz >= 0 ? 1 : -1;
 })();
 
-/**
- * The open side of each stop (1 right of travel, -1 left), where its set stands and its shot looks back from.
- * Burrard's is the outside of the bend: the line turns back toward Granville on the inside.
- */
-export const SET_SIDE: (1 | -1)[] = [1, 1, 1, -1, swSide as 1 | -1, -1, 1, -1, 1, -1];
+/** The open side of each stop (1 right of travel, -1 left), where its set stands and its shot looks back from. */
+export const SET_SIDE: (1 | -1)[] = [1, -1, 1, -1, swSide as 1 | -1, -1, 1, -1, 1, -1];
 
 export const SET_RECT: Rect[] = [
   [-24, 24, 13, 46],
