@@ -14,6 +14,7 @@ import type { LandmarkKey } from "./sites";
 import { useTrain } from "./store";
 import { BLOCKERS } from "./cityModel";
 import { getCityData } from "./cityData";
+import { sdfAt } from "./terrain";
 import { CROSSOVERS, deckY, groundAt, LEN, LOOPS, profile, SAMPLES, samples, STATION_XZ, stationS } from "./track";
 import { useWorld } from "./world";
 
@@ -53,6 +54,8 @@ export type TrainDebug = {
   /** Current eased scene background as a hex string (theme and weather checks). */
   bg: () => string;
   state: () => Record<string, unknown>;
+  /** The water's signed distance at a point (negative on water), for the shore checks. */
+  sdf: (x: number, z: number) => number;
   /** Static geometry for the headless checks: track samples, footprints, blockers, station points. */
   geometry: () => {
     samples: [number, number, number, number, number, number, number][];
@@ -167,6 +170,7 @@ export function Debug() {
         st().sim.warp = Math.max(0.1, Math.min(40, k));
       },
       bg: () => world.scene.background.getHexString(),
+      sdf: (x, z) => sdfAt(x, z),
       geometry: () => {
         const city = getCityData(st().env.lowEnd);
         return {

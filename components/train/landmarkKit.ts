@@ -885,5 +885,7 @@ export function buildRogersArena(world: World): Built {
     iceMat.emissiveIntensity = 0.15 + 0.75 * n;
   });
   g.add(walls0, band, roof, ribs, glass, seats, ice, boards, score, hang, glow);
+  // smaller than BC Place by more than life would have it, so the two sit side by side on the basin
+  g.scale.setScalar(0.82);
   return { group: g };
 }

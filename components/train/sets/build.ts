@@ -47,7 +47,7 @@ import { getZoning } from "../cityData";
 import { merged, type Part } from "../merge";
 import { cap, type P2, walls } from "../shapes";
 import { monumentFocus } from "../monuments";
-import { groundAt } from "../terrain";
+import { groundAt, sdfAt } from "../terrain";
 import { frameAt, makeFrame, PATH_SAMPLES, stationS, trackDist, UP } from "../track";
 import type { World } from "../world";
 import { fromStation, SET_SIDE, SET_TREES, STATION_FRAMES } from "./zones";
@@ -744,15 +744,20 @@ function planktoneer(c: Ctx): Partial<BuiltSet> {
     const dz = z - fr.z;
     return [dx * fr.tx + dz * fr.tz, (dx * fr.rx + dz * fr.rz) * c.side];
   };
-  // halfway toward the sphere, then out until it clears the guideway and the sphere's plaza
-  let [a, l] = toLocal(sw.x, sw.z);
-  a *= 0.55;
-  l = Math.max(18, l * 0.55);
+  // part way toward the sphere, then out until it clears the guideway and the sphere's plaza, on dry land
+  const [sa, sl] = toLocal(sw.x, sw.z);
   const world = (aa: number, ll: number) => [fr.x + fr.tx * aa + fr.rx * ll * c.side, fr.z + fr.tz * aa + fr.rz * ll * c.side];
-  for (let k = 0; k < 20; k++) {
-    const [wx, wz] = world(a, l);
-    if (trackDist(wx, wz) > 15 && Math.hypot(wx - sw.x, wz - sw.z) > 22) break;
-    l += 2;
+  let a = sa * 0.55;
+  let l = Math.max(18, sl * 0.55);
+  search: for (const f of [0.55, 0.45, 0.65, 0.35, 0.75]) {
+    for (let k = 0, ll = Math.max(18, sl * f); k < 20; k++, ll += 2) {
+      const [wx, wz] = world(sa * f, ll);
+      if (trackDist(wx, wz) > 15 && Math.hypot(wx - sw.x, wz - sw.z) > 22 && sdfAt(wx, wz) > 8) {
+        a = sa * f;
+        l = ll;
+        break search;
+      }
+    }
   }
   const g = c.G(a, l);
   c.add(mats.concrete, new CylinderGeometry(4.6, 5.2, 1.2, 32), c.L(a, l, g + 0.6));

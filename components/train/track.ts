@@ -3,7 +3,7 @@ import { CatmullRomCurve3, MathUtils, Vector3 } from "three";
 import { stations } from "@/data";
 
 import { CROSS_LEN, CUT, DECK, K, LANE } from "./constants";
-import { addModifier, lerp, rectPad } from "./terrain";
+import { addModifier, inBasin, lerp, rectPad } from "./terrain";
 import { TRACK_RAW } from "./trackData";
 import { solveProfile } from "./trackProfile";
 
@@ -268,7 +268,8 @@ export const smoothstep01 = (u: number): number => {
     const tx = f.t.x / Math.hypot(f.t.x, f.t.z);
     const tz = f.t.z / Math.hypot(f.t.x, f.t.z);
     const inCut = profileCutAt(ss) > 0.5;
-    addModifier(rectPad(f.p.x, f.p.z, tx, tz, 34, inCut ? 13 : 22, inCut ? 6 : 26, f.p.y - (inCut ? 2.4 : DECK)));
+    const pad = rectPad(f.p.x, f.p.z, tx, tz, 34, inCut ? 13 : 22, inCut ? 6 : 26, f.p.y - (inCut ? 2.4 : DECK));
+    addModifier((x, z, h) => (inBasin(x, z) ? h : pad(x, z, h)));
   }
 }
 // the Grandview Cut: dug, never built up: a floor just under the girder within 14 units, banks rising to floor + CUT.bank

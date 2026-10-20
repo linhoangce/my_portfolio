@@ -37,9 +37,76 @@ function bilinear(g: GridDef, get: (k: number) => number, x: number, z: number):
 
 /** Elevation in metres from the baked city grid (edge-clamped outside it). */
 export const demMetres = (x: number, z: number): number => bilinear(DEM_CITY, (k) => DEM[k] / DEM_CITY.scale - DEM_CITY.bias, x, z);
+/**
+ * The east basin of False Creek, redrawn: from Cambie Bridge to Science World on its point, with the inlet where the
+ * daylighted China Creek runs in beside Creekside Park. The bake left most of it as land, and the stadiums stand
+ * larger than life (they are sized against the train), so inside the box the shore is this polygon alone and the
+ * basin lies a little south of the real one; across the box's west edge it blends into the baked creek. World units.
+ */
+const REDRAWN = { x0: -60, x1: 100, z0: 118, z1: 246, blend: 12 };
+const EXTRA_WATER: [number, number][][] = [
+  [
+    [-78, 176],
+    [-44, 182],
+    [-22, 193],
+    [-4, 202],
+    [26, 203],
+    [41, 197],
+    [41, 166],
+    [52, 166],
+    [52, 182],
+    [55, 210],
+    [70, 217],
+    [90, 216],
+    [92, 224],
+    [70, 232],
+    [40, 232],
+    [0, 230],
+    [-30, 223],
+    [-62, 213],
+    [-82, 202],
+  ],
+];
+const EXTRA_BOX = EXTRA_WATER.map((p) => [Math.min(...p.map((q) => q[0])), Math.max(...p.map((q) => q[0])), Math.min(...p.map((q) => q[1])), Math.max(...p.map((q) => q[1]))]);
+
+/** Signed distance to a polygon's edge, negative inside. */
+function polySdf(poly: [number, number][], x: number, z: number): number {
+  let d = Infinity;
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [ax, az] = poly[j];
+    const [bx, bz] = poly[i];
+    const ex = bx - ax;
+    const ez = bz - az;
+    const t = Math.min(1, Math.max(0, ((x - ax) * ex + (z - az) * ez) / (ex * ex + ez * ez)));
+    d = Math.min(d, Math.hypot(x - ax - ex * t, z - az - ez * t));
+    if (az > z !== bz > z && x < ax + ((z - az) * (bx - ax)) / (bz - az)) inside = !inside;
+  }
+  return inside ? -d : d;
+}
+
 /** Signed distance to the shore in world units, positive on land, negative on water. */
-export const sdfAt = (x: number, z: number): number => bilinear(SDF_CITY, (k) => SDF[k] / SDF_CITY.scale, x, z);
+export const sdfAt = (x: number, z: number): number => {
+  const s = bilinear(SDF_CITY, (k) => SDF[k] / SDF_CITY.scale, x, z);
+  let drawn = Infinity;
+  for (let k = 0; k < EXTRA_WATER.length; k++) {
+    const b = EXTRA_BOX[k];
+    if (x > b[0] - 40 && x < b[1] + 40 && z > b[2] - 40 && z < b[3] + 40) drawn = Math.min(drawn, polySdf(EXTRA_WATER[k], x, z));
+  }
+  const R = REDRAWN;
+  if (x > R.x0 - R.blend && x < R.x1 && z > R.z0 && z < R.z1) {
+    // inside the box the drawn shore alone (land beyond it), blending into the baked field across the west edge
+    const own = Math.min(drawn, 40);
+    return x >= R.x0 ? own : lerp(Math.min(s, own), own, (x - (R.x0 - R.blend)) / R.blend);
+  }
+  return Math.min(s, drawn);
+};
 export const inWater = (x: number, z: number): boolean => sdfAt(x, z) < 0;
+/**
+ * Water in the redrawn east basin. Pads stop at it (a seawall), where elsewhere the station pads keep the shore
+ * they were built on round Waterfront, Burrard and Granville.
+ */
+export const inBasin = (x: number, z: number): boolean => x > REDRAWN.x0 && x < REDRAWN.x1 && z > REDRAWN.z0 && z < REDRAWN.z1 && sdfAt(x, z) < 0;
 
 /** Trout Lake sits above sea level, so it is a lake bowl (a pad) rather than sea floor. */
 export const LAKE = { x: 400, z: 374, rx: 20, rz: 13 };

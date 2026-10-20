@@ -13,7 +13,7 @@ import type { ShotSpec } from "../sets/build";
 import { setRegistry } from "../sets/registry";
 import { SET_SIDE, STATION_FRAMES } from "../sets/zones";
 import { BLOCKERS, LANDMARKS, type LandmarkKey } from "../sites";
-import { groundAt } from "../terrain";
+import { groundAt, sdfAt } from "../terrain";
 import { trackDist, UP } from "../track";
 
 export type Pose = { pos: Vector3; look: Vector3 };
@@ -71,11 +71,24 @@ function scienceWorldShot(lowEnd: boolean): ShotPlan {
   const mid = sw.clone().lerp(col, 0.4);
   mid.y = sw.y + 2;
   const v = col.clone().sub(sw).setY(0).normalize();
-  const perp = new Vector3(-v.z, 0, v.x);
-  // look across the line between them, from the side farther from the guideway
-  const sideSign = trackDist(mid.x + perp.x * 95, mid.z + perp.z * 95) >= trackDist(mid.x - perp.x * 95, mid.z - perp.z * 95) ? 1 : -1;
+  // look from over False Creek if it can: the bay in the foreground, the sphere on its point and the column and the
+  // station beyond it; then the farther from the guideway
+  let best = -Infinity;
+  const dir = new Vector3();
+  const d = new Vector3();
+  for (let k = 0; k < 16; k++) {
+    const a = (k / 16) * Math.PI * 2;
+    d.set(Math.cos(a), 0, Math.sin(a));
+    let wet = 0;
+    for (let u = 0.2; u <= 1.001; u += 0.2) if (sdfAt(mid.x + d.x * 95 * u, mid.z + d.z * 95 * u) < 0) wet++;
+    const score = wet * 2 - d.dot(v) * 2.5 + Math.min(trackDist(mid.x + d.x * 95, mid.z + d.z * 95), 60) / 30;
+    if (score > best) {
+      best = score;
+      dir.copy(d);
+    }
+  }
   const targets = [sw.clone().addScaledVector(UP, 8), sw.clone().addScaledVector(UP, -6), col, station];
-  const guessTo = mid.clone().addScaledVector(perp, 95 * sideSign).addScaledVector(UP, 28);
+  const guessTo = mid.clone().addScaledVector(dir, 95).addScaledVector(UP, 28);
   const to = search(mid, guessTo, targets, lowEnd, "scienceWorld", 4);
   const from = pullBack(to, mid, lowEnd, 16);
   return { from: { pos: from, look: mid.clone().addScaledVector(UP, -1.5) }, to: { pos: to, look: mid.clone() }, focus: mid, dist: [30, 200], owns: "scienceWorld" };

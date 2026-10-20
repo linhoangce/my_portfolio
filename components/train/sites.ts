@@ -2,7 +2,7 @@
  * Mapped sites: parks, landmarks (nudged out of the guideway corridor) and Trout Lake, with the terrain pads they need.
  * Registering the pads here, at import, keeps them ahead of the first groundAt call (which freezes the ground).
  */
-import { addModifier, demAt, discPad, inWater, LAKE, lakeLevel, lerp } from "./terrain";
+import { addModifier, demAt, discPad, inBasin, inWater, LAKE, lakeLevel, lerp } from "./terrain";
 import { samples } from "./track";
 
 export type Park = { x: number; z: number; r: number; name: string };
@@ -14,6 +14,18 @@ export const PARKS: Park[] = [
   { x: 333, z: 155, r: 13, name: "Grandview Park" },
   { x: 860, z: 790, r: 95, name: "Central Park" },
   { x: 248, z: 253, r: 13, name: "China Creek Park" },
+  // round False Creek's east basin and the downtown peninsula (mapped, then fitted round the larger-than-life
+  // landmarks); Northeast False Creek Park is the city's planned park on the old viaduct lands, built by 2100
+  { x: 66, z: 172, r: 7, name: "Creekside Park" },
+  { x: -46, z: 174, r: 6, name: "Northeast False Creek Park" },
+  { x: 8, z: 239, r: 5, name: "Hinge Park" },
+  { x: -82, z: 168, r: 8, name: "David Lam Park" },
+  { x: -110, z: 152, r: 7, name: "George Wainborn Park" },
+  { x: -150, z: 39, r: 6, name: "Nelson Park" },
+  { x: 118, z: 147, r: 7, name: "Thornton Park" },
+  { x: 193, z: 143, r: 13, name: "Strathcona Park" },
+  { x: 143, z: 41, r: 6, name: "Oppenheimer Park" },
+  { x: 82, z: 90, r: 7, name: "Andy Livingstone Park" },
 ];
 // squared distances: these run for every test point of every lot, and Math.hypot is slow in V8
 export const inPark = (x: number, z: number): boolean => PARKS.some((p) => (x - p.x) ** 2 + (z - p.z) ** 2 < p.r * p.r);
@@ -27,8 +39,8 @@ export const LANDMARK_DEFS: LandmarkDef[] = [
   { key: "canadaPlace", x: -40, z: -76, r: 26, h: 22, margin: 6, lotR: 30 },
   { key: "convention", x: -88, z: -46, r: 20, h: 11, margin: 6, lotR: 20 },
   { key: "bcPlace", x: -14, z: 130, r: 48, h: 47, margin: 6, lotR: 48 },
-  { key: "rogers", x: 54, z: 134, r: 22, h: 13, margin: 7, lotR: 22 },
-  { key: "scienceWorld", x: 68.3, z: 155.7, r: 12, h: 24, margin: 8, lotR: 13 },
+  { key: "rogers", x: 8, z: 186, r: 18, h: 11, margin: 7, lotR: 18 },
+  { key: "scienceWorld", x: 68, z: 196, r: 12, h: 24, margin: 8, lotR: 13 },
   // smaller monuments (Nominatim positions); the cauldron and the orca stand beside the Convention Centre
   { key: "gate", x: 55.2, z: 67.4, r: 4.5, h: 9, margin: 10, lotR: 6 },
   { key: "cauldron", x: -43.5, z: -38.9, r: 4, h: 11, margin: 10, lotR: 6 },
@@ -80,7 +92,9 @@ for (const l of LANDMARK_DEFS) {
     let s = 0;
     for (let k = 0; k < 9; k++) s += demAt(px + Math.cos(k * 0.7) * l.r * 0.6, pz + Math.sin(k * 0.7) * l.r * 0.6);
     padY = s / 9;
-    if (!SMALL.has(l.key)) addModifier(discPad(px, pz, l.r + 4, 14, padY));
+    // round the east basin the pad stops at the water: a seawall, not a filled-in shore
+    const pad = discPad(px, pz, l.r + 4, 14, padY);
+    if (!SMALL.has(l.key)) addModifier((x, z, h) => (inBasin(x, z) ? h : pad(x, z, h)));
     else padY = demAt(px, pz);
   }
   LANDMARKS.push({ ...l, px, pz, padY });
@@ -132,7 +146,7 @@ for (const p of PARKS) {
   const y = demAt(p.x, p.z);
   addModifier((x, z, h) => {
     const d = Math.hypot(x - p.x, z - p.z) / p.r;
-    return d >= 1.2 ? h : lerp(h, y, 0.45 * (1 - Math.min(1, Math.max(0, (d - 0.6) / 0.6))));
+    return d >= 1.2 || inWater(x, z) ? h : lerp(h, y, 0.45 * (1 - Math.min(1, Math.max(0, (d - 0.6) / 0.6))));
   });
 }
 {
