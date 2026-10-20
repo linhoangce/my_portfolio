@@ -77,3 +77,10 @@ export const AUTO_LOOK_PERIOD = 10;
 export const PHONE_MAX_WIDTH = 860;
 
 export const PEOPLE_VARIANTS = 6;
+
+/**
+ * The street grid as the ground tile paints it: north–south arterials every 44 units from x = 12 with a back lane
+ * between them, east–west streets every 22 from z = 18 (an arterial on the lower edge of every odd row). Half widths
+ * include the sidewalks. The ground shader (world.ts) and the city zoning (cityData.ts) share them.
+ */
+export const GRID = { x0: 12, z0: 18, cw: 44, ch: 22, artHalf: 3.44, locHalf: 2.41 } as const;

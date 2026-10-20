@@ -16,7 +16,10 @@ import {
   InstancedMesh,
   Matrix4,
   Mesh,
+  MeshBasicMaterial,
   MeshStandardMaterial,
+  Points,
+  PointsMaterial,
   Quaternion,
   SphereGeometry,
   Sprite,
@@ -29,7 +32,8 @@ import { SEA } from "./constants";
 import { merged, type Part } from "./merge";
 import { streetX, streetZ } from "./cityModel";
 import { STREAM } from "./sites";
-import { quadcopter, quadcopterLights } from "./vessels";
+import { dotTexture } from "./textures";
+import { DRONE_LIGHT_POINTS, quadcopter, quadcopterLights } from "./vessels";
 import { useTrain } from "./store";
 import { groundAt, inWater, sdfAt, surfaceAt } from "./terrain";
 import { LEN, frameAt, makeFrame, UP } from "./track";
@@ -170,13 +174,22 @@ export function Nature() {
     });
     // drones on lanes over the towers and along the line
     const DN = lowEnd ? 30 : 90;
-    // flat dark quadcopters; their running lights only show after dark
-    // quadcopters: a vertex-coloured frame and, as a second mesh, their running lights (lit after dark)
+    // quadcopters: a vertex-coloured frame and, as a second mesh, their lights (red to port, green to starboard), on
+    // day and night like real drones; a few pixels per light as points too, so a drone reads from any distance, with
+    // a white strobe flashing on top
     const drones = new InstancedMesh(quadcopter(), new MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.2 }), DN);
     drones.frustumCulled = false;
-    const droneMat = new MeshStandardMaterial({ vertexColors: true, emissive: 0xffffff, emissiveIntensity: 0, roughness: 0.4 });
+    const droneMat = new MeshBasicMaterial({ vertexColors: true, toneMapped: false });
     const droneLights = new InstancedMesh(quadcopterLights(), droneMat, DN);
     droneLights.frustumCulled = false;
+    const NP = DRONE_LIGHT_POINTS.length;
+    const dotGeo = new BufferGeometry();
+    dotGeo.setAttribute("position", new BufferAttribute(new Float32Array(DN * NP * 3), 3));
+    const dotCols = new Float32Array(DN * NP * 3);
+    dotGeo.setAttribute("color", new BufferAttribute(dotCols, 3));
+    const dotMat = new PointsMaterial({ size: 3, sizeAttenuation: false, vertexColors: true, map: dotTexture(), transparent: true, depthWrite: false, toneMapped: false });
+    const droneDots = new Points(dotGeo, dotMat);
+    droneDots.frustumCulled = false;
     const droneData = Array.from({ length: DN }, (_, i) => {
       const lane = i % 5;
       const centres = [[-60, 50, 70], [-120, 80, 95], [60, 140, 60], [340, 300, 70], [640, 580, 80]];
@@ -227,8 +240,8 @@ export function Nature() {
       clouds.push(s);
       group.add(s);
     }
-    group.add(birds, drones, droneLights);
-    return { group, birds, birdData, drones, droneLights, droneData, droneMat, orcas, orcaHome, seals, sealAt, cloudMat };
+    group.add(birds, drones, droneLights, droneDots);
+    return { group, birds, birdData, drones, droneLights, droneData, droneMat, droneDots, dotCols, dotMat, orcas, orcaHome, seals, sealAt, cloudMat };
   }, [world, lowEnd]);
 
   useEffect(
@@ -246,6 +259,7 @@ export function Nature() {
   const s = useMemo(() => new Vector3(), []);
   const col = useMemo(() => new Color(), []);
   const e = useMemo(() => new Euler(), []);
+  const dotPos = useMemo(() => new Vector3(), []);
   useFrame((state) => {
     const t = state.clock.elapsedTime;
     const { birds, birdData, drones, droneData } = built;
@@ -258,6 +272,7 @@ export function Nature() {
       birds.setMatrixAt(i, m4);
     });
     birds.instanceMatrix.needsUpdate = true;
+    const lit = night.current ? 1.4 : 0.9;
     droneData.forEach((d, i) => {
       const a = d.ph + t * d.sp;
       v.set(d.cx + Math.cos(a) * d.r, d.h + Math.sin(t + i) * 0.6, d.cz + Math.sin(a) * d.r * 0.7);
@@ -266,10 +281,23 @@ export function Nature() {
       m4.compose(v, q.setFromEuler(e), s.set(1, 1, 1));
       drones.setMatrixAt(i, m4);
       built.droneLights.setMatrixAt(i, m4);
+      // the strobe: two quick flashes every 1.6 s, each drone on its own beat
+      const beat = (t + i * 0.37) % 1.6;
+      const flash = beat < 0.07 || (beat > 0.2 && beat < 0.27) ? 1 : 0;
+      DRONE_LIGHT_POINTS.forEach(([lx, ly, lz, hex], k) => {
+        const j = (i * DRONE_LIGHT_POINTS.length + k) * 3;
+        dotPos.set(lx, ly, lz).applyMatrix4(m4);
+        (built.droneDots.geometry.attributes.position as BufferAttribute).setXYZ(j / 3, dotPos.x, dotPos.y, dotPos.z);
+        col.setHex(hex).multiplyScalar(k === 2 ? flash * 1.6 : lit);
+        built.dotCols.set([col.r, col.g, col.b], j);
+      });
     });
     drones.instanceMatrix.needsUpdate = true;
     built.droneLights.instanceMatrix.needsUpdate = true;
-    built.droneMat.emissiveIntensity = night.current ? 2.2 : 0;
+    built.droneDots.geometry.attributes.position.needsUpdate = true;
+    built.droneDots.geometry.attributes.color.needsUpdate = true;
+    built.droneMat.color.setScalar(night.current ? 2.2 : 1);
+    built.dotMat.size = night.current ? 5 : 3.5;
     built.orcas.forEach((o, i) => {
       const [hx, hz] = built.orcaHome[i];
       const cyc = (t * 0.08 + i * 0.37) % 1;

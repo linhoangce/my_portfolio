@@ -14,12 +14,12 @@ import {
   Mesh,
   MeshStandardMaterial,
   SphereGeometry,
-  TorusGeometry,
   Vector3,
 } from "three";
 
 import { canvasTexture, type P2, walls } from "./shapes";
-import { type Built, buildBCPlace, buildCanadaPlace, buildHarbourCentre, buildScienceWorld } from "./landmarkKit";
+import { type Built, buildBCPlace, buildCanadaPlace, buildHarbourCentre, buildRogersArena, buildScienceWorld } from "./landmarkKit";
+import { clearReflections } from "./reflectionSources";
 import { LANDMARKS, type LandmarkKey, type PlacedLandmark } from "./sites";
 import { groundAt } from "./terrain";
 import { type World, useWorld } from "./world";
@@ -92,20 +92,7 @@ function buildLandmark(l: PlacedLandmark, world: World): Built {
     g.add(glass, roof, fascia);
     return { group: g };
   }
-  if (key === "rogers") {
-    const bowl = new Mesh(new CylinderGeometry(14, 13, 8, 48), new MeshStandardMaterial({ color: 0xcfcac0, roughness: 0.85 }));
-    bowl.scale.set(1.35, 1, 1);
-    bowl.position.y = 4;
-    const roof = new Mesh(new SphereGeometry(14, 36, 12, 0, Math.PI * 2, 0, Math.PI / 2), new MeshStandardMaterial({ color: 0xe9e6df, roughness: 0.7 }));
-    roof.scale.set(1.35, 0.3, 1);
-    roof.position.y = 8;
-    const glow = new Mesh(new TorusGeometry(14.2, 0.2, 6, 64), events.glowB);
-    glow.scale.set(1.35, 1, 1);
-    glow.rotation.x = Math.PI / 2;
-    glow.position.y = 8.1;
-    g.add(bowl, roof, glow);
-    return { group: g };
-  }
+  if (key === "rogers") return buildRogersArena(world);
   if (key === "gate") {
     // Chinatown's Millennium Gate: red columns, beams and two green-tiled roofs
     const red = new MeshStandardMaterial({ color: 0xb3261e, roughness: 0.55 });
@@ -223,6 +210,7 @@ export function Landmarks() {
     () => () => {
       world.events.patterns.length = 0;
       world.events.followers.length = 0;
+      clearReflections();
       for (const b of built) {
         b.group.traverse((o) => {
           if (o instanceof Mesh) o.geometry.dispose();

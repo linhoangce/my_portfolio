@@ -197,34 +197,47 @@ export function interiorTextures(): { map: CanvasTexture; emissiveMap: CanvasTex
   return { map: texture(c, true), emissiveMap: texture(e, true) };
 }
 
-/** A curtain of sword fern fronds draping over the guideway fascia, painted on transparent canvas. */
-export function fernTexture(): CanvasTexture {
-  const [c, g] = canvas(128, 160);
-  let seed = 11;
-  const rnd = () => ((seed = (seed * 9301 + 49297) % 233280) / 233280);
-  for (let k = 0; k < 11; k++) {
-    const x0 = 8 + k * 11 + rnd() * 4;
-    const out = (k % 2 ? 1 : -1) * (6 + rnd() * 10);
-    const len = 95 + rnd() * 55;
-    const green = 135 + Math.floor(rnd() * 40);
-    g.strokeStyle = `rgb(70,${green - 15},55)`;
-    g.lineWidth = 2.5;
-    g.beginPath();
-    g.moveTo(x0, 2);
-    g.quadraticCurveTo(x0 + out * 0.7, len * 0.45, x0 + out, len);
-    g.stroke();
-    for (let t = 0.08; t < 1; t += 0.07) {
-      const x = x0 + out * (0.7 * 2 * t * (1 - t) + t * t);
-      const y = 2 + len * t;
-      g.fillStyle = `rgb(${84 + Math.floor(rnd() * 20)},${green},${62 + Math.floor(rnd() * 12)})`;
-      for (const sd of [-1, 1]) {
+/** A clipped hedge: small leaves in three greens with dark gaps, tiling both ways (u round the hedge, v along it). */
+export function hedgeTexture(): CanvasTexture {
+  const [c, g] = canvas(128, 128);
+  g.fillStyle = "#24401f";
+  g.fillRect(0, 0, 128, 128);
+  let sd = 7;
+  const rnd = () => {
+    sd = (sd * 9301 + 49297) % 233280;
+    return sd / 233280;
+  };
+  const greens = ["#3d6b31", "#4a7c38", "#2f5a28", "#5a8a40"];
+  for (let i = 0; i < 900; i++) {
+    const x = rnd() * 128;
+    const y = rnd() * 128;
+    const rx = 2 + rnd() * 2.5;
+    const ry = 1.2 + rnd() * 1.6;
+    const rot = rnd() * Math.PI;
+    g.fillStyle = greens[i % greens.length];
+    // drawn again across each edge it crosses, so the tile repeats cleanly
+    for (const ox of [-128, 0, 128]) {
+      for (const oy of [-128, 0, 128]) {
+        if (x + ox < -6 || x + ox > 134 || y + oy < -6 || y + oy > 134) continue;
         g.beginPath();
-        g.ellipse(x + sd * 4.5 * (1 - t * 0.5), y + 1.5, 5.5 * (1 - t * 0.55), 1.8, sd * 0.5, 0, Math.PI * 2);
+        g.ellipse(x + ox, y + oy, rx, ry, rot, 0, Math.PI * 2);
         g.fill();
       }
     }
   }
-  return texture(c);
+  return texture(c, true);
+}
+
+/** Sleepers under a pair of rails: pale concrete ties on the dark slab, one per tile along the track. */
+export function sleeperTexture(): CanvasTexture {
+  const [c, g] = canvas(64, 64);
+  g.fillStyle = "#33373d";
+  g.fillRect(0, 0, 64, 64);
+  g.fillStyle = "#80848a";
+  g.fillRect(3, 20, 58, 24);
+  g.fillStyle = "#6d7177";
+  g.fillRect(3, 40, 58, 4);
+  return texture(c, true);
 }
 
 export type SignFonts = { sans: string; serif: string; mono: string };
@@ -266,4 +279,19 @@ export function doorLabel(st: Station, fonts: SignFonts): { texture: Texture; ca
   const [c] = canvas(1024, 60);
   paintDoorLabel(c, st, fonts);
   return { texture: texture(c), canvas: c };
+}
+
+let dotTex: CanvasTexture | null = null;
+/** A soft round dot, so points read as lights rather than square pixels. Shared. */
+export function dotTexture(): CanvasTexture {
+  if (dotTex) return dotTex;
+  const [c, g] = canvas(64, 64);
+  const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, "rgba(255,255,255,1)");
+  gr.addColorStop(0.35, "rgba(255,255,255,0.85)");
+  gr.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 64, 64);
+  dotTex = new CanvasTexture(c);
+  return dotTex;
 }

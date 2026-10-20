@@ -24,7 +24,9 @@ import {
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
+  PlaneGeometry,
   Quaternion,
+  RepeatWrapping,
   SphereGeometry,
   TorusGeometry,
   Vector2,
@@ -34,6 +36,7 @@ import {
 import { SEA } from "./constants";
 import { registerPattern } from "./eventLights";
 import { EVENT_META } from "./lookTypes";
+import { addReflections } from "./reflectionSources";
 import { canvasTexture, cap, merge, type P2, paint, roundRect, walls } from "./shapes";
 import type { PlacedLandmark } from "./sites";
 import { sdfAt } from "./terrain";
@@ -269,6 +272,22 @@ export function buildCanadaPlace(l: PlacedLandmark, world: World): Built {
   g.add(solidMesh, terminal, hotelMesh, roof, shipGroup, lamps);
   // the fabric is translucent: a little light through it by day, floodlit in colour after dark
   const SAILS_LIT = [0x2f6bff, 0x2fd36b, 0xffffff, 0xff7a2a, 0xff2a2a];
+  const warm = new Color(0xffd29a);
+  const shipSide = shore > 0 ? -1 : 1;
+  addReflections([
+    ...masts.map((z, k) => {
+      const [x, wz] = toWorld(0, z);
+      return { x, z: wz, y: l.padY + upper, h: 9.5, w: 9, col: sailCols.value[k], gain: 0.9 };
+    }),
+    ...[-24, 0, 24].map((z) => {
+      const [x, wz] = toWorld(-15.5, z);
+      return { x, z: wz, y: l.padY + deck, h: upper - deck, w: 16, col: warm, gain: 0.45 };
+    }),
+    ...[-24, -8, 8, 24].map((z) => {
+      const [x, wz] = toWorld(20.3, z * shipSide);
+      return { x, z: wz, y: l.padY + water, h: 16, w: 14, col: warm, gain: 0.5 };
+    }),
+  ]);
   events.followers.push((level, ev) => {
     const n = nightOf(level);
     sailMat.emissiveIntensity = 0.12 + 0.85 * n;
@@ -497,63 +516,98 @@ export function buildScienceWorld(world: World, centre: Vector3): Built {
     (base.material as MeshStandardMaterial).emissiveIntensity = 0.6 * nightOf(level);
   });
   g.add(ball, outer, apex, lattice, base, roofRing, band, plaza, cols);
+  // its lights show in False Creek, in the event's colours
+  addReflections([{ x: centre.x, z: centre.z, y: centre.y, h: 26, w: 22, col: events.glow.emissive, gain: 0.8 }]);
   return { group: g };
 }
 
 /* ------------------------------------------------------------------ BC Place */
 
 /**
- * The stadium: the bowl, the cable-stayed roof on 36 leaning masts, and its lights: a tall LED fascia round the rim
- * with a white line above it (both in the event's colours by day and night), mast lights, and lights strung along
- * every cable. After dark the masts glow white and the roof is lit from within.
+ * BC Place: the bowl, a tall LED fascia round the rim (in the event's colours by day and night) under a white line,
+ * and the cable-supported roof: 36 masts leaning out round the rim, a cable from each mast top to the compression ring
+ * at the centre, and the white fabric rising between the cables to the ring, sagging into a scallop between each pair,
+ * with the retractable roof closed over the middle as a low pillow. After dark the masts glow white, lights run down
+ * every cable and the fabric is lit from within.
  */
 export function buildBCPlace(world: World, centre: Vector3): Built {
   const { events, lowEnd, mats } = world;
   const g = new Group();
-  const R = 32;
-  const bowl = new Mesh(new CylinderGeometry(R, R - 2.5, 11, 64, 1, true), new MeshStandardMaterial({ color: 0xd8d3c8, roughness: 0.9, side: 2 }));
-  bowl.position.y = 5.5;
+  const R = 40;
+  const RIM = 17.6;
+  const rOut = R + 1.4;
+  const rIn = 13;
+  const yIn = 31;
+  const bowl = new Mesh(new CylinderGeometry(R, R - 2.5, RIM - 1.2, 72, 1, true), new MeshStandardMaterial({ color: 0xd8d3c8, roughness: 0.9, side: 2 }));
+  bowl.position.y = (RIM - 1.2) / 2;
   const pitch = new Mesh(new CircleGeometry(R - 2.5, 64), new MeshStandardMaterial({ color: 0x3f6b3a, roughness: 1 }));
   pitch.rotation.x = -Math.PI / 2;
   pitch.position.y = 0.3;
-  const concourse = new Mesh(new CylinderGeometry(R + 1.2, R + 1.2, 1.4, 64), new MeshStandardMaterial({ color: 0xe6e2da, roughness: 0.8 }));
-  concourse.position.y = 12.6;
-  const roofPts = [[0, 20.4], [6, 20.4], [12, 19.6], [20, 17.6], [27, 14.8], [31, 13.6], [R + 1.2, 13.3]].map(([r, y]) => new Vector2(r, y));
-  const roofMat = new MeshStandardMaterial({ color: 0xffffff, roughness: 0.55, emissive: 0xe4ecff, emissiveIntensity: 0 });
-  const roof = new Mesh(new LatheGeometry(roofPts, 72), roofMat);
+  const concourse = new Mesh(new CylinderGeometry(R + 1.2, R + 1.2, 1.4, 72), new MeshStandardMaterial({ color: 0xe6e2da, roughness: 0.8 }));
+  concourse.position.y = RIM - 0.7;
+  // the fabric: a polar grid rising from the rim to the ring, sagging between the 36 radial cables
+  const NS = lowEnd ? 144 : 216;
+  const NR = lowEnd ? 10 : 16;
+  const rise = (r: number) => {
+    const t = (rOut - r) / (rOut - rIn);
+    return RIM + (yIn - RIM) * (1 - (1 - t) * (1 - t));
+  };
+  const fpos: number[] = [];
+  const fidx: number[] = [];
+  for (let j = 0; j <= NR; j++) {
+    const r = rOut - ((rOut - rIn) * j) / NR;
+    const sag = 2.1 * Math.sin((Math.PI * j) / NR);
+    for (let i = 0; i <= NS; i++) {
+      const a = (i / NS) * Math.PI * 2;
+      fpos.push(Math.cos(a) * r, rise(r) - sag * Math.sin(18 * a) ** 2, Math.sin(a) * r);
+      if (i < NS && j < NR) {
+        const k = j * (NS + 1) + i;
+        fidx.push(k, k + 1, k + NS + 1, k + 1, k + NS + 2, k + NS + 1);
+      }
+    }
+  }
+  const fabric = new BufferGeometry();
+  fabric.setAttribute("position", new BufferAttribute(new Float32Array(fpos), 3));
+  fabric.setIndex(fidx);
+  fabric.computeVertexNormals();
+  const roofMat = new MeshStandardMaterial({ color: 0xffffff, roughness: 0.55, side: DoubleSide, emissive: 0xe4ecff, emissiveIntensity: 0 });
+  const roof = new Mesh(fabric, roofMat);
   roof.castShadow = !lowEnd;
-  const ring = new Mesh(new TorusGeometry(6.4, 0.5, 8, 48), mats.mast);
+  // the retractable roof, closed: a low pillow inside the ring
+  const pillow = new Mesh(new LatheGeometry([0, 0.25, 0.5, 0.75, 1].map((t) => new Vector2(rIn * (1 - t) + 0.01, yIn + 0.3 + 2.6 * Math.sin((t * Math.PI) / 2))), 72), roofMat);
+  const ring = new Mesh(new TorusGeometry(rIn, 0.7, 8, 72), mats.mast);
   ring.rotation.x = Math.PI / 2;
-  ring.position.y = 20.6;
-  const ribs = new InstancedMesh(new BoxGeometry(0.5, 11.5, 1.0), new MeshStandardMaterial({ color: 0xbfb9ad, roughness: 0.9 }), 64);
+  ring.position.y = yIn + 0.2;
+  const ribs = new InstancedMesh(new BoxGeometry(0.6, RIM - 3.2, 1.1), new MeshStandardMaterial({ color: 0xbfb9ad, roughness: 0.9 }), 72);
   const mastMat = new MeshStandardMaterial({ color: 0xf0f1f3, roughness: 0.6, emissive: 0xffffff, emissiveIntensity: 0 });
-  const masts = new InstancedMesh(new CylinderGeometry(0.28, 0.5, 26, 8), mastMat, 36);
-  const cables = new InstancedMesh(new CylinderGeometry(0.07, 0.07, 1, 5), new MeshStandardMaterial({ color: 0xb8bcc4, roughness: 0.5 }), 36);
+  const MAST = 27;
+  const masts = new InstancedMesh(new CylinderGeometry(0.26, 0.5, MAST, 8), mastMat, 36);
+  const cables = new InstancedMesh(new CylinderGeometry(0.08, 0.08, 1, 5), new MeshStandardMaterial({ color: 0xb8bcc4, roughness: 0.5 }), 36);
   const led = new MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
-  const tips = new InstancedMesh(new SphereGeometry(0.3, 8, 6), led, 36);
+  const tips = new InstancedMesh(new IcosahedronGeometry(0.42, 1), led, 36);
   // the fascia: 72 tall LED panels round the rim, and a thin white line above them
-  const fascia = new InstancedMesh(new BoxGeometry(2.95, 2.9, 0.3), led, 72);
+  const fascia = new InstancedMesh(new BoxGeometry(3.6, 3.8, 0.3), led, 72);
   const lineMat = new MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
-  const topLine = new Mesh(new TorusGeometry(R + 1.45, 0.3, 6, 144), lineMat);
+  const topLine = new Mesh(new TorusGeometry(R + 1.45, 0.32, 6, 160), lineMat);
   topLine.rotation.x = Math.PI / 2;
-  topLine.position.y = 13.5;
+  topLine.position.y = RIM - 1.0;
   const perCable = lowEnd ? 7 : 12;
   const bulbMat = new MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
-  const bulbs = new InstancedMesh(new IcosahedronGeometry(0.3, 0), bulbMat, 36 * perCable);
+  const bulbs = new InstancedMesh(new IcosahedronGeometry(0.34, 0), bulbMat, 36 * perCable);
   const dv = new Vector3();
   const tang = new Vector3();
   const ringPts: Vector3[] = [];
   const tipPts: Vector3[] = [];
-  for (let i = 0; i < 64; i++) {
-    const a = (i / 64) * Math.PI * 2;
-    p.set(Math.cos(a) * (R + 0.3), 5.75, Math.sin(a) * (R + 0.3));
+  for (let i = 0; i < 72; i++) {
+    const a = (i / 72) * Math.PI * 2;
+    p.set(Math.cos(a) * (R + 0.3), (RIM - 3.2) / 2, Math.sin(a) * (R + 0.3));
     q.setFromAxisAngle(UPV, -a);
     m4.compose(p, q, one);
     ribs.setMatrixAt(i, m4);
   }
   for (let i = 0; i < 72; i++) {
     const a = (i / 72) * Math.PI * 2;
-    p.set(Math.cos(a) * (R + 1.35), 11.8, Math.sin(a) * (R + 1.35));
+    p.set(Math.cos(a) * (R + 1.35), RIM - 3.3, Math.sin(a) * (R + 1.35));
     q.setFromAxisAngle(UPV, -a + Math.PI / 2);
     m4.compose(p, q, one);
     fascia.setMatrixAt(i, m4);
@@ -561,18 +615,23 @@ export function buildBCPlace(world: World, centre: Vector3): Built {
     ringPts.push(p.clone().add(centre));
   }
   let b = 0;
+  const lean = 0.16;
   for (let i = 0; i < 36; i++) {
+    // the masts stand on the ridges between scallops (where the cables run)
     const a = (i / 36) * Math.PI * 2;
     const cx = Math.cos(a);
     const cz = Math.sin(a);
-    p.set(cx * (R + 3.5), 12.6, cz * (R + 3.5));
+    // each stands on the rim just outside the fascia
+    const base = R + 2.4;
+    const foot = RIM - 5;
+    p.set(cx * (base + Math.sin(lean) * MAST * 0.5), foot + Math.cos(lean) * MAST * 0.5, cz * (base + Math.sin(lean) * MAST * 0.5));
     tang.set(-cz, 0, cx);
-    q.setFromAxisAngle(tang, -0.16);
+    q.setFromAxisAngle(tang, -lean);
     m4.compose(p, q, one);
     masts.setMatrixAt(i, m4);
-    const top = new Vector3(cx * (R + 5.6), 25.4, cz * (R + 5.6));
-    const anchor = new Vector3(cx * 6.4, 20.6, cz * 6.4);
-    m4.makeTranslation(top.x, top.y + 0.3, top.z);
+    const top = new Vector3(cx * (base + Math.sin(lean) * MAST), foot + Math.cos(lean) * MAST, cz * (base + Math.sin(lean) * MAST));
+    const anchor = new Vector3(cx * rIn, yIn + 0.4, cz * rIn);
+    m4.makeTranslation(top.x, top.y + 0.4, top.z);
     tips.setMatrixAt(i, m4);
     tips.setColorAt(i, new Color(0xffffff));
     tipPts.push(top.clone().add(centre));
@@ -598,6 +657,233 @@ export function buildBCPlace(world: World, centre: Vector3): Built {
     lineMat.color.setScalar(0.35 + 0.65 * level);
     bulbMat.color.copy(white.setRGB(1, 1, 1)).multiplyScalar(0.15 + 0.85 * n * (0.85 + 0.15 * Math.sin(t * 2)));
   });
-  g.add(bowl, pitch, concourse, roof, ring, ribs, masts, cables, tips, fascia, topLine, bulbs);
+  g.add(bowl, pitch, concourse, roof, pillow, ring, ribs, masts, cables, tips, fascia, topLine, bulbs);
+  addReflections(
+    [0, 1, 2, 3, 4, 5].map((k) => {
+      const a = (k / 6) * Math.PI * 2;
+      return { x: centre.x + Math.cos(a) * R, z: centre.z + Math.sin(a) * R, y: centre.y, h: RIM, w: 18, col: k % 2 ? events.glowB.emissive : events.glow.emissive, gain: 0.7 };
+    }),
+  );
+  return { group: g };
+}
+
+/* ------------------------------------------------------------------ Rogers Arena */
+
+/** An oval of n points, rx by rz. */
+const oval = (rx: number, rz: number, n = 64): P2[] => Array.from({ length: n }, (_, i): P2 => [Math.cos((i / n) * Math.PI * 2) * rx, Math.sin((i / n) * Math.PI * 2) * rz]);
+
+/** The ice from above: white, the red centre line, two blue lines, five face-off circles, the goal creases. */
+function rinkTexture(): CanvasTexture {
+  return canvasTexture(512, 220, (g) => {
+    g.fillStyle = "#f4f8fb";
+    g.beginPath();
+    g.roundRect(4, 4, 504, 212, 70);
+    g.fill();
+    g.strokeStyle = "#1b1f27";
+    g.lineWidth = 4;
+    g.stroke();
+    g.fillStyle = "#c8202f";
+    g.fillRect(253, 4, 6, 212);
+    g.fillRect(34, 4, 3, 212);
+    g.fillRect(475, 4, 3, 212);
+    g.fillStyle = "#1f4fb4";
+    g.fillRect(170, 4, 10, 212);
+    g.fillRect(332, 4, 10, 212);
+    g.strokeStyle = "#c8202f";
+    g.lineWidth = 3;
+    for (const [x, y, r] of [[256, 110, 30], [92, 58, 26], [92, 162, 26], [420, 58, 26], [420, 162, 26]]) {
+      g.beginPath();
+      g.arc(x, y, r, 0, Math.PI * 2);
+      g.stroke();
+    }
+    g.fillStyle = "#7fb2e8";
+    for (const x of [36, 476]) {
+      g.beginPath();
+      g.arc(x, 110, 16, x < 256 ? -Math.PI / 2 : Math.PI / 2, x < 256 ? Math.PI / 2 : (3 * Math.PI) / 2);
+      g.fill();
+    }
+  });
+}
+
+/** The arena's LED wrap: a hockey night in blue and green, crossed sticks and a puck, repeated round the oval. */
+function arenaBandTexture(): CanvasTexture {
+  const t = canvasTexture(512, 64, (g) => {
+    const gr = g.createLinearGradient(0, 0, 512, 0);
+    gr.addColorStop(0, "#0b2f6b");
+    gr.addColorStop(0.5, "#0f5c4a");
+    gr.addColorStop(1, "#0b2f6b");
+    g.fillStyle = gr;
+    g.fillRect(0, 0, 512, 64);
+    g.strokeStyle = "#ffffff";
+    g.lineWidth = 5;
+    g.lineCap = "round";
+    for (const cx of [64, 320]) {
+      g.beginPath();
+      g.moveTo(cx - 22, 12);
+      g.lineTo(cx + 14, 50);
+      g.lineTo(cx + 26, 50);
+      g.moveTo(cx + 22, 12);
+      g.lineTo(cx - 14, 50);
+      g.lineTo(cx - 26, 50);
+      g.stroke();
+      g.fillStyle = "#ffffff";
+      g.beginPath();
+      g.ellipse(cx, 54, 7, 3, 0, 0, Math.PI * 2);
+      g.fill();
+    }
+    g.fillStyle = "#ffffff";
+    g.font = "700 30px system-ui, sans-serif";
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    for (const cx of [192, 448]) g.fillText("HOCKEY NIGHT", cx, 33);
+  });
+  t.wrapS = RepeatWrapping;
+  t.repeat.set(4, 1);
+  return t;
+}
+
+/**
+ * Rogers Arena, the hockey arena beside the stadium, as 2100 would keep it: an oval of dark glass, an LED wrap round
+ * the top showing a hockey night, and a glass oculus in the white roof over the rink, so from the guideway and the
+ * air you look down on the seating bowl, the lit ice with its lines and circles, and the scoreboard hung over centre
+ * ice. A ring under the roof edge takes the event's colours.
+ */
+export function buildRogersArena(world: World): Built {
+  const { events, lowEnd, envTex } = world;
+  const g = new Group();
+  const RX = 21;
+  const RZ = 15.5;
+  const WALL = 9.5;
+  const BAND = 2.6;
+  const ROOF = WALL + BAND;
+  const glassFacade = facade(
+    64,
+    64,
+    (gx) => {
+      gx.fillStyle = "#26323f";
+      gx.fillRect(0, 0, 64, 64);
+    },
+    (gx, lit) => {
+      let k = 0;
+      for (let x = 2; x < 64; x += 16) {
+        for (const y of [4, 36]) {
+          gx.fillStyle = lit ? WARM[k++ % 4] : "#3a4c5e";
+          gx.fillRect(x, y, 13, 26);
+        }
+      }
+    },
+  );
+  const glassMat = cityToned(world, new MeshStandardMaterial({ map: glassFacade.map, emissiveMap: glassFacade.glow, emissive: 0xffffff, roughness: 0.25, metalness: 0.3, envMap: envTex, envMapIntensity: 0.6 }), 1);
+  const walls0 = new Mesh(walls(oval(RX, RZ, 72), 0, WALL, { uPer: 4, vPer: 4.75, smooth: true }), glassMat);
+  const bandTex = arenaBandTexture();
+  const bandMat = new MeshBasicMaterial({ map: bandTex, toneMapped: false });
+  const band = new Mesh(walls(oval(RX + 0.15, RZ + 0.15, 72), WALL, ROOF, { uPer: 1, vPer: BAND, smooth: true }), bandMat);
+  // the roof: a white ring from the edge in to the oculus, which is glazed
+  const OX = 16;
+  const OZ = 10.6;
+  const outer = oval(RX + 0.4, RZ + 0.4, 72);
+  const inner = oval(OX, OZ, 72);
+  const rpos: number[] = [];
+  const ridx: number[] = [];
+  for (let i = 0; i < 72; i++) {
+    rpos.push(outer[i][0], ROOF, outer[i][1], inner[i][0], ROOF + 1.6, inner[i][1]);
+    const a = i * 2;
+    const b = ((i + 1) % 72) * 2;
+    ridx.push(a, a + 1, b, b, a + 1, b + 1);
+  }
+  const roofGeo = new BufferGeometry();
+  roofGeo.setAttribute("position", new BufferAttribute(new Float32Array(rpos), 3));
+  roofGeo.setIndex(ridx);
+  roofGeo.computeVertexNormals();
+  const roofMat = new MeshStandardMaterial({ color: 0xf2f3f1, roughness: 0.6, side: DoubleSide });
+  const roof = new Mesh(roofGeo, roofMat);
+  roof.castShadow = !lowEnd;
+  const ribs = new InstancedMesh(new BoxGeometry(0.22, 0.3, 1), roofMat, 12);
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    const ox = Math.cos(a) * (RX + 0.4);
+    const oz = Math.sin(a) * (RZ + 0.4);
+    const ix = Math.cos(a) * OX;
+    const iz = Math.sin(a) * OZ;
+    const len = Math.hypot(ox - ix, oz - iz);
+    p.set((ox + ix) / 2, ROOF + 0.95, (oz + iz) / 2);
+    q.setFromAxisAngle(UPV, -Math.atan2(oz - iz, ox - ix) + Math.PI / 2);
+    m4.compose(p, q, new Vector3(1, 1, len));
+    ribs.setMatrixAt(i, m4);
+  }
+  const glass = new Mesh(cap(inner, ROOF + 1.6), world.mats.pane);
+  // inside: the seating bowl stepping down from the oculus to the boards, blue and green tiers, shallow enough
+  // that the ice shows from the guideway
+  const tiers = lowEnd ? 4 : 6;
+  const seatCols = [0x1f4fb4, 0x0f6e58, 0x1f4fb4, 0x23407e, 0x0f6e58, 0x1f4fb4];
+  const bowlParts: BufferGeometry[] = [];
+  const RINK_X = 9;
+  const RINK_Z = 3.9;
+  const ICE = 6.2;
+  for (let k = 0; k < tiers; k++) {
+    const t0 = k / tiers;
+    const t1 = (k + 1) / tiers;
+    const rx0 = OX + 0.5 - (OX + 0.5 - RINK_X - 0.8) * t0;
+    const rz0 = OZ + 0.5 - (OZ + 0.5 - RINK_Z - 0.8) * t0;
+    const rx1 = OX + 0.5 - (OX + 0.5 - RINK_X - 0.8) * t1;
+    const rz1 = OZ + 0.5 - (OZ + 0.5 - RINK_Z - 0.8) * t1;
+    const y0 = ROOF - 1 - (ROOF - 1 - ICE) * t0;
+    const y1 = ROOF - 1 - (ROOF - 1 - ICE) * t1;
+    const a = oval(rx0, rz0, 48);
+    const b = oval(rx1, rz1, 48);
+    const pos: number[] = [];
+    const idx: number[] = [];
+    for (let i = 0; i < 48; i++) {
+      pos.push(a[i][0], y0, a[i][1], b[i][0], y1, b[i][1]);
+      const u = i * 2;
+      const v = ((i + 1) % 48) * 2;
+      idx.push(u, v, u + 1, v, v + 1, u + 1);
+    }
+    const tier = new BufferGeometry();
+    tier.setAttribute("position", new BufferAttribute(new Float32Array(pos), 3));
+    tier.setIndex(idx);
+    tier.computeVertexNormals();
+    bowlParts.push(paint(tier, seatCols[k % seatCols.length]));
+  }
+  const seats = new Mesh(merge(bowlParts), new MeshStandardMaterial({ vertexColors: true, roughness: 0.8, side: DoubleSide }));
+  const iceMat = new MeshStandardMaterial({ map: rinkTexture(), roughness: 0.2, emissive: 0xffffff, emissiveIntensity: 0.15 });
+  iceMat.emissiveMap = iceMat.map;
+  const ice = new Mesh(new PlaneGeometry(RINK_X * 2, RINK_Z * 2), iceMat);
+  ice.rotation.x = -Math.PI / 2;
+  ice.position.y = ICE;
+  const boards = new Mesh(walls(oval(RINK_X + 0.15, RINK_Z + 0.15, 48), ICE, ICE + 0.7, { smooth: true }), new MeshStandardMaterial({ color: 0xf4f6f8, roughness: 0.5 }));
+  // the scoreboard over centre ice: four lit screens on a dark frame
+  const scoreTex = canvasTexture(128, 64, (gx) => {
+    gx.fillStyle = "#05070c";
+    gx.fillRect(0, 0, 128, 64);
+    gx.fillStyle = "#ffd27a";
+    gx.font = "700 30px ui-monospace, monospace";
+    gx.textAlign = "center";
+    gx.textBaseline = "middle";
+    gx.fillText("3 - 2", 64, 26);
+    gx.fillStyle = "#7dd3fc";
+    gx.font = "600 14px ui-monospace, monospace";
+    gx.fillText("3RD  12:40", 64, 50);
+  });
+  const scoreMat = new MeshBasicMaterial({ map: scoreTex, toneMapped: false });
+  const score = new Group();
+  score.add(new Mesh(new BoxGeometry(2.8, 1.7, 2.8), new MeshStandardMaterial({ color: 0x15181d, roughness: 0.5, metalness: 0.4 })));
+  for (let k = 0; k < 4; k++) {
+    const sc = new Mesh(new PlaneGeometry(2.5, 1.4), scoreMat);
+    sc.rotation.y = (k * Math.PI) / 2;
+    sc.position.set(Math.sin((k * Math.PI) / 2) * 1.41, 0, Math.cos((k * Math.PI) / 2) * 1.41);
+    score.add(sc);
+  }
+  score.position.y = ROOF - 1.9;
+  const hang = new Mesh(new CylinderGeometry(0.06, 0.06, 3.2, 4), world.mats.mast);
+  hang.position.y = ROOF + 0.4;
+  // a line of light along the roof edge, in the event's colours
+  const glow = new Mesh(walls(oval(RX + 0.45, RZ + 0.45, 96), ROOF - 0.05, ROOF + 0.3, { smooth: true }), events.glowB);
+  events.followers.push((level) => {
+    const n = nightOf(level);
+    bandMat.color.setScalar(0.75 + 0.6 * n);
+    iceMat.emissiveIntensity = 0.15 + 0.75 * n;
+  });
+  g.add(walls0, band, roof, ribs, glass, seats, ice, boards, score, hang, glow);
   return { group: g };
 }

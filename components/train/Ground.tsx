@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
-import { BufferAttribute, BufferGeometry, Float32BufferAttribute } from "three";
+import { BufferAttribute, BufferGeometry, DataTexture, Float32BufferAttribute, RedFormat, type Texture, type Vector4 } from "three";
 
-import { getCityData, getStreetMask } from "./cityData";
+import { getZoning } from "./cityData";
 import { district } from "./cityModel";
 import { PARKS } from "./sites";
 import { groundAt, inWater, sdfAt, terrainRaster } from "./terrain";
@@ -12,12 +12,10 @@ import { useWorld } from "./world";
 /**
  * The city ground: the frozen terrain raster as one mesh, indexed on the same triangles groundAt interpolates
  * (each cell split along b–c), with a hillshade in the vertex colours so slopes read, sand at the shore and an
- * 8-unit skirt that hides the seam against the far terrain. UVs keep the street tile's original anchor; a `street`
- * weight per vertex says where the tile shows at all (see getStreetMask).
+ * 8-unit skirt that hides the seam against the far terrain. UVs keep the street tile's original anchor; the material
+ * shows the tile only on city blocks (see getZoning).
  */
-let streetMs = 0;
-
-function buildGround(stride: number, streets: (x: number, z: number) => number): BufferGeometry {
+function buildGround(stride: number): BufferGeometry {
   const { grid: g0, hf: hf0 } = terrainRaster();
   // the low-end budget draws every other raster vertex (a quarter of the triangles)
   const g = { ...g0, step: g0.step * stride, nx: Math.floor((g0.nx - 1) / stride) + 1, nz: Math.floor((g0.nz - 1) / stride) + 1 };
@@ -79,12 +77,6 @@ function buildGround(stride: number, streets: (x: number, z: number) => number):
     col[k * 3 + 2] = shade * (1 - 0.2 * sand);
   }
   geo.setAttribute("color", new BufferAttribute(col, 3));
-  // where the street tile shows (the material blends it into plain ground elsewhere); the skirt gets none
-  const st = new Float32Array(n + ring);
-  const t0 = performance.now();
-  for (let k = 0; k < n; k++) st[k] = streets(pos[k * 3], pos[k * 3 + 2]);
-  streetMs = performance.now() - t0;
-  geo.setAttribute("street", new BufferAttribute(st, 1));
   return geo;
 }
 
@@ -160,12 +152,20 @@ function forestFloor(): BufferGeometry {
 
 export function Ground() {
   const { mats, lowEnd } = useWorld();
-  const geo = useMemo(() => {
-    const g = buildGround(lowEnd ? 2 : 1, getStreetMask(lowEnd));
-    // reported with the city's build phases
-    getCityData(lowEnd).phases.streets = Math.round(streetMs);
-    return g;
+  const geo = useMemo(() => buildGround(lowEnd ? 2 : 1), [lowEnd]);
+  // the city blocks, one texel each, for the ground shader's street test
+  const zone = useMemo(() => {
+    const z = getZoning(lowEnd);
+    const tex = new DataTexture(z.data, z.ni, z.nj, RedFormat);
+    tex.needsUpdate = true;
+    return { tex, box: [z.i0, z.j0, z.ni, z.nj] as const };
   }, [lowEnd]);
+  useEffect(() => {
+    const u = mats.ground.userData as { zone: { value: Texture }; zoneBox: { value: Vector4 } };
+    u.zone.value = zone.tex;
+    u.zoneBox.value.set(...zone.box);
+    return () => zone.tex.dispose();
+  }, [mats, zone]);
   const lawns = useMemo(() => PARKS.map((p) => lawn(p.x, p.z, p.r)), []);
   const forest = useMemo(() => forestFloor(), []);
   useEffect(

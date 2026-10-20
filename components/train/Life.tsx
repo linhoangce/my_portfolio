@@ -22,7 +22,7 @@ import {
 } from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
-import { Rng } from "./cityModel";
+import { carPose, Rng } from "./cityModel";
 import { getLifeData } from "./cityData";
 import { PEOPLE_VARIANTS, SEA } from "./constants";
 import { merged } from "./merge";
@@ -37,6 +37,7 @@ const m4 = new Matrix4();
 const q = new Quaternion();
 const one = new Vector3(1, 1, 1);
 const p = new Vector3();
+const pose = { x: 0, z: 0, yaw: 0 };
 
 /** kind: 0 SeaBus, 1 sailboat, 2 motor yacht. */
 type Boat = { x: number; z: number; dir: 1 | -1; speed: number; kind: number; k: number };
@@ -165,13 +166,10 @@ export function Life() {
     const dt = Math.min(delta, 0.05);
     const cam = state.camera.position;
     data.cars.forEach((c, i) => {
-      c.pos += c.dir * c.speed * dt;
-      if (c.pos > c.b) c.pos = c.a + (c.pos - c.b);
-      else if (c.pos < c.a) c.pos = c.b - (c.a - c.pos);
-      const x = c.axis === "x" ? c.pos : c.line + c.off;
-      const z = c.axis === "x" ? c.line + c.off : c.pos;
-      p.set(x, groundAt(x, z), z);
-      q.setFromAxisAngle(UP, c.axis === "x" ? (c.dir > 0 ? 0 : Math.PI) : c.dir > 0 ? -Math.PI / 2 : Math.PI / 2);
+      c.u += c.speed * dt;
+      carPose(c, pose);
+      p.set(pose.x, groundAt(pose.x, pose.z), pose.z);
+      q.setFromAxisAngle(UP, pose.yaw);
       m4.compose(p, q, one);
       built.carMesh.setMatrixAt(i, m4);
       built.carTrim.setMatrixAt(i, m4);

@@ -144,10 +144,10 @@ export function CameraRig() {
       // chase: the base offset as angles relative to the train, plus the visitor's orbit (yaw unbounded) and zoom
       const dir = sim.travelDir;
       const c = phone ? CAM.chasePhone : CAM.chase;
-      // pull back and up as the train gets going, so the whole set and the line ahead are in view on the move
+      // pull back and well up as the train gets going: on the move the view looks down the line over the city ahead
       const going = Math.min(1, Math.abs(sim.v) / 15);
-      const back = c.back + going * 13 * (phone ? 1.2 : 1) + Math.abs(sim.v) * 0.12;
-      const up = c.up + going * 4;
+      const back = c.back + going * 16 * (phone ? 1.2 : 1) + Math.abs(sim.v) * 0.12;
+      const up = c.up + going * 12;
       // ride on the right of the train unless a landmark is there and the left is clear, then swing over
       const blocked = (side: number) => {
         tmp.copy(head).addScaledVector(fA.r, c.right * 1.6 * side * dir).addScaledVector(fA.t, -back * dir * 0.8);
@@ -163,13 +163,13 @@ export function CameraRig() {
       h.copy(fA.t).multiplyScalar(-dir * Math.cos(yaw)).addScaledVector(fA.r, Math.sin(yaw) * dir).setY(0).normalize();
       want.copy(head).addScaledVector(h, Math.cos(pitch) * dist).addScaledVector(UP, Math.sin(pitch) * dist);
       wantLook.copy(head).addScaledVector(fA.t, -(10 + going * 6) * dir).addScaledVector(UP, 1.6);
-      // the view drifts back behind the train after 3 s without input, once it is moving
+      // the view swings back behind the train after 3 s without input, once it is moving; the height and distance a
+      // visitor chose stay as they are
       if (!sim.dragging && !sim.held) {
         sim.orbit.idle += dt;
         if (sim.orbit.idle > 3 && Math.abs(sim.v) > 4) {
           const k = Math.exp(-dt * CAM.yawDecay);
           sim.orbit.yaw = Math.atan2(Math.sin(sim.orbit.yaw), Math.cos(sim.orbit.yaw)) * k;
-          sim.orbit.pitch *= k;
         }
       }
     }

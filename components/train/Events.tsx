@@ -7,7 +7,6 @@ import {
   AdditiveBlending,
   BufferAttribute,
   BufferGeometry,
-  CanvasTexture,
   Color,
   InstancedMesh,
   Matrix4,
@@ -31,29 +30,12 @@ import { useTrain } from "./store";
 import { groundAt, inWater, surfaceAt } from "./terrain";
 import { frameAt, makeFrame, STATION_XZ, stationS, UP } from "./track";
 import { SPECIES } from "./trees/species";
+import { dotTexture } from "./textures";
 import { useWorld } from "./world";
 
 const VIOLET = new Color(0xa78bfa);
 const col = new Color();
 
-let dotTex: CanvasTexture | null = null;
-/** A soft round dot, so points read as lights and petals rather than square pixels. */
-function dot(): CanvasTexture {
-  if (dotTex) return dotTex;
-  const c = document.createElement("canvas");
-  c.width = c.height = 64;
-  const g = c.getContext("2d");
-  if (g) {
-    const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-    gr.addColorStop(0, "rgba(255,255,255,1)");
-    gr.addColorStop(0.35, "rgba(255,255,255,0.85)");
-    gr.addColorStop(1, "rgba(255,255,255,0)");
-    g.fillStyle = gr;
-    g.fillRect(0, 0, 64, 64);
-  }
-  dotTex = new CanvasTexture(c);
-  return dotTex;
-}
 
 /** Points with per-point colours (string lights, diyas, garlands, fireworks, petals). */
 function points(n: number, size: number, additive: boolean): { pts: Points; pos: Float32Array; colour: Float32Array } {
@@ -62,7 +44,7 @@ function points(n: number, size: number, additive: boolean): { pts: Points; pos:
   const g = new BufferGeometry();
   g.setAttribute("position", new BufferAttribute(pos, 3));
   g.setAttribute("color", new BufferAttribute(colour, 3));
-  const pts = new Points(g, new PointsMaterial({ size, map: dot(), vertexColors: true, transparent: true, alphaTest: additive ? 0 : 0.2, depthWrite: false, toneMapped: !additive, blending: additive ? AdditiveBlending : NormalBlending }));
+  const pts = new Points(g, new PointsMaterial({ size, map: dotTexture(), vertexColors: true, transparent: true, alphaTest: additive ? 0 : 0.2, depthWrite: false, toneMapped: !additive, blending: additive ? AdditiveBlending : NormalBlending }));
   pts.frustumCulled = false;
   pts.visible = false;
   return { pts, pos, colour };

@@ -466,6 +466,87 @@ function experience(c: Ctx, world: World): Partial<BuiltSet> {
   };
 }
 
+/**
+ * A departures screen for a stop: the Expo Line badge, the stop and the clock, then the next trains each way counting
+ * down (a train every six minutes in each direction, a minute every 20 s of ride time). Redrawn only when it changes.
+ */
+function trainBoard(stop: string): { tex: CanvasTexture; tick: (t: number) => void } {
+  const W = 1024;
+  const H = 500;
+  const cv = document.createElement("canvas");
+  cv.width = W;
+  cv.height = H;
+  const g = cv.getContext("2d");
+  const tex = new CanvasTexture(cv);
+  tex.colorSpace = SRGBColorSpace;
+  tex.anisotropy = 4;
+  const fonts = fontOf();
+  const amber = "#ffb547";
+  const grey = "#7b8494";
+  let last = "";
+  const tick = (t: number) => {
+    if (!g) return;
+    const now = new Date();
+    const clock = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    const step = Math.floor(t / 20);
+    const west = (((2 - step) % 6) + 6) % 6;
+    const east = (((4 - step) % 6) + 6) % 6;
+    const rows: [string, number][] = [
+      ["Waterfront", west],
+      ["Patterson", east],
+      ["Waterfront", west + 6],
+      ["Patterson", east + 6],
+    ];
+    rows.sort((x, y) => x[1] - y[1]);
+    const key = clock + rows.map((r) => r.join()).join("|");
+    if (key === last) return;
+    last = key;
+    g.fillStyle = "#04060b";
+    g.fillRect(0, 0, W, H);
+    // the header: line badge, stop, clock
+    g.fillStyle = "#1f5fd0";
+    g.beginPath();
+    g.roundRect(36, 30, 150, 58, 10);
+    g.fill();
+    g.fillStyle = "#ffffff";
+    g.textBaseline = "middle";
+    g.textAlign = "center";
+    g.font = `700 36px ${fonts.mono}`;
+    g.fillText("EXPO", 111, 60);
+    g.textAlign = "left";
+    g.font = `600 44px ${fonts.sans}`;
+    g.fillText(stop, 212, 60, 560);
+    g.textAlign = "right";
+    g.fillStyle = amber;
+    g.font = `600 50px ${fonts.mono}`;
+    g.fillText(clock, W - 40, 60);
+    g.fillStyle = "#1d2533";
+    g.fillRect(36, 118, W - 72, 3);
+    g.fillStyle = grey;
+    g.font = `500 26px ${fonts.mono}`;
+    g.textAlign = "left";
+    g.fillText("NEXT TRAINS TO", 40, 160);
+    g.textAlign = "right";
+    g.fillText("DUE", W - 40, 160);
+    rows.forEach(([dest, due], k) => {
+      const y = 228 + k * 64;
+      g.fillStyle = k === 0 ? "#ffd27a" : amber;
+      g.font = `600 46px ${fonts.mono}`;
+      g.textAlign = "left";
+      g.fillText(dest, 40, y);
+      g.textAlign = "right";
+      g.fillText(due === 0 ? "Due" : `${due} min`, W - 40, y);
+    });
+    g.fillStyle = grey;
+    g.font = `500 24px ${fonts.mono}`;
+    g.textAlign = "left";
+    g.fillText("4-car trains  ·  doors open on the right", 40, H - 26);
+    tex.needsUpdate = true;
+  };
+  tick(0);
+  return { tex, tick };
+}
+
 // ------------------------------------------------------------------ 03 Awdon · Stadium–Chinatown: meeting to sprint
 function awdon(c: Ctx): Partial<BuiltSet> {
   const { mats } = c.world;
@@ -490,29 +571,32 @@ function awdon(c: Ctx): Partial<BuiltSet> {
     const geo = ribbonGeo(c, [-6, L0 + (k - 1) * 1.6, top + 1.4 + k * 0.6], [5, L0 + (k - 1) * 1.2, top + 2.2 + k * 0.4], 0.7);
     c.group.add(new Mesh(geo, m));
   });
-  // the approval gate and the sprint board: three columns of cards
+  // the approval gate
   const gate = glowMat(0x34d399, 0.6);
   c.add(gate, new BoxGeometry(0.25, 4.2, 0.25), c.L(1.5, L0 - 2.6, top + 2.1));
   c.add(gate, new BoxGeometry(0.25, 4.2, 0.25), c.L(1.5, L0 + 2.6, top + 2.1));
   c.add(gate, new BoxGeometry(5.45, 0.25, 0.25), c.L(1.5, L0, top + 4.2));
-  c.add(new MeshStandardMaterial({ color: 0x1b2230, roughness: 0.6 }), new BoxGeometry(0.4, 5.6, 9), c.L(9.5, L0, top + 2.8), [0, Math.PI / 2, 0]);
-  const cards = new InstancedMesh(new BoxGeometry(2.2, 0.75, 0.1), new MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.25, roughness: 0.5 }), 12);
-  const cardCols = [0xa78bfa, 0x7dd3fc, 0x34d399];
-  const m4 = new Matrix4();
-  for (let k = 0; k < 12; k++) {
-    const col = k % 3;
-    const row = Math.floor(k / 3);
-    m4.makeTranslation(...c.L(9.2, L0 + (col - 1) * 2.8, top + 1.2 + row * 1.1));
-    cards.setMatrixAt(k, m4);
-    cards.setColorAt(k, new Color(cardCols[col]));
+  // a two-sided departures screen on two legs: the line, the stop and the time, then the next trains each way
+  const zs = c.L(1, 0, 0)[2];
+  const bezel = new MeshStandardMaterial({ color: 0x15181d, roughness: 0.45, metalness: 0.5 });
+  c.add(bezel, new BoxGeometry(0.42, 4.5, 8.8), c.L(9.5, L0, top + 3.65), [0, Math.PI / 2, 0]);
+  for (const s of [-1, 1]) c.add(bezel, new BoxGeometry(0.3, 1.4, 0.3), c.L(9.5, L0 + s * 3.4, top + 0.7));
+  const board = trainBoard(stations[c.i].name);
+  const screenMat = new MeshBasicMaterial({ map: board.tex, toneMapped: false });
+  for (const face of [-1, 1]) {
+    const m = new Mesh(new PlaneGeometry(8.4, 4.1), screenMat);
+    m.position.set(...c.L(9.5 + face * 0.22, L0, top + 3.65));
+    // a plane faces +z, and local z runs along the track as a × zs
+    m.rotation.y = face * zs > 0 ? 0 : Math.PI;
+    c.group.add(m);
   }
-  c.group.add(cards);
   return {
     anchors: [new Vector3(...c.L(-9, L0, top + 5.4)), new Vector3(...c.L(9.5, L0, top + 6.4)), new Vector3(...c.L(-3, L0 - 2, top + 3.6))],
     focus: new Vector3(...c.L(0, L0 - 4, top + 3)),
     update: (t) => {
       flow.offset.x = -t * 0.25;
       gate.emissiveIntensity = 0.6 + Math.max(0, Math.sin(t * 1.3)) ** 8 * 3;
+      board.tick(t);
     },
     shot: { from: [-56, 66, 8], to: [-24, 58, 22], look: [0, 20, 4] },
   };
@@ -907,22 +991,7 @@ function contactSet(c: Ctx): Partial<BuiltSet> {
     [6, L0 + 5],
   ], deck - 0.25, 0.3);
   for (const s of [-1, 1]) c.add(mats.timber, new BoxGeometry(0.15, 1, 16), c.L(0, L0 + s * 5.9, deck + 0.75), [0, 0, 0]);
-  // tall cedars and firs around the deck
-  const bark = new MeshStandardMaterial({ color: 0x6a4a36, roughness: 1 });
-  const needles = new MeshStandardMaterial({ color: 0x264b35, roughness: 0.9, flatShading: true });
-  const ring: [number, number, number][] = [
-    [-13, L0 - 6, 1.1],
-    [-12, L0 + 4, 1.3],
-    [13, L0 - 5, 1.2],
-    [12, L0 + 5, 1.4],
-    [-6, L0 - 11, 1.0],
-    [7, L0 - 12, 0.9],
-  ];
-  for (const [a, l, s] of ring) {
-    const gy = c.G(a, l);
-    c.add(bark, new CylinderGeometry(0.35 * s, 0.6 * s, 22 * s, 8), c.L(a, l, gy + 11 * s));
-    for (let k = 0; k < 4; k++) c.add(needles, new ConeGeometry((4.2 - k * 0.8) * s, 5 * s, 8), c.L(a, l, gy + (8 + k * 3.4) * s));
-  }
+  // the stand of cedar, fir and hemlock round the deck is planted by the tree system (SET_TREES in zones.ts)
   // the light sculpture
   const fonts = fontOf();
   const tex = canvasTex(1024, 256, (gx) => {

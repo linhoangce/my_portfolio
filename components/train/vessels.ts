@@ -229,10 +229,24 @@ export function quadcopter(): BufferGeometry {
   return merge(parts);
 }
 
-/** The drones' running lights: a white one forward, a red one aft (emissive, lit after dark). */
+/**
+ * The drones' lights (nose along +z, port +x): red under the two port motors, green under the starboard ones, a white
+ * light at the nose and the anti-collision strobe on top, which the scene flashes.
+ */
 export function quadcopterLights(): BufferGeometry {
-  return merge([box(0.14, 0.08, 0.06, 0, -0.04, 0.47, 0xffffff), box(0.14, 0.08, 0.06, 0, -0.04, -0.47, 0xff3b30)]);
+  const parts: BufferGeometry[] = [box(0.16, 0.1, 0.08, 0, -0.04, 0.47, 0xffffff)];
+  for (const sz of [1, -1]) {
+    parts.push(box(0.2, 0.1, 0.2, 0.68, -0.03, sz * 0.68, 0xff2a1f), box(0.2, 0.1, 0.2, -0.68, -0.03, sz * 0.68, 0x22e06a));
+  }
+  return merge(parts);
 }
+
+/** Where the drones' lights sit, for the points that keep them visible from far off: port, starboard, strobe. */
+export const DRONE_LIGHT_POINTS: [number, number, number, number][] = [
+  [0.68, -0.03, 0, 0xff2a1f],
+  [-0.68, -0.03, 0, 0x22e06a],
+  [0, 0.26, 0, 0xffffff],
+];
 
 /* ------------------------------------------------------------------ lights after dark */
 

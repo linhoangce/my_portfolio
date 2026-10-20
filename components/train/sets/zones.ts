@@ -63,3 +63,27 @@ export function inSetZone(x: number, z: number, pad = 0): boolean {
   }
   return false;
 }
+
+/** World ground position of a point in stop i's station frame (along the track, lateral toward the set side). */
+export function fromStation(i: number, a: number, l: number): [number, number] {
+  const fr = frames[i];
+  return [fr.x + fr.tx * a + fr.rx * l * SET_SIDE[i], fr.z + fr.tz * a + fr.rz * l * SET_SIDE[i]];
+}
+
+/**
+ * Trees a set stands among, planted by the tree system so they match the forest round them (bark, needles, snow):
+ * Contact's lookout sits in a stand of cedar, fir and hemlock at the edge of Central Park. Heights are in world units.
+ */
+export const SET_TREES: { i: number; a: number; l: number; h: number; sp: "cedar" | "fir" | "hemlock" }[] = [
+  { i: 9, a: -13, l: 20, h: 24, sp: "cedar" },
+  { i: 9, a: -12, l: 30, h: 28, sp: "fir" },
+  { i: 9, a: 13, l: 21, h: 26, sp: "fir" },
+  { i: 9, a: 12, l: 31, h: 30, sp: "cedar" },
+  { i: 9, a: -6, l: 15, h: 21, sp: "hemlock" },
+  { i: 9, a: 7, l: 14, h: 19, sp: "fir" },
+  // the establishing shot looks in from behind the deck: nothing stands on its line
+  { i: 9, a: -22, l: 40, h: 27, sp: "fir" },
+  { i: 9, a: 22, l: 41, h: 25, sp: "hemlock" },
+  { i: 9, a: -20, l: 26, h: 22, sp: "hemlock" },
+  { i: 9, a: 20, l: 27, h: 23, sp: "cedar" },
+];

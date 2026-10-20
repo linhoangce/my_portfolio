@@ -75,16 +75,63 @@ export function district(x: number, z: number): District {
 }
 
 /* ------------------------------------------------------------------ traffic */
-export type CarRun = { axis: "x" | "z"; line: number; a: number; b: number; pos: number; dir: 1 | -1; speed: number; off: number };
+/**
+ * A car on a street's circuit: out along one lane, a U-turn at the end of the street, back along the other and round
+ * again. `u` is its place on the circuit; every car on a street shares one speed, so they stay evenly spaced.
+ */
+export type CarRun = { axis: "x" | "z"; line: number; half: number; a: number; b: number; u: number; speed: number };
 
-/** Every street is cut into runs of dry land; cars loop inside a run, one speed per run and direction, evenly spaced, so they never meet. */
-export function buildCars(rng: Rng, CAR_N: number, streets: (x: number, z: number) => number): CarRun[] {
+/** Where a car is on its circuit: world x, z and the yaw that turns the body (built nose along +x) to its heading. */
+export function carPose(c: CarRun, out: { x: number; z: number; yaw: number }): void {
+  const L = c.b - c.a;
+  const R = c.half;
+  const turn = Math.PI * R;
+  const P = 2 * L + 2 * turn;
+  const u = ((c.u % P) + P) % P;
+  // the outward lane keeps to the right: south of an east–west line, west of a north–south one
+  const latF = c.axis === "x" ? c.half : -c.half;
+  let along: number;
+  let lat: number;
+  let da: number;
+  let dl: number;
+  if (u < L) {
+    along = c.a + u;
+    lat = latF;
+    da = 1;
+    dl = 0;
+  } else if (u < L + turn) {
+    const t = (u - L) / R;
+    along = c.b + R * Math.sin(t);
+    lat = latF * Math.cos(t);
+    da = R * Math.cos(t);
+    dl = -latF * Math.sin(t);
+  } else if (u < 2 * L + turn) {
+    along = c.b - (u - L - turn);
+    lat = -latF;
+    da = -1;
+    dl = 0;
+  } else {
+    const t = (u - 2 * L - turn) / R;
+    along = c.a - R * Math.sin(t);
+    lat = -latF * Math.cos(t);
+    da = -R * Math.cos(t);
+    dl = latF * Math.sin(t);
+  }
+  const dx = c.axis === "x" ? da : dl;
+  const dz = c.axis === "x" ? dl : da;
+  out.x = c.axis === "x" ? along : c.line + lat;
+  out.z = c.axis === "x" ? c.line + lat : along;
+  out.yaw = Math.atan2(-dz, dx);
+}
+
+/** Every street the ground shows is cut into runs (dry land, clear of parks and monuments); cars circle each run. */
+export function buildCars(rng: Rng, CAR_N: number, streets: (x: number, z: number) => boolean): CarRun[] {
   type Line = { axis: "x" | "z"; line: number; half: number; lo: number; hi: number };
   const lines: Line[] = [];
   // the north–south local streets are back lanes (see the ground tile): traffic keeps to the arterials there
   for (let i = BI0; i <= BI1; i++) if (arterialX(i)) lines.push({ axis: "z", line: streetX(i), half: 1.3, lo: -60, hi: 810 });
   for (let j = BJ0; j <= BJ1; j++) lines.push({ axis: "x", line: streetZ(j), half: arterialZ(j) ? 1.3 : 0.8, lo: -310, hi: 890 });
-  const blocked = (x: number, z: number) => inWater(x, z) || inLandmark(x, z, 1) || inPark(x, z) || streets(x, z) < 0.5;
+  const blocked = (x: number, z: number) => inWater(x, z) || inLandmark(x, z, 1) || inPark(x, z) || !streets(x, z);
   type Run = { axis: "x" | "z"; line: number; half: number; a: number; b: number };
   const runs: Run[] = [];
   for (const L of lines) {
@@ -100,28 +147,16 @@ export function buildCars(rng: Rng, CAR_N: number, streets: (x: number, z: numbe
       }
     }
   }
-  const totalLen = runs.reduce((t, r) => t + (r.b - r.a), 0);
+  const circuit = (r: Run) => 2 * (r.b - r.a) + 2 * Math.PI * r.half;
+  const total = runs.reduce((t, r) => t + circuit(r), 0);
   const cars: CarRun[] = [];
   for (const r of runs) {
-    for (const dir of [1, -1] as const) {
-      const n = Math.max(1, Math.round((((r.b - r.a) / totalLen) * CAR_N) / 2));
-      const spacing = (r.b - r.a) / n;
-      if (spacing < 9) continue;
-      const hv = Math.sin(r.line * 12.9898 + dir * 78.233) * 43758.5453;
-      const speed = 6 + (hv - Math.floor(hv)) * 7;
-      for (let k = 0; k < n && cars.length < CAR_N; k++) {
-        cars.push({
-          axis: r.axis,
-          line: r.line,
-          a: r.a,
-          b: r.b,
-          pos: r.a + spacing * (k + 0.5 * rng.next()),
-          dir,
-          speed,
-          off: r.half * dir * (r.axis === "x" ? 1 : -1),
-        });
-      }
-    }
+    const P = circuit(r);
+    const n = Math.min(Math.max(1, Math.round((P / total) * CAR_N)), Math.floor(P / 9));
+    const hv = Math.sin(r.line * 12.9898 + r.a * 78.233) * 43758.5453;
+    const speed = 6 + (hv - Math.floor(hv)) * 7;
+    const u0 = rng.next() * P;
+    for (let k = 0; k < n && cars.length < CAR_N; k++) cars.push({ axis: r.axis, line: r.line, half: r.half, a: r.a, b: r.b, u: u0 + (P * k) / n, speed });
   }
   return cars;
 }
@@ -143,7 +178,7 @@ export type Person = {
 };
 
 /** Fourteen per station on both platforms, the rest walking the sidewalks within 70 units of the line. */
-export function buildPeople(rng: Rng, PEOPLE_N: number, streets: (x: number, z: number) => number): { people: Person[]; counts: number[] } {
+export function buildPeople(rng: Rng, PEOPLE_N: number, streets: (x: number, z: number) => boolean): { people: Person[]; counts: number[] } {
   const people: Person[] = [];
   const counts = new Array<number>(PEOPLE_VARIANTS).fill(0);
   const add = (h: Omit<Person, "v" | "k">) => {
@@ -181,11 +216,11 @@ export function buildPeople(rng: Rng, PEOPLE_N: number, streets: (x: number, z: 
     const x = axis === "x" ? pos : line + side;
     const z = axis === "x" ? line + side : pos;
     const d = trackDist(x, z);
-    if (d < 9 || d > 70 || inWater(x, z) || inLandmark(x, z, 2) || inPark(x, z) || streets(x, z) < 0.5) continue;
+    if (d < 9 || d > 70 || inWater(x, z) || inLandmark(x, z, 2) || inPark(x, z) || !streets(x, z)) continue;
     const open = (a: number) => {
       const ax = axis === "x" ? a : x;
       const az = axis === "x" ? z : a;
-      return !inWater(ax, az) && !inLandmark(ax, az, 1) && !inPark(ax, az) && streets(ax, az) >= 0.5;
+      return !inWater(ax, az) && !inLandmark(ax, az, 1) && !inPark(ax, az) && streets(ax, az);
     };
     let lo = pos;
     let hi = pos;

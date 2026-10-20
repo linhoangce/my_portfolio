@@ -26,8 +26,8 @@ export const LANDMARK_DEFS: LandmarkDef[] = [
   // Canada Place out on its pier over the inlet, the Convention Centre on the shore to the west (they overlapped)
   { key: "canadaPlace", x: -40, z: -76, r: 26, h: 22, margin: 6, lotR: 30 },
   { key: "convention", x: -88, z: -46, r: 20, h: 11, margin: 6, lotR: 20 },
-  { key: "bcPlace", x: -6, z: 122, r: 38, h: 26, margin: 6, lotR: 38 },
-  { key: "rogers", x: 52, z: 134, r: 19, h: 12, margin: 7, lotR: 19 },
+  { key: "bcPlace", x: -14, z: 130, r: 48, h: 47, margin: 6, lotR: 48 },
+  { key: "rogers", x: 54, z: 134, r: 22, h: 13, margin: 7, lotR: 22 },
   { key: "scienceWorld", x: 68.3, z: 155.7, r: 12, h: 24, margin: 8, lotR: 13 },
   // smaller monuments (Nominatim positions); the cauldron and the orca stand beside the Convention Centre
   { key: "gate", x: 55.2, z: 67.4, r: 4.5, h: 9, margin: 10, lotR: 6 },

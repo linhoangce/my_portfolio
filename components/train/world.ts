@@ -9,6 +9,7 @@ import {
   BufferAttribute,
   BufferGeometry,
   Color,
+  DataTexture,
   DirectionalLight,
   FogExp2,
   HemisphereLight,
@@ -22,12 +23,14 @@ import {
   PointLight,
   Points,
   PointsMaterial,
+  RedFormat,
   type Scene,
   ShaderMaterial,
   SphereGeometry,
   type SpotLight,
   type Texture,
   Vector3,
+  Vector4,
   type WebGLRenderer,
   type IUniform,
 } from "three";
@@ -38,10 +41,10 @@ import { Rng } from "./cityModel";
 import { createEventLights, type EventLights } from "./eventLights";
 import type { Season } from "./lookTypes";
 import type { LookTargets } from "./lookModel";
-import { fernTexture, groundTexture, interiorTextures, personTexture, streetLightTexture } from "./textures";
+import { groundTexture, hedgeTexture, interiorTextures, personTexture, sleeperTexture, streetLightTexture } from "./textures";
 import { paintTreeAtlas } from "./trees/atlas";
 import { createTreeShading, type TreeShading } from "./trees/treeMaterial";
-import { PEOPLE_VARIANTS } from "./constants";
+import { GRID, PEOPLE_VARIANTS } from "./constants";
 
 export type SkyUniforms = { top: IUniform<Color>; hor: IUniform<Color> };
 
@@ -74,10 +77,13 @@ export type World = {
     /** The 2100 kit: white U-girder and Y piers, planters and hanging ferns, glass panes, timber, living roofs. */
     girder: MeshStandardMaterial;
     planter: MeshStandardMaterial;
+    /** The clipped hedge on each planter box, the dark track slab and the sleepers under the rails. */
+    hedge: MeshStandardMaterial;
+    bed: MeshStandardMaterial;
+    sleepers: MeshStandardMaterial;
     /** Lamp-post banners in the event's two colours; hidden when no event is on. */
     bannerA: MeshStandardMaterial;
     bannerB: MeshStandardMaterial;
-    fern: MeshStandardMaterial;
     pane: MeshStandardMaterial;
     timber: MeshStandardMaterial;
     roofGreen: MeshStandardMaterial;
@@ -144,27 +150,65 @@ export function createWorld(gl: WebGLRenderer, scene: Scene, lowEnd: boolean): W
   ground.emissiveMap = streetLightTexture();
   ground.emissive.set(0xffffff);
   ground.emissiveIntensity = 0;
-  // the street tile and its lights show only where the vertex `street` weight says the city is; elsewhere plain
-  // ground (grass by day, near-black by night), whose colour applyLook sets with the map
+  // the street tile and its lights show only on city blocks and the streets that border them (the zoning texture,
+  // one texel per block, set by the Ground); elsewhere plain ground (grass by day, near-black by night), whose colour
+  // applyLook sets with the map. The block test repeats getZoning's `shown`.
   const groundPlain = { value: new Color(0x10161f) };
+  const groundZone = { value: new DataTexture(new Uint8Array([0]), 1, 1, RedFormat) as Texture };
+  const groundZoneBox = { value: new Vector4(0, 0, 1, 1) };
   ground.userData.plain = groundPlain;
+  ground.userData.zone = groundZone;
+  ground.userData.zoneBox = groundZoneBox;
+  const f1 = (n: number) => n.toFixed(2);
   ground.onBeforeCompile = (shader) => {
     shader.uniforms.uPlain = groundPlain;
+    shader.uniforms.uZone = groundZone;
+    shader.uniforms.uZoneBox = groundZoneBox;
     shader.vertexShader = shader.vertexShader
-      .replace("#include <common>", "#include <common>\nattribute float street;\nvarying float vStreet;")
-      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvStreet = street;");
+      .replace("#include <common>", "#include <common>\nvarying vec2 vGroundXZ;")
+      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvGroundXZ = position.xz;");
     shader.fragmentShader = shader.fragmentShader
-      .replace("#include <common>", "#include <common>\nuniform vec3 uPlain;\nvarying float vStreet;")
+      .replace(
+        "#include <common>",
+        [
+          "#include <common>",
+          "uniform vec3 uPlain;",
+          "uniform sampler2D uZone;",
+          "uniform vec4 uZoneBox;",
+          "varying vec2 vGroundXZ;",
+          "float zoneAt( vec2 c ) {",
+          "  vec2 t = c - uZoneBox.xy;",
+          "  if ( t.x < 0.0 || t.y < 0.0 || t.x >= uZoneBox.z || t.y >= uZoneBox.w ) return 0.0;",
+          "  return texture2D( uZone, ( t + 0.5 ) / uZoneBox.zw ).r;",
+          "}",
+          "float streetShown( vec2 p, float pad ) {",
+          `  vec2 c = vec2( ( p.x - ${f1(GRID.x0)} ) / ${f1(GRID.cw)}, ( p.y - ${f1(GRID.z0)} ) / ${f1(GRID.ch)} );`,
+          "  vec2 ci = floor( c );",
+          `  vec2 f = ( c - ci ) * vec2( ${f1(GRID.cw)}, ${f1(GRID.ch)} );`,
+          "  bool odd = mod( ci.y, 2.0 ) > 0.5;",
+          `  float lo = ( odd ? ${f1(GRID.artHalf)} : ${f1(GRID.locHalf)} ) + pad;`,
+          `  float hi = ( odd ? ${f1(GRID.locHalf)} : ${f1(GRID.artHalf)} ) + pad;`,
+          `  float nx = f.x < ${f1(GRID.artHalf)} + pad ? -1.0 : ( f.x > ${f1(GRID.cw - GRID.artHalf)} - pad ? 1.0 : 0.0 );`,
+          `  float nz = f.y < lo ? -1.0 : ( f.y > ${f1(GRID.ch)} - hi ? 1.0 : 0.0 );`,
+          "  float s = zoneAt( ci );",
+          "  if ( nx != 0.0 ) s = max( s, zoneAt( ci + vec2( nx, 0.0 ) ) );",
+          "  if ( nz != 0.0 ) s = max( s, zoneAt( ci + vec2( 0.0, nz ) ) );",
+          "  if ( nx != 0.0 && nz != 0.0 ) s = max( s, zoneAt( ci + vec2( nx, nz ) ) );",
+          "  return s;",
+          "}",
+        ].join("\n"),
+      )
       .replace(
         "#include <map_fragment>",
-        "#ifdef USE_MAP\n  vec4 sampledDiffuseColor = texture2D( map, vMapUv );\n  diffuseColor *= mix( vec4( uPlain, 1.0 ), sampledDiffuseColor, clamp( vStreet, 0.0, 1.0 ) );\n#endif",
+        "#ifdef USE_MAP\n  vec4 sampledDiffuseColor = texture2D( map, vMapUv );\n  diffuseColor *= mix( vec4( uPlain, 1.0 ), sampledDiffuseColor, streetShown( vGroundXZ, 0.0 ) );\n#endif",
       )
-      .replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\ntotalEmissiveRadiance *= clamp( vStreet, 0.0, 1.0 );");
+      // the lamps' pools spill a little past the kerb
+      .replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\ntotalEmissiveRadiance *= streetShown( vGroundXZ, 3.2 );");
   };
 
   const mats: World["mats"] = {
     concrete: new MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }),
-    walk: new MeshStandardMaterial({ color: 0x9b8b74, roughness: 0.95 }),
+    walk: new MeshStandardMaterial({ color: 0xa3a6aa, roughness: 0.95 }),
     plate: new MeshStandardMaterial({ color: 0x8c949c, metalness: 0.7, roughness: 0.55, envMap: envTex, envMapIntensity: 0.2 }),
     rail: new MeshStandardMaterial({ color: 0x7a6250, metalness: 0.6, roughness: 0.55, envMap: envTex, envMapIntensity: 0.25 }),
     ground,
@@ -182,11 +226,13 @@ export function createWorld(gl: WebGLRenderer, scene: Scene, lowEnd: boolean): W
     post: new MeshStandardMaterial({ color: 0x8e95a3, roughness: 0.5, metalness: 0.6 }),
     lamp: new MeshStandardMaterial({ color: 0x222222, emissive: 0xffdcb0, emissiveIntensity: 1.4 }),
     edge: [],
-    girder: new MeshStandardMaterial({ color: 0xf0f0ec, roughness: 0.55, envMap: envTex, envMapIntensity: 0.25 }),
-    planter: new MeshStandardMaterial({ color: 0x43683a, roughness: 1 }),
+    girder: new MeshStandardMaterial({ color: 0xe0e1dd, roughness: 0.6, envMap: envTex, envMapIntensity: 0.2 }),
+    planter: new MeshStandardMaterial({ color: 0xc9cbc6, roughness: 0.85 }),
+    hedge: new MeshStandardMaterial({ map: hedgeTexture(), roughness: 1, side: 2 }),
+    bed: new MeshStandardMaterial({ color: 0x3a3f46, roughness: 0.95, side: 2 }),
+    sleepers: new MeshStandardMaterial({ map: sleeperTexture(), roughness: 0.9, side: 2 }),
     bannerA: new MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, side: 2 }),
     bannerB: new MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, side: 2 }),
-    fern: new MeshStandardMaterial({ map: fernTexture(), alphaTest: 0.4, side: 2, roughness: 1 }),
     pane: new MeshStandardMaterial({ color: 0xd6e6f0, metalness: 0.1, roughness: 0.05, transparent: true, opacity: 0.26, depthWrite: false, side: 2, envMap: envTex, envMapIntensity: 1 }),
     timber: new MeshStandardMaterial({ color: 0xb98a5a, roughness: 0.7 }),
     roofGreen: new MeshStandardMaterial({ color: 0x5b8a45, roughness: 1 }),

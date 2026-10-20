@@ -1,24 +1,33 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
-import { BoxGeometry, BufferAttribute, BufferGeometry, CatmullRomCurve3, CylinderGeometry, InstancedMesh, Matrix4, PlaneGeometry, Quaternion, TubeGeometry, Vector3 } from "three";
+import { BoxGeometry, BufferAttribute, BufferGeometry, CatmullRomCurve3, CylinderGeometry, InstancedMesh, Matrix4, Quaternion, TubeGeometry, Vector3 } from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
 import { CROSS_LEN, LANE } from "./constants";
 import { CROSSOVERS, frameAt, type Frame, groundAt, LEN, LOOPS, makeFrame, SAMPLES, samples, smoothstep01, stationS, UP } from "./track";
 import { useWorld } from "./world";
 
-/** Extrude a closed 2D profile (lateral, vertical; counter-clockwise) along a run of track frames. */
-function ribbon(profile: [number, number][], list: Frame[], closed = true): BufferGeometry {
+/**
+ * Extrude a closed 2D profile (lateral, vertical; counter-clockwise) along a run of track frames. With `vLen`, UVs
+ * too: u round the profile (0 to 1), v along the track, one unit per `vLen`.
+ */
+function ribbon(profile: [number, number][], list: Frame[], closed = true, vLen = 0): BufferGeometry {
   const n = list.length;
   const m = profile.length;
   const pos = new Float32Array(n * m * 3);
+  const uv = vLen ? new Float32Array(n * m * 2) : null;
   const idx: number[] = [];
   const v = new Vector3();
+  const round: number[] = [0];
+  for (let j = 1; j < m; j++) round.push(round[j - 1] + Math.hypot(profile[j][0] - profile[j - 1][0], profile[j][1] - profile[j - 1][1]));
+  let along = 0;
   list.forEach((f, i) => {
+    if (i > 0) along += f.p.distanceTo(list[i - 1].p);
     profile.forEach(([lat, vert], j) => {
       v.copy(f.p).addScaledVector(f.r, lat).addScaledVector(UP, vert);
       pos.set([v.x, v.y, v.z], (i * m + j) * 3);
+      if (uv) uv.set([round[j] / (round[m - 1] || 1), along / vLen], (i * m + j) * 2);
     });
     if (i < n - 1) {
       for (let j = 0; j < (closed ? m : m - 1); j++) {
@@ -32,6 +41,7 @@ function ribbon(profile: [number, number][], list: Frame[], closed = true): Buff
   });
   const g = new BufferGeometry();
   g.setAttribute("position", new BufferAttribute(pos, 3));
+  if (uv) g.setAttribute("uv", new BufferAttribute(uv, 2));
   g.setIndex(idx);
   g.computeVertexNormals();
   return g;
@@ -45,14 +55,14 @@ const mergeAll = (geos: BufferGeometry[]): BufferGeometry => {
 
 const mirror = (profile: [number, number][]): [number, number][] => profile.map(([l, v]) => [-l, v] as [number, number]).reverse();
 
-/** Where the platforms sit the parapets, planters and ferns give way to the station's own edge. */
+/** Where the platforms sit the parapets and planters give way to the station's own edge. */
 const atStation = (s: number) => stationS.some((ss) => Math.abs(s - ss) < 14.5);
 
 /**
- * The 2100 guideway: a slim white U-girder with a rounded soffit, planted troughs along both outer edges with sword
- * ferns hanging over the fascia, a violet LED line under each trough, the central walkway, reaction plates, rails and
- * scissors crossovers, carried on tapered Y piers scaled to the ground; a turning loop with a turnback stop at each end.
- * Thirteen draw calls.
+ * The 2100 guideway: a slim white U-girder with a rounded soffit, a planter box with a trimmed hedge along both outer
+ * edges, a violet LED line under each, a dark track slab with sleepers under each pair of rails, the central walkway,
+ * reaction plates, rails and scissors crossovers, carried on tapered Y piers scaled to the ground; a turning loop with
+ * a turnback stop at each end. Fourteen draw calls.
  */
 export function Guideway() {
   const world = useWorld();
@@ -100,6 +110,19 @@ export function Guideway() {
       [6.3, 1.55],
     ];
     const plantersMain = [alongRuns(trough), alongRuns(mirror(trough))];
+    // a clipped hedge on each box, rounded on top (only its visible faces, on every other frame: it is soft enough)
+    const hedge: [number, number][] = [
+      [7.3, 1.5],
+      [7.34, 1.85],
+      [6.85, 2.12],
+      [6.36, 1.85],
+      [6.4, 1.5],
+    ];
+    const half = (r: Frame[]) => r.filter((_, i) => i % 2 === 0 || i === r.length - 1);
+    const hedgesMain = [mergeAll(runs.map((r) => ribbon(hedge, half(r), false, 1.6))), mergeAll(runs.map((r) => ribbon(mirror(hedge), half(r), false, 1.6)))];
+    // the track: a dark slab across the deck and sleepers under each pair of rails, top faces only
+    const bedMain = [ribbon([[6.02, 0.955], [-6.02, 0.955]], all, false)];
+    const sleepersMain = [-LANE, LANE].map((lane) => ribbon([[lane + 1.3, 0.96], [lane - 1.3, 0.96]], all, false, 0.65));
     const ledStrip: [number, number][] = [
       [6.13, -0.62],
       [6.21, -0.62],
@@ -157,6 +180,9 @@ export function Guideway() {
     // planted outer edge, rails and a reaction plate, round columns, and a turnback stop on the far side of each loop
     const loopDeck: BufferGeometry[] = [];
     const loopPlanters: BufferGeometry[] = [];
+    const loopHedges: BufferGeometry[] = [];
+    const loopBed: BufferGeometry[] = [];
+    const loopSleepers: BufferGeometry[] = [];
     const loopLeds: BufferGeometry[] = [];
     const loopPlates: BufferGeometry[] = [];
     const canopyParts: BufferGeometry[] = [];
@@ -212,6 +238,16 @@ export function Guideway() {
         [3.6, 1.55],
       ];
       loopPlanters.push(ribbon(trough, between(0, stop0)), ribbon(trough, between(stop1, loop.L)));
+      const loopHedge: [number, number][] = [
+        [4.6, 1.5],
+        [4.64, 1.85],
+        [4.15, 2.12],
+        [3.66, 1.85],
+        [3.7, 1.5],
+      ];
+      loopHedges.push(ribbon(loopHedge, between(0, stop0), false, 1.6), ribbon(loopHedge, between(stop1, loop.L), false, 1.6));
+      loopBed.push(ribbon([[3.32, 0.955], [-3.32, 0.955]], fr, false));
+      loopSleepers.push(ribbon([[1.3, 0.96], [-1.3, 0.96]], fr, false, 0.65));
       loopLeds.push(
         ribbon(
           [
@@ -307,26 +343,6 @@ export function Guideway() {
     const z = new Vector3();
     const p = new Vector3();
     const sc = new Vector3();
-    // sword ferns spilling over both troughs, facing out
-    const fernStep = lowEnd ? 2.4 : 1.3;
-    const fernMax = Math.floor(LEN / fernStep) * 2;
-    const ferns = new InstancedMesh(new PlaneGeometry(1.5, 1.9), mats.fern, fernMax);
-    const turn = new Quaternion().setFromAxisAngle(UP, Math.PI / 2);
-    let k = 0;
-    for (let s = 0; s < LEN && k < fernMax; s += fernStep) {
-      if (atStation(s)) continue;
-      frameAt(s, f);
-      for (const side of [-1, 1]) {
-        z.copy(f.r).cross(UP);
-        basis.makeBasis(f.r.clone().multiplyScalar(side), UP, z.clone().multiplyScalar(side));
-        q.setFromRotationMatrix(basis).multiply(turn);
-        const r = 0.8 + (Math.sin(s * 12.9898 + side * 78.233) * 43758.5453 - Math.floor(Math.sin(s * 12.9898 + side * 78.233) * 43758.5453)) * 0.6;
-        p.copy(f.p).addScaledVector(f.r, side * 7.42).addScaledVector(UP, 0.75);
-        m4.compose(p, q, sc.set(r, r, r));
-        ferns.setMatrixAt(k++, m4);
-      }
-    }
-    ferns.count = k;
     // tapered Y piers every 24 units: a column to just below the soffit, two arms out to its curve
     const count = Math.floor(LEN / 24);
     const col = new InstancedMesh(new CylinderGeometry(0.85, 1.25, 1, lowEnd ? 10 : 14).translate(0, 0.5, 0), mats.girder, count);
@@ -360,19 +376,22 @@ export function Guideway() {
     }
     const deck = mergeAll([...deckMain, ...loopDeck]);
     const planters = mergeAll([...plantersMain, ...loopPlanters]);
+    const hedges = mergeAll([...hedgesMain, ...loopHedges]);
+    const bed = mergeAll([...bedMain, ...loopBed]);
+    const sleepers = mergeAll([...sleepersMain, ...loopSleepers]);
     const leds = mergeAll([...ledsMain, ...loopLeds]);
     const plates = mergeAll([...platesMain, ...loopPlates]);
     const canopy = mergeAll(canopyParts);
     const panes = mergeAll(paneParts);
     const plats = mergeAll(platParts);
     const lamps = mergeAll(lampParts);
-    return { deck, planters, leds, walk, plates, rails, ferns, col, arm, canopy, panes, plats, lamps };
+    return { deck, planters, hedges, bed, sleepers, leds, walk, plates, rails, col, arm, canopy, panes, plats, lamps };
   }, [mats, lowEnd]);
 
   useEffect(
     () => () => {
-      for (const g of [built.deck, built.planters, built.leds, built.walk, built.plates, built.rails, built.canopy, built.panes, built.plats, built.lamps]) g.dispose();
-      for (const o of [built.ferns, built.col, built.arm]) {
+      for (const g of [built.deck, built.planters, built.hedges, built.bed, built.sleepers, built.leds, built.walk, built.plates, built.rails, built.canopy, built.panes, built.plats, built.lamps]) g.dispose();
+      for (const o of [built.col, built.arm]) {
         o.geometry.dispose();
         o.dispose();
       }
@@ -384,6 +403,9 @@ export function Guideway() {
     <>
       <mesh geometry={built.deck} material={mats.girder} castShadow={!lowEnd} receiveShadow />
       <mesh geometry={built.planters} material={mats.planter} receiveShadow />
+      <mesh geometry={built.hedges} material={mats.hedge} castShadow={!lowEnd} receiveShadow />
+      <mesh geometry={built.bed} material={mats.bed} receiveShadow />
+      <mesh geometry={built.sleepers} material={mats.sleepers} receiveShadow />
       <mesh geometry={built.leds} material={mats.guideLed} />
       <mesh geometry={built.walk} material={mats.walk} receiveShadow />
       <mesh geometry={built.plates} material={mats.plate} receiveShadow />
@@ -392,7 +414,6 @@ export function Guideway() {
       <mesh geometry={built.panes} material={mats.pane} />
       <mesh geometry={built.plats} material={mats.plat} receiveShadow />
       <mesh geometry={built.lamps} material={mats.lamp} />
-      <primitive object={built.ferns} />
       <primitive object={built.col} />
       <primitive object={built.arm} />
     </>
