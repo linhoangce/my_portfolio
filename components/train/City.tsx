@@ -7,6 +7,7 @@ import { InstancedBufferAttribute, InstancedMesh, Matrix4, Mesh, Quaternion, Vec
 import { getCityData } from "./cityData";
 import { HOUSE_KINDS, houseTemplate } from "./buildings/houses";
 import { UP } from "./track";
+import { skipInMirror } from "./waterMirror";
 import { useWorld } from "./world";
 
 /**
@@ -97,11 +98,16 @@ export function City() {
   });
 
   useEffect(
-    () => () => {
-      for (const h of houses) {
-        h.geometry.dispose();
-        h.dispose();
-      }
+    () => {
+      // the houses are low and many: the water mirrors the towers, not them
+      const done = skipInMirror(...houses);
+      return () => {
+        done();
+        for (const h of houses) {
+          h.geometry.dispose();
+          h.dispose();
+        }
+      };
     },
     [houses],
   );

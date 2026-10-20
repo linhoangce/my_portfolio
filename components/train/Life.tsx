@@ -29,6 +29,7 @@ import { merged } from "./merge";
 import { sdfAt } from "./terrain";
 import { groundAt, UP } from "./track";
 import { boatLights, carLights, sailboat, seabus, yacht } from "./vessels";
+import { skipInMirror } from "./waterMirror";
 import { useWorld } from "./world";
 
 const CAR_COLOURS = [0xffffff, 0xe8e8e8, 0xc9ccd1, 0x2b2f36, 0x1f2a44, 0x8c1d1d, 0x3a5fa8, 0x6b7280, 0xd9d2c3, 0x111111, 0x9ca3af, 0x7f1d1d];
@@ -141,6 +142,9 @@ export function Life() {
     });
     return { carMesh, carTrim, carLamps, peopleMeshes, boats, boatMeshes, boatLamps, boatMat, lightMat, plane, planeT: 0 };
   }, [data, mats, lowEnd]);
+
+  // cars and people are too small and low to show in the water
+  useEffect(() => skipInMirror(built.carMesh, built.carTrim, built.carLamps, ...built.peopleMeshes), [built]);
 
   useEffect(
     () => () => {

@@ -8,6 +8,7 @@ import { Rng } from "./cityModel";
 import { getTreeData } from "./cityData";
 import { UP } from "./track";
 import { SPECIES } from "./trees/species";
+import { skipInMirror } from "./waterMirror";
 import { useWorld } from "./world";
 
 /** Three planes crossed at 60°, base at the origin, normals bent outward and up so a crown shades like a volume. */
@@ -67,5 +68,6 @@ export function Trees() {
     [mesh],
   );
 
+  useEffect(() => skipInMirror(mesh), [mesh]);
   return <primitive object={mesh} />;
 }

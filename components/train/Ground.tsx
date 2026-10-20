@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
-import { BufferAttribute, BufferGeometry, DataTexture, Float32BufferAttribute, RedFormat, type Texture, type Vector4 } from "three";
+import { useEffect, useMemo, useRef } from "react";
+import { BufferAttribute, BufferGeometry, DataTexture, Float32BufferAttribute, type Group, RedFormat, type Texture, type Vector4 } from "three";
 
 import { getZoning } from "./cityData";
 import { district } from "./cityModel";
 import { PARKS } from "./sites";
 import { groundAt, inWater, sdfAt, terrainRaster } from "./terrain";
+import { skipInMirror } from "./waterMirror";
 import { useWorld } from "./world";
 
 /**
@@ -168,6 +169,9 @@ export function Ground() {
   }, [mats, zone]);
   const lawns = useMemo(() => PARKS.map((p) => lawn(p.x, p.z, p.r)), []);
   const forest = useMemo(() => forestFloor(), []);
+  // the ground, forest floor and lawns lie flat: the water mirrors what stands on them
+  const flat = useRef<Group>(null);
+  useEffect(() => skipInMirror(flat.current), []);
   useEffect(
     () => () => {
       geo.dispose();
@@ -178,11 +182,13 @@ export function Ground() {
   );
   return (
     <>
-      <mesh geometry={geo} material={mats.ground} receiveShadow />
-      <mesh geometry={forest} material={mats.forestFloor} receiveShadow />
-      {lawns.map((l, i) => (
-        <mesh key={PARKS[i].name} geometry={l} material={mats.park} receiveShadow />
-      ))}
+      <group ref={flat}>
+        <mesh geometry={geo} material={mats.ground} receiveShadow />
+        <mesh geometry={forest} material={mats.forestFloor} receiveShadow />
+        {lawns.map((l, i) => (
+          <mesh key={PARKS[i].name} geometry={l} material={mats.park} receiveShadow />
+        ))}
+      </group>
     </>
   );
 }

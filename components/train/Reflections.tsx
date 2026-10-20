@@ -8,6 +8,7 @@ import { getCityData, getZoning } from "./cityData";
 import { GRID, SEA } from "./constants";
 import { reflectRegistry, type ReflectSource } from "./reflectionSources";
 import { groundAt, sdfAt } from "./terrain";
+import { mirrorState, skipInMirror } from "./waterMirror";
 import { useWorld } from "./world";
 
 const VERT = /* glsl */ `
@@ -64,7 +65,7 @@ void main() {
   float f = fract( k );
   float stripe = smoothstep( 0.0, 0.3, f ) * smoothstep( 1.0, 0.55, f ) * step( 0.22, h );
   // strongest at the foot, fading out toward the viewer
-  float fade = ( 1.0 - vUv.y ) * smoothstep( 0.0, 0.05, vUv.y );
+  float fade = ( 1.0 - vUv.y ) * smoothstep( 0.0, 0.3, vUv.y );
   gl_FragColor = vec4( vCol * across * across * stripe * fade * uLevel * vFog, 1.0 );
 }`;
 
@@ -99,7 +100,7 @@ export function Reflections() {
         const zz = GRID.z0 + (z.j0 + j + 0.5) * GRID.ch;
         const sd = sdfAt(x, zz);
         if (sd < 0 || sd > 40) continue;
-        glow.push({ x, z: zz, y: groundAt(x, zz), h: 9, w: GRID.cw * 0.7, col: WARM[(i + j) % 2], gain: 0.4 });
+        glow.push({ x, z: zz, y: groundAt(x, zz), h: 9, w: GRID.cw * 0.35, col: WARM[(i + j) % 2], gain: 0.28 });
       }
     }
     return [...glow, ...out.slice(0, lowEnd ? 420 : 900)];
@@ -123,17 +124,19 @@ export function Reflections() {
     return { geo, mat, mesh, version: -1, sources: [] as ReflectSource[], col: null as InstancedBufferAttribute | null, tick: 0 };
   }, []);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    const done = skipInMirror(built.mesh);
+    return () => {
+      done();
       built.geo.dispose();
       built.mat.dispose();
-    },
-    [built],
-  );
+    };
+  }, [built]);
 
   useFrame((state, delta) => {
     const level = world.buildings.solid.emissiveIntensity;
-    built.mesh.visible = level > 0.02;
+    // the mirror shows the real thing where it runs; these stand in for it elsewhere
+    built.mesh.visible = level > 0.02 && !mirrorState.active;
     if (!built.mesh.visible) return;
     const u = built.mat.uniforms;
     u.uCam.value.copy(state.camera.position);

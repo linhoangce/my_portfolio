@@ -39,12 +39,13 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
 import { createBuildingMaterials, paintFacadeArrays, type BuildingMaterials } from "./buildings/facadeArray";
 import { Rng } from "./cityModel";
 import { createEventLights, type EventLights } from "./eventLights";
+import { applyMirror } from "./waterMirror";
 import type { Season } from "./lookTypes";
 import type { LookTargets } from "./lookModel";
 import { groundTexture, hedgeTexture, interiorTextures, personTexture, sleeperTexture, streetLightTexture } from "./textures";
 import { paintTreeAtlas } from "./trees/atlas";
 import { createTreeShading, type TreeShading } from "./trees/treeMaterial";
-import { GRID, PEOPLE_VARIANTS } from "./constants";
+import { GRID, PEOPLE_VARIANTS, SEA } from "./constants";
 
 export type SkyUniforms = { top: IUniform<Color>; hor: IUniform<Color> };
 
@@ -257,6 +258,8 @@ export function createWorld(gl: WebGLRenderer, scene: Scene, lowEnd: boolean): W
     carTrim: new MeshStandardMaterial({ color: 0x1a1f26, roughness: 0.35, metalness: 0.2, envMap: envTex, envMapIntensity: 0.6 }),
     people: Array.from({ length: PEOPLE_VARIANTS }, (_, v) => new MeshStandardMaterial({ map: personTexture(v + 1), alphaTest: 0.5, side: 2, roughness: 1 })),
   };
+  // the sea mirrors the city (Mirror renders the reflection on desktop)
+  applyMirror(mats.water, SEA);
 
   // lights
   const hemi = new HemisphereLight(0xffffff, 0x000000, 1);

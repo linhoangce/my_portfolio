@@ -1,9 +1,9 @@
 import { buildCity, type CityGeometry } from "./buildings/city";
 import { buildCars, buildPeople, type CarRun, type Person, Rng } from "./cityModel";
 import { GRID } from "./constants";
-import { fromStation, inSetZone, SET_TREES } from "./sets/zones";
+import { inSetZone } from "./sets/zones";
 import { inLandmark, inPark } from "./sites";
-import { groundAt, inWater, slopeAt } from "./terrain";
+import { inWater, slopeAt } from "./terrain";
 import { trackDist } from "./track";
 import { placeTrees, type TreeInst } from "./trees/placement";
 import { SPECIES, SPECIES_INDEX } from "./trees/species";
@@ -23,8 +23,9 @@ const zoneCache = new Map<boolean, Zoning>();
 export type Zoning = { data: Uint8Array; i0: number; j0: number; ni: number; nj: number; shown: (x: number, z: number, pad?: number) => boolean };
 
 /**
- * A block is city if a lot stands in it and it is not mostly park, a station's set or a monument's grounds; or if it
- * lies along the guideway next to city blocks, so the streets carry on underneath. Woods, slopes and water stay open.
+ * A block is city if a lot stands in it, or if it lies along the guideway next to city blocks, so the streets carry on
+ * underneath; but never if any of it touches a park, a station's set or a monument's grounds (streets go round
+ * those, not through them). Woods, slopes and water stay open.
  */
 export function getZoning(lowEnd: boolean): Zoning {
   let z = zoneCache.get(lowEnd);
@@ -49,19 +50,24 @@ export function getZoning(lowEnd: boolean): Zoning {
     for (let i = 0; i < ni; i++) {
       const cx = x0 + (i0 + i + 0.5) * cw;
       const cz = z0 + (j0 + j + 0.5) * ch;
-      let kept = 0;
+      // a set or a monument's grounds anywhere in the block keeps it open; parks, water and slopes by share
+      let blocked = false;
+      let park = 0;
       let open = 0;
-      for (const dx of [-14, 0, 14]) {
-        for (const dz of [-7, 0, 7]) {
+      for (const dx of [-20, -10, 0, 10, 20]) {
+        for (const dz of [-9, 0, 9]) {
           const x = cx + dx;
           const y = cz + dz;
-          if (inPark(x, y) || inLandmark(x, y, 1) || inSetZone(x, y, 2)) kept++;
+          if (inLandmark(x, y, 1) || inSetZone(x, y, 2)) blocked = true;
+          else if (inPark(x, y)) park++;
           else if (inWater(x, y) || slopeAt(x, y) > 0.32) open++;
         }
       }
+      const kept = park + (blocked ? 15 : 0);
       let city = false;
-      if (has[j * ni + i]) city = kept <= 4;
-      else if (kept + open <= 3 && trackDist(cx, cz) < 26) {
+      if (blocked) city = false;
+      else if (has[j * ni + i]) city = park <= 7;
+      else if (kept + open <= 5 && trackDist(cx, cz) < 26) {
         for (let a = -1; a <= 1 && !city; a++) for (let b = -1; b <= 1 && !city; b++) city = !!has[Math.min(nj - 1, Math.max(0, j + b)) * ni + Math.min(ni - 1, Math.max(0, i + a))];
       }
       data[j * ni + i] = city ? 255 : 0;
@@ -108,11 +114,6 @@ export function getTreeData(lowEnd: boolean): TreeInst[] {
     const city = getCityData(lowEnd);
     data = placeTrees(new Rng(4), lowEnd, city.lots);
     for (const t of city.terrace) data.push({ x: t.x, y: t.y - 0.05, z: t.z, sp: SPECIES_INDEX[t.sp], s: (t.s * 6) / SPECIES[SPECIES_INDEX[t.sp]].size[1] });
-    for (const t of SET_TREES) {
-      const [x, z] = fromStation(t.i, t.a, t.l);
-      const sp = SPECIES_INDEX[t.sp];
-      data.push({ x, y: groundAt(x, z) - 0.2, z, sp, s: t.h / SPECIES[sp].size[1] });
-    }
     treeCache.set(lowEnd, data);
   }
   return data;

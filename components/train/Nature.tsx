@@ -37,6 +37,7 @@ import { DRONE_LIGHT_POINTS, quadcopter, quadcopterLights } from "./vessels";
 import { useTrain } from "./store";
 import { groundAt, inWater, sdfAt, surfaceAt } from "./terrain";
 import { LEN, frameAt, makeFrame, UP } from "./track";
+import { skipInMirror } from "./waterMirror";
 import { useWorld } from "./world";
 
 /** A ribbon draped on the drawn ground along a polyline, `half` wide either side of a line offset by `side`. */
@@ -316,5 +317,6 @@ export function Nature() {
     built.cloudMat.color.copy(col.setHex(night.current ? 0x556070 : 0xffffff));
   });
 
+  useEffect(() => skipInMirror(built.birds, built.drones, built.droneLights, built.droneDots), [built]);
   return <primitive object={built.group} />;
 }

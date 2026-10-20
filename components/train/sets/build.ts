@@ -42,13 +42,15 @@ import {
 
 import { stations } from "@/data";
 
+import { getZoning } from "../cityData";
+
 import { merged, type Part } from "../merge";
 import { cap, type P2, walls } from "../shapes";
 import { monumentFocus } from "../monuments";
 import { groundAt } from "../terrain";
 import { frameAt, makeFrame, stationS, trackDist, UP } from "../track";
 import type { World } from "../world";
-import { SET_SIDE, STATION_FRAMES } from "./zones";
+import { fromStation, SET_SIDE, SET_TREES, STATION_FRAMES } from "./zones";
 
 type V3 = [number, number, number];
 export type ShotSpec = { from: V3; to: V3; look: V3; fromLook?: V3; free?: boolean };
@@ -241,29 +243,26 @@ function depart(c: Ctx): Partial<BuiltSet> {
   };
 }
 
-/**
- * A western red cedar, built rather than stacked: a flared, fluted trunk in fibrous red-brown bark, and branches that
- * droop from the trunk and sweep up at their tips, hung with flat lacy sprays (one instanced card per spray). The
- * crown is narrow and conical with a nodding leader. Everything is in the set's local frame, standing at (a, l) on
- * `base`, `height` tall, with the crown starting at `crownFrom`.
- */
-function cedar(c: Ctx, a: number, l: number, base: number, height: number, crownFrom: number): void {
-  const [cx, , cz] = c.L(a, l, 0);
-  const top = base + height;
-  // bark: vertical fibrous strips in reds and browns
-  const barkTex = canvasTex(
+type Conifer = "cedar" | "fir" | "hemlock";
+export type StandTree = { a: number; l: number; h: number; sp: Conifer; base?: number; crownFrom?: number };
+
+/** Bark textures: the cedar's fibrous red-brown strips, the fir's deep grey-brown furrows (hemlock shares it). */
+function barkTexture(sp: Conifer): CanvasTexture {
+  const t = canvasTex(
     64,
     256,
     (g) => {
-      g.fillStyle = "#74402c";
+      const cedar = sp === "cedar";
+      g.fillStyle = cedar ? "#74402c" : "#5b4a3f";
       g.fillRect(0, 0, 64, 256);
+      const tones = cedar ? ["#8d5238", "#5c301f", "#a2643f", "#6a3825"] : ["#6e5c50", "#3e3029", "#7a6a5c", "#4a3a31"];
       for (let k = 0; k < 46; k++) {
         const x = (k * 37) % 64;
-        const w = 1 + ((k * 13) % 4);
-        g.fillStyle = ["#8d5238", "#5c301f", "#a2643f", "#6a3825"][k % 4];
+        const w = cedar ? 1 + ((k * 13) % 4) : 2 + ((k * 13) % 5);
+        g.fillStyle = tones[k % 4];
         g.beginPath();
         g.moveTo(x, 0);
-        for (let y = 0; y <= 256; y += 16) g.lineTo(x + Math.sin(y * 0.05 + k) * 1.5, y);
+        for (let y = 0; y <= 256; y += 16) g.lineTo(x + Math.sin(y * 0.05 + k) * (cedar ? 1.5 : 3), y);
         g.lineTo(x + w, 256);
         g.lineTo(x + w, 0);
         g.fill();
@@ -271,103 +270,198 @@ function cedar(c: Ctx, a: number, l: number, base: number, height: number, crown
     },
     true,
   );
-  barkTex.repeat.set(3, 7);
-  const bark = new MeshStandardMaterial({ map: barkTex, roughness: 1 });
-  const prof: Vector2[] = [];
-  for (let k = 0; k <= 24; k++) {
-    const y = (k / 24) * height;
-    // a buttressed flare at the foot, a slow taper to the leader
-    const r = 0.32 + 0.95 * (1 - y / height) ** 1.2 + 1.7 * Math.exp(-y / 1.4);
-    prof.push(new Vector2(r, y));
-  }
-  const trunk = new LatheGeometry(prof, 18);
-  const tp = trunk.attributes.position;
-  for (let i = 0; i < tp.count; i++) {
-    const x = tp.getX(i);
-    const y = tp.getY(i);
-    const z = tp.getZ(i);
-    const th = Math.atan2(z, x);
-    const k = 1 + (0.09 * Math.sin(th * 7) + 0.04 * Math.sin(th * 13 + 1)) * (0.35 + Math.exp(-y / 5));
-    tp.setXYZ(i, x * k, y, z * k);
-  }
-  trunk.computeVertexNormals();
-  c.add(bark, trunk, [cx, base - 0.3, cz]);
-  // one flat spray of scale leaves: a rachis with alternate side sprays, lacy at the edges
-  const frondTex = canvasTex(128, 80, (g) => {
+  t.repeat.set(3, 7);
+  return t;
+}
+
+/**
+ * One spray of foliage on a card: the cedar's flat scale-leaf sprays, the fir's stiff needles all round a twig,
+ * the hemlock's short soft needles in two flat ranks. In the species' greens, matched to the forest round them.
+ */
+function frondTexture(sp: Conifer): CanvasTexture {
+  return canvasTex(128, 80, (g) => {
     g.clearRect(0, 0, 128, 80);
-    const shade = (t: number) => `rgb(${Math.round(56 + 40 * t)},${Math.round(98 + 46 * t)},${Math.round(52 + 22 * t)})`;
-    for (let t = 0.04; t < 1; t += 0.055) {
-      const x = 6 + t * 116;
-      const len = 30 * (1 - t * 0.75);
-      for (const side of [-1, 1]) {
-        const ang = side * (0.9 - t * 0.35);
-        for (let u = 0; u < 1; u += 0.12) {
-          const px = x + Math.cos(ang) * len * u * 0.55;
-          const py = 40 + Math.sin(ang) * len * u;
-          g.fillStyle = shade(0.25 + u * 0.75 - t * 0.15);
-          g.beginPath();
-          g.ellipse(px, py, 4.2 * (1 - u * 0.5), 2.2, ang, 0, Math.PI * 2);
-          g.fill();
+    if (sp === "cedar") {
+      const shade = (t: number) => `rgb(${Math.round(56 + 40 * t)},${Math.round(98 + 46 * t)},${Math.round(52 + 22 * t)})`;
+      for (let t = 0.04; t < 1; t += 0.055) {
+        const x = 6 + t * 116;
+        const len = 30 * (1 - t * 0.75);
+        for (const side of [-1, 1]) {
+          const ang = side * (0.9 - t * 0.35);
+          for (let u = 0; u < 1; u += 0.12) {
+            const px = x + Math.cos(ang) * len * u * 0.55;
+            const py = 40 + Math.sin(ang) * len * u;
+            g.fillStyle = shade(0.25 + u * 0.75 - t * 0.15);
+            g.beginPath();
+            g.ellipse(px, py, 4.2 * (1 - u * 0.5), 2.2, ang, 0, Math.PI * 2);
+            g.fill();
+          }
         }
       }
+      g.strokeStyle = "#4a6b33";
+    } else {
+      const fir = sp === "fir";
+      // side twigs off the rachis, each bristling with needles
+      const greens = fir ? ["#21452f", "#2b5639", "#33603f", "#3c6b46"] : ["#2c553c", "#356046", "#3a6847", "#467653"];
+      for (let t = 0.03; t < 1; t += fir ? 0.07 : 0.06) {
+        const x = 6 + t * 116;
+        const len = (fir ? 26 : 22) * (1 - t * 0.7);
+        for (const side of [-1, 1]) {
+          const ang = side * (fir ? 0.75 : 1.1) - side * t * 0.2;
+          for (let u = 0.1; u < 1; u += fir ? 0.09 : 0.1) {
+            const px = x + Math.cos(ang) * len * u * 0.6;
+            const py = 40 + Math.sin(ang) * len * u;
+            for (const n of fir ? [-1, 1, 0] : [-1, 1]) {
+              g.strokeStyle = greens[(Math.round(u * 10) + (n + 1)) % 4];
+              g.lineWidth = fir ? 1.6 : 1.4;
+              g.beginPath();
+              g.moveTo(px, py);
+              const na = ang + n * (fir ? 0.9 : 1.4) + Math.PI * 0.5 * (n === 0 ? 0 : 0);
+              const nl = fir ? 6 : 4.5;
+              g.lineTo(px + Math.cos(na + 0.6) * nl, py + Math.sin(na + 0.6) * nl);
+              g.stroke();
+            }
+          }
+        }
+      }
+      g.strokeStyle = fir ? "#4a3a2c" : "#5a4a3a";
     }
-    g.strokeStyle = "#4a6b33";
     g.lineWidth = 2;
     g.beginPath();
     g.moveTo(2, 40);
     g.lineTo(124, 40);
     g.stroke();
   });
-  const frondMat = new MeshStandardMaterial({ map: frondTex, alphaTest: 0.45, side: DoubleSide, roughness: 0.9 });
-  const card = new PlaneGeometry(1, 0.62).rotateX(-Math.PI / 2).translate(0.5, 0, 0);
-  const limbs: Part[] = [];
-  const mats: Matrix4[] = [];
-  const m4 = new Matrix4();
+}
+
+/**
+ * A stand of conifers in three dimensions, for the trees a shot comes close to: a lathed, fluted trunk with a
+ * buttressed foot; whorls of limbs up the crown, each carrying sprays of foliage; a nodding leader. The species set
+ * the shape: the cedar broad with drooping, upturned limbs, the Douglas fir a narrow spire with level limbs, the
+ * hemlock soft with drooping tips and a deeply nodding top. One merged bark mesh per bark, one instanced mesh of
+ * sprays per species, sharing the forest's snow so they whiten with it.
+ */
+function stand(c: Ctx, trees: StandTree[]): void {
+  const barks = new Map<Conifer, MeshStandardMaterial>();
+  const barkOf = (sp: Conifer) => {
+    const key: Conifer = sp === "cedar" ? "cedar" : "fir";
+    let m = barks.get(key);
+    if (!m) {
+      m = new MeshStandardMaterial({ map: barkTexture(key), roughness: 1 });
+      barks.set(key, m);
+    }
+    return m;
+  };
+  const sprays = new Map<Conifer, Matrix4[]>();
+  const shape = {
+    cedar: { R: 5.1, droop: [0.3, 0.25], curl: 0.85, lean: 0.9, sprayS: 1.3 },
+    fir: { R: 3.9, droop: [0.1, 0.14], curl: 0.6, lean: 0.35, sprayS: 1.15 },
+    hemlock: { R: 4.3, droop: [0.36, 0.3], curl: 0.5, lean: 1.6, sprayS: 1.1 },
+  } as const;
+  // each spray is two cards crossed along its twig, one lying flat and one hanging, so the crown is as full from the
+  // side as from above
+  const card = merged([{ geo: new PlaneGeometry(1, 0.62).rotateX(-Math.PI / 2).translate(0.5, 0, 0) }, { geo: new PlaneGeometry(1, 0.5).translate(0.5, -0.14, 0) }]);
   const q = new Quaternion();
   const e = new Euler(0, 0, 0, "YZX");
-  const step = c.lowEnd ? 0.9 : 0.55;
-  const fronds = c.lowEnd ? 4 : 6;
-  const crownH = top - crownFrom;
-  let az = 0;
-  for (let y = crownFrom; y < top - 1.2; y += step) {
-    const h = (y - crownFrom) / crownH;
-    // widest low down, narrowing to the leader; the lowest branches a little shorter where they meet the canopy
-    const R = 5.1 * (1 - h) ** 0.9 * (0.75 + 0.25 * Math.min(1, h * 6)) + 0.6;
-    for (let b = 0; b < 3; b++) {
-      az += 2.39996;
-      const len = R * (0.75 + 0.3 * Math.abs(Math.sin(az * 3.1)));
-      const dx = Math.cos(az);
-      const dz = Math.sin(az);
-      // the branch: out and down, then up at the tip (droop increases down the crown)
-      const droop = 0.3 + 0.25 * (1 - h);
-      const at = (u: number): [number, number, number] => [cx + dx * len * u, y + len * (-droop * u + droop * 0.85 * u * u * u), cz + dz * len * u];
-      const p0 = at(0.05);
-      const p1 = at(0.7);
-      const mid: [number, number, number] = [(p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2, (p0[2] + p1[2]) / 2];
-      const lv = new Vector3(p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]);
-      const eu = new Euler().setFromQuaternion(q.setFromUnitVectors(new Vector3(0, 1, 0), lv.clone().normalize()));
-      limbs.push({ geo: new CylinderGeometry(0.05, 0.12, lv.length(), 5), position: mid, rotation: [eu.x, eu.y, eu.z] });
-      for (let k = 0; k < fronds; k++) {
-        const u = 0.3 + (0.7 * k) / (fronds - 1);
-        const [px, py, pz] = at(u);
-        const side = k % 2 ? 1 : -1;
-        const yaw = -az + side * (0.25 + 0.5 * ((k * 7 + b) % 3) / 3);
-        const s = (1.3 + 1.1 * (1 - u * 0.5)) * (0.7 + 0.3 * (1 - h));
-        e.set(0, yaw, -(0.25 + 0.4 * u * (1 - h)), "YZX");
-        m4.compose(new Vector3(px, py - 0.05, pz), q.setFromEuler(e), new Vector3(s, 1, s));
-        mats.push(m4.clone());
+  const m4 = new Matrix4();
+  for (const t of trees) {
+    const sh = shape[t.sp];
+    const base = t.base ?? c.G(t.a, t.l);
+    const height = t.h;
+    const crownFrom = t.crownFrom ?? base + height * (t.sp === "fir" ? 0.32 : 0.22);
+    const [cx, , cz] = c.L(t.a, t.l, 0);
+    const top = base + height;
+    const bark = barkOf(t.sp);
+    const prof: Vector2[] = [];
+    const girth = height / 36;
+    for (let k = 0; k <= 24; k++) {
+      const y = (k / 24) * height;
+      // a buttressed flare at the foot, a slow taper to the leader
+      const r = (0.32 + 0.95 * (1 - y / height) ** 1.2) * Math.max(0.55, girth) + (t.sp === "cedar" ? 1.7 : 0.9) * girth * Math.exp(-y / 1.4);
+      prof.push(new Vector2(r, y));
+    }
+    const trunk = new LatheGeometry(prof, c.lowEnd ? 10 : 14);
+    const tp = trunk.attributes.position;
+    for (let i = 0; i < tp.count; i++) {
+      const x = tp.getX(i);
+      const y = tp.getY(i);
+      const z = tp.getZ(i);
+      const th = Math.atan2(z, x);
+      const k = 1 + (0.09 * Math.sin(th * 7) + 0.04 * Math.sin(th * 13 + 1)) * (0.35 + Math.exp(-y / 5));
+      tp.setXYZ(i, x * k, y, z * k);
+    }
+    trunk.computeVertexNormals();
+    c.add(bark, trunk, [cx, base - 0.3, cz]);
+    const list = sprays.get(t.sp) ?? [];
+    sprays.set(t.sp, list);
+    const limbs: Part[] = [];
+    const step = c.lowEnd ? 0.95 : 0.5;
+    const perWhorl = c.lowEnd ? 3 : 4;
+    const fronds = c.lowEnd ? 4 : 6;
+    const crownH = top - crownFrom;
+    const scale = Math.min(1.2, Math.max(0.6, height / 30));
+    let az = t.a * 1.7 + t.l;
+    for (let y = crownFrom; y < top - 1.2; y += step) {
+      const h = (y - crownFrom) / crownH;
+      // widest low down, narrowing to the leader
+      const R = (sh.R * (1 - h) ** (t.sp === "fir" ? 1.05 : 0.9) * (0.75 + 0.25 * Math.min(1, h * 6)) + 0.5) * scale;
+      for (let b = 0; b < perWhorl; b++) {
+        az += 2.39996;
+        const len = R * (0.75 + 0.3 * Math.abs(Math.sin(az * 3.1)));
+        const dx = Math.cos(az);
+        const dz = Math.sin(az);
+        // the limb: out and down, then up at the tip (droop grows down the crown)
+        const droop = sh.droop[0] + sh.droop[1] * (1 - h);
+        const at = (u: number): [number, number, number] => [cx + dx * len * u, y + len * (-droop * u + droop * sh.curl * u * u * u), cz + dz * len * u];
+        const p0 = at(0.05);
+        const p1 = at(0.7);
+        const mid: [number, number, number] = [(p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2, (p0[2] + p1[2]) / 2];
+        const lv = new Vector3(p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]);
+        const eu = new Euler().setFromQuaternion(q.setFromUnitVectors(new Vector3(0, 1, 0), lv.clone().normalize()));
+        limbs.push({ geo: new CylinderGeometry(0.05, 0.12, lv.length(), 4), position: mid, rotation: [eu.x, eu.y, eu.z] });
+        for (let k = 0; k < fronds; k++) {
+          const u = 0.3 + (0.7 * k) / (fronds - 1);
+          const [px, py, pz] = at(u);
+          const side = k % 2 ? 1 : -1;
+          const yaw = -az + side * (0.25 + (0.5 * ((k * 7 + b) % 3)) / 3);
+          const s = (1.3 + 1.1 * (1 - u * 0.5)) * (0.7 + 0.3 * (1 - h)) * sh.sprayS * scale;
+          e.set(0, yaw, -(0.25 + 0.4 * u * (1 - h)) * sh.lean, "YZX");
+          m4.compose(new Vector3(px, py - 0.05, pz), q.setFromEuler(e), new Vector3(s, 1, s));
+          list.push(m4.clone());
+        }
       }
     }
+    // the leader, nodding over at the top (a hemlock's droops right over)
+    const nod = t.sp === "hemlock" ? 1.6 : t.sp === "fir" ? 0.2 : 0.9;
+    const lead: Vector3[] = [];
+    for (let k = 0; k <= 6; k++) lead.push(new Vector3(cx + (k / 6) ** 2 * nod, top - 1.4 + (k / 6) * 2.2 - (k / 6) ** 3 * nod * 0.7, cz));
+    limbs.push({ geo: new TubeGeometry(new CatmullRomCurve3(lead), 8, 0.09, 4, false) });
+    c.add(bark, merged(limbs));
   }
-  // the nodding leader
-  const lead: Vector3[] = [];
-  for (let k = 0; k <= 6; k++) lead.push(new Vector3(cx + (k / 6) ** 2 * 0.9, top - 1.4 + (k / 6) * 2.2 - (k / 6) ** 3 * 0.6, cz));
-  limbs.push({ geo: new TubeGeometry(new CatmullRomCurve3(lead), 8, 0.09, 5, false) });
-  c.add(bark, merged(limbs));
-  const inst = new InstancedMesh(card, frondMat, mats.length);
-  mats.forEach((m, i) => inst.setMatrixAt(i, m));
-  inst.castShadow = !c.lowEnd;
-  c.group.add(inst);
+  for (const [sp, list] of sprays) {
+    const mat = new MeshStandardMaterial({ map: frondTexture(sp), alphaTest: 0.45, side: DoubleSide, roughness: 0.9 });
+    // snow settles on the upper faces of the sprays as it does on the forest
+    const snow = c.world.trees.uniforms.uSnow;
+    mat.onBeforeCompile = (shd) => {
+      shd.uniforms.uSnow = snow;
+      shd.fragmentShader = shd.fragmentShader
+        .replace("#include <common>", "#include <common>\nuniform float uSnow;")
+        .replace(
+          "#include <normal_fragment_maps>",
+          "#include <normal_fragment_maps>\nfloat snowUp = dot( normal, normalize( ( viewMatrix * vec4( 0.0, 1.0, 0.0, 0.0 ) ).xyz ) );\ndiffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.92, 0.94, 0.97 ), uSnow * smoothstep( 0.35, 0.85, snowUp ) );",
+        );
+    };
+    const inst = new InstancedMesh(card, mat, list.length);
+    list.forEach((m, i) => inst.setMatrixAt(i, m));
+    inst.castShadow = !c.lowEnd;
+    inst.receiveShadow = true;
+    c.group.add(inst);
+  }
+}
+
+/** The atrium's western red cedar, through the oculus. */
+function cedar(c: Ctx, a: number, l: number, base: number, height: number, crownFrom: number): void {
+  stand(c, [{ a, l, h: height, sp: "cedar", base, crownFrom }]);
 }
 
 // ------------------------------------------------------------------ 01 About · Burrard: the cedar atrium
@@ -991,7 +1085,12 @@ function contactSet(c: Ctx): Partial<BuiltSet> {
     [6, L0 + 5],
   ], deck - 0.25, 0.3);
   for (const s of [-1, 1]) c.add(mats.timber, new BoxGeometry(0.15, 1, 16), c.L(0, L0 + s * 5.9, deck + 0.75), [0, 0, 0]);
-  // the stand of cedar, fir and hemlock round the deck is planted by the tree system (SET_TREES in zones.ts)
+  // a stand of cedar, fir and hemlock round the deck, in three dimensions since the shot comes close; none on a street
+  const { shown } = getZoning(c.lowEnd);
+  stand(
+    c,
+    SET_TREES.filter((t) => t.i === c.i && !shown(...fromStation(t.i, t.a, t.l), 2.5)),
+  );
   // the light sculpture
   const fonts = fontOf();
   const tex = canvasTex(1024, 256, (gx) => {

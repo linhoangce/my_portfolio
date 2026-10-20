@@ -30,6 +30,7 @@ import { useTrain } from "./store";
 import { LEN, stationS } from "./track";
 import { Train } from "./Train";
 import { Trees } from "./Trees";
+import { Mirror } from "./Mirror";
 import { Reflections } from "./Reflections";
 import { Water } from "./Water";
 import { WorldProvider } from "./WorldProvider";
@@ -62,6 +63,7 @@ export default function Scene({ onContextLost }: { onContextLost?: () => void })
         <Ground />
         <Water />
         <Reflections />
+        <Mirror />
         <Mountains />
         <City />
         <Trees />

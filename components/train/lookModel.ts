@@ -9,6 +9,7 @@ import { setTreeTargets, tickTrees } from "./trees/treeMaterial";
 
 import type { Season, Theme, Weather } from "./lookTypes";
 import type { World } from "./world";
+import { mirrorState } from "./waterMirror";
 
 type ThemeDef = {
   bg: number;
@@ -276,7 +277,8 @@ export function tickLook(world: World, dt: number, instant: boolean, dockedIdx: 
   mats.ground.emissiveIntensity = c.windows;
   mats.water.color.copy(c.water);
   // the environment map is a lit room: its light panels glare on the water after dark, so the reflection fades
-  mats.water.envMapIntensity = 0.45 - 0.4 * c.windows;
+  // (the mirror takes over where it runs)
+  mats.water.envMapIntensity = mirrorState.active ? 0 : 0.45 - 0.4 * c.windows;
   mats.mountain.color.copy(c.mountain);
   mats.concrete.color.copy(c.concrete);
   mats.plat.color.copy(c.platform);
