@@ -14,7 +14,7 @@ import type { LandmarkKey } from "./sites";
 import { useTrain } from "./store";
 import { BLOCKERS } from "./cityModel";
 import { getCityData } from "./cityData";
-import { CROSSOVERS, deckY, groundAt, LEN, profile, SAMPLES, samples, STATION_XZ, stationS } from "./track";
+import { CROSSOVERS, deckY, groundAt, LEN, LOOPS, profile, SAMPLES, samples, STATION_XZ, stationS } from "./track";
 import { useWorld } from "./world";
 
 export type TrainDebug = {
@@ -56,6 +56,8 @@ export type TrainDebug = {
   /** Static geometry for the headless checks: track samples, footprints, blockers, station points. */
   geometry: () => {
     samples: [number, number, number, number, number, number, number][];
+    /** The turning loops' centrelines (x, z), for clearance checks against every track. */
+    loops: [number, number][];
     lots: { x: number; z: number; w: number; d: number; h: number }[];
     houses: { x: number; z: number; w: number; d: number }[];
     blockers: { x: number; z: number; r: number; h: number }[];
@@ -169,6 +171,7 @@ export function Debug() {
         const city = getCityData(st().env.lowEnd);
         return {
           samples: samples.map((f) => [f.p.x, f.p.y, f.p.z, f.t.x, f.t.z, f.r.x, f.r.z]),
+          loops: [...LOOPS.near.samples, ...LOOPS.far.samples].map((f) => [f.p.x, f.p.z]),
           lots: city.lots,
           houses: city.houses.map((h) => ({ x: h.x, z: h.z, w: 7 * h.sx, d: 9 * h.sz })),
           blockers: BLOCKERS,
