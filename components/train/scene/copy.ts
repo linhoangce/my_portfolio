@@ -10,7 +10,7 @@ export type Caption = { value: string; label: string; prio: number; href?: strin
 const handle = (url: string) => url.replace(/\/$/, "").split("/").pop() ?? url;
 
 export function captionsFor(panel: SectionId): Caption[] {
-  if (panel === "experience") return roles.map((r, i) => ({ value: r.period, label: r.title, prio: i + 1 }));
+  if (panel === "experience") return roles.map((r, i) => ({ value: r.period, label: r.short ?? r.title, prio: i + 1 }));
   if (panel === "contact")
     return [
       { value: "Email", label: contact.email, prio: 1, href: `mailto:${contact.email}` },

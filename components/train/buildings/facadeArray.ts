@@ -1,5 +1,5 @@
 /**
- * Façades as one texture array: seventeen families and five roofs, each a layer of a DataArrayTexture. RGB is the
+ * Façades as one texture array: twenty-three families and five roofs, each a layer of a DataArrayTexture. RGB is the
  * painted colour and alpha a tint mask (walls take the building's tint, glass and window frames keep their own
  * colour); a second array holds the lit windows for the night, eight floors by eight bays per layer. Two materials
  * (solid and glass) read both arrays through a small shader patch, so every building in a chunk is one draw call.
@@ -37,11 +37,18 @@ export type FamilyId =
   | "fins"
   | "deco"
   | "stone"
+  | "rainscreen"
+  | "grid"
+  | "ribbon"
+  | "metal"
+  | "mullion"
+  | "exo"
   | "roof"
   | "copper"
   | "garden"
   | "shingle"
-  | "tile";
+  | "tile"
+  | "pad";
 
 /** Bay width and floor height in world units; one albedo tile = 2 bays × 2 floors. */
 export const FAMILY: Record<FamilyId, { layer: number; bay: number; floor: number; glass: boolean }> = {
@@ -67,16 +74,33 @@ export const FAMILY: Record<FamilyId, { layer: number; bay: number; floor: numbe
   deco: { layer: 15, bay: 2.2, floor: 2.0, glass: false },
   /** Beaux-Arts and Edwardian stone: tall windows under lintels and keystones, sills, coursed joints. */
   stone: { layer: 16, bay: 2.6, floor: 2.1, glass: false },
-  roof: { layer: 17, bay: 3, floor: 3, glass: false },
-  copper: { layer: 18, bay: 3, floor: 3, glass: false },
-  garden: { layer: 19, bay: 3, floor: 3, glass: false },
-  shingle: { layer: 20, bay: 3, floor: 3, glass: false },
-  tile: { layer: 21, bay: 3, floor: 3, glass: false },
+  /** Ceramic or terracotta rainscreen panels with punched windows that shift from bay to bay: today's mid-rise. */
+  rainscreen: { layer: 17, bay: 2.4, floor: 1.8, glass: false },
+  /** A deep precast concrete grid over recessed windows: the modernism of the sixties and seventies. */
+  grid: { layer: 18, bay: 2.6, floor: 1.9, glass: false },
+  /** Ribbon windows between white slab bands that run unbroken round the building. */
+  ribbon: { layer: 19, bay: 2.6, floor: 1.8, glass: false },
+  /** Standing-seam metal with tall windows in timber reveals: the Flats' studios and lofts. */
+  metal: { layer: 20, bay: 2.2, floor: 1.8, glass: false },
+  /** An office tower's vertical fins, bronze or champagne, over dark glass. */
+  mullion: { layer: 21, bay: 2.4, floor: 1.8, glass: true },
+  /** A white exoskeleton of curving diagonals over warm-lit glass, after the approved lattice tower. */
+  exo: { layer: 22, bay: 2.6, floor: 1.8, glass: true },
+  roof: { layer: 23, bay: 3, floor: 3, glass: false },
+  copper: { layer: 24, bay: 3, floor: 3, glass: false },
+  garden: { layer: 25, bay: 3, floor: 3, glass: false },
+  shingle: { layer: 26, bay: 3, floor: 3, glass: false },
+  tile: { layer: 27, bay: 3, floor: 3, glass: false },
+  pad: { layer: 28, bay: 3, floor: 3, glass: false },
 };
-const LAYERS = 22;
-const FACADE_LAYERS = 17;
+const LAYERS = 29;
+const FACADE_LAYERS = 23;
 
-type Painter = { g: CanvasRenderingContext2D; m: CanvasRenderingContext2D; S: number; wins: [number, number, number, number][] };
+/**
+ * `wins` are the window rects of a bay-floor cell (256 px) that light at night; a façade whose windows differ from
+ * bay to bay gives them per cell in `cellWins` instead, in the order `cells` paints (left to right, then down).
+ */
+type Painter = { g: CanvasRenderingContext2D; m: CanvasRenderingContext2D; S: number; wins: [number, number, number, number][]; cellWins?: [number, number, number, number][][] };
 
 function paintLayer(kind: FamilyId, P: Painter, R: Rng): void {
   const { g, m, S } = P;
@@ -162,20 +186,21 @@ function paintLayer(kind: FamilyId, P: Painter, R: Rng): void {
       P.wins.push([40, 50, 176, 130]);
     });
   } else if (kind === "balcony") {
-    both("#2e3c4c", keep, 0, 0, 512, 512);
+    both("#3d5568", keep, 0, 0, 512, 512);
     cells((x, y) => {
-      rect(g, "#3c5266", x, y + 30, 256, 150);
-      rect(g, "rgba(190,220,235,0.35)", x, y + 120, 256, 60);
+      rect(g, "#5f8399", x, y + 30, 256, 150);
+      rect(g, "rgba(200,228,240,0.4)", x, y + 120, 256, 60);
       both("#f4f2ec", wall, x, y + 180, 256, 30);
       both("#d4d0c6", wall, x, y + 210, 256, 10);
       rect(g, "#25313d", x + 126, y + 30, 4, 150);
       P.wins.push([0, 30, 126, 150], [130, 30, 126, 150]);
     });
   } else if (kind === "glass") {
+    // a neutral silver glass, so each building's tint gives its colour (blue, gold, emerald, rose)
     const gr = g.createLinearGradient(0, 0, 512 * k, 512 * k);
-    gr.addColorStop(0, "#9cc4d8");
-    gr.addColorStop(0.5, "#6f9ab4");
-    gr.addColorStop(1, "#8fb6cb");
+    gr.addColorStop(0, "#c2cad0");
+    gr.addColorStop(0.5, "#98a4ae");
+    gr.addColorStop(1, "#b4bec6");
     g.fillStyle = gr;
     g.fillRect(0, 0, S, S);
     rect(m, wall, 0, 0, 512, 512);
@@ -338,9 +363,128 @@ function paintLayer(kind: FamilyId, P: Painter, R: Rng): void {
       rect(g, "rgba(0,0,0,0.14)", x + 72, y + 218, 112, 5);
       P.wins.push([80, 58, 96, 150]);
     });
+  } else if (kind === "rainscreen") {
+    // panels in light clay (the building's tint colours them), joints staggered course to course
+    both("#e6dccf", wall, 0, 0, 512, 512);
+    for (let y = 0; y < 512; y += 64) {
+      for (let x = (y / 64) % 2 ? 0 : 64; x < 512; x += 128) rect(g, `rgba(${R.next() < 0.5 ? "255,255,255" : "0,0,0"},0.05)`, x, y, 128, 64);
+      rect(g, "rgba(0,0,0,0.12)", 0, y, 512, 2);
+      for (let x = (y / 64) % 2 ? 0 : 64; x < 512; x += 128) rect(g, "rgba(0,0,0,0.09)", x, y, 2, 64);
+    }
+    P.cellWins = [];
+    cells((x, y) => {
+      const wide = (x + y) % 512 === 0;
+      const wx = x + (wide ? 26 : x ? 112 : 64);
+      const ww = wide ? 160 : 92;
+      const wy = y + 48;
+      both("#efebe4", keep, wx - 7, wy - 7, ww + 14, 164);
+      both("#25303b", keep, wx, wy, ww, 150);
+      rect(g, "rgba(185,212,230,0.26)", wx, wy, ww, 48);
+      rect(g, "#59646e", wx + ww / 2 - 2, wy, 4, 150);
+      rect(g, "rgba(0,0,0,0.2)", wx - 7, wy + 157, ww + 14, 6);
+      P.cellWins?.push([[wx - x, wy - y, ww, 150]]);
+    });
+    P.wins.push([64, 48, 128, 150]);
+  } else if (kind === "grid") {
+    both("#ecebe6", wall, 0, 0, 512, 512);
+    for (let i = 0; i < 30; i++) rect(g, "rgba(90,80,70,0.04)", R.next() * 512, 0, 4 + R.next() * 8, 512);
+    cells((x, y) => {
+      // the reveal round each window: deep, shadowed from the top and one side
+      both("#a9a69f", wall, x + 38, y + 34, 180, 182);
+      rect(g, "rgba(0,0,0,0.28)", x + 38, y + 34, 180, 20);
+      rect(g, "rgba(0,0,0,0.18)", x + 38, y + 34, 18, 182);
+      both("#222b35", keep, x + 60, y + 58, 140, 140);
+      rect(g, "rgba(170,200,220,0.2)", x + 60, y + 58, 140, 42);
+      rect(g, "#3c4652", x + 128, y + 58, 3, 140);
+      P.wins.push([60, 58, 140, 140]);
+    });
+  } else if (kind === "ribbon") {
+    both("#f2f1ed", wall, 0, 0, 512, 512);
+    cells((x, y) => {
+      both("#4a6a80", keep, x, y + 18, 256, 156);
+      rect(g, "rgba(185,215,232,0.38)", x, y + 18, 256, 60);
+      for (let q = 0; q < 4; q++) both("#4d5d6c", keep, x + q * 64, y + 18, 3, 156);
+      // the slab edge above casts a line of shadow on the glass
+      rect(g, "rgba(0,0,0,0.25)", x, y + 18, 256, 8);
+      rect(g, "rgba(0,0,0,0.12)", x, y + 236, 256, 20);
+      P.wins.push([4, 22, 120, 148], [132, 22, 120, 148]);
+    });
+  } else if (kind === "metal") {
+    both("#cfcfcf", wall, 0, 0, 512, 512);
+    for (let x = 0; x < 512; x += 16) {
+      rect(g, "rgba(0,0,0,0.16)", x, 0, 3, 512);
+      rect(g, "rgba(255,255,255,0.2)", x + 3, 0, 2, 512);
+    }
+    P.cellWins = [];
+    cells((x, y) => {
+      const wx = x + ((x + y) % 512 === 0 ? 36 : 150);
+      const wy = y + 26;
+      both("#c07a44", keep, wx - 8, wy - 8, 86, 214);
+      both("#1f2730", keep, wx, wy, 70, 198);
+      rect(g, "rgba(170,200,225,0.25)", wx, wy, 70, 64);
+      rect(g, "#3a4450", wx, wy + 96, 70, 4);
+      P.cellWins?.push([[wx - x, wy - y, 70, 198]]);
+    });
+    P.wins.push([36, 26, 70, 198]);
+  } else if (kind === "mullion") {
+    const gr = g.createLinearGradient(0, 0, 0, S);
+    gr.addColorStop(0, "#33414e");
+    gr.addColorStop(0.5, "#24303c");
+    gr.addColorStop(1, "#2d3a47");
+    g.fillStyle = gr;
+    g.fillRect(0, 0, S, S);
+    for (let y = 0; y < 512; y += 256) {
+      rect(g, "rgba(160,195,220,0.16)", 0, y + 10, 512, 70);
+      both("#d9cdb8", wall, 0, y + 226, 512, 30);
+      rect(g, "rgba(0,0,0,0.25)", 0, y + 222, 512, 4);
+    }
+    for (let x = 0; x < 512; x += 64) {
+      both("#e6dccb", wall, x, 0, 10, 512);
+      rect(g, "rgba(0,0,0,0.3)", x + 10, 0, 5, 512);
+    }
+    cells(() => P.wins.push([16, 10, 44, 212], [80, 10, 44, 212], [144, 10, 44, 212], [208, 10, 44, 212]));
+  } else if (kind === "exo") {
+    // warm glass with the floors showing through
+    both("#c9b8a0", "#000", 0, 0, 512, 512);
+    for (let y = 0; y < 512; y += 128) {
+      rect(g, "#a8957c", 0, y + 116, 512, 12);
+      rect(g, "rgba(255,240,215,0.25)", 0, y + 10, 512, 50);
+    }
+    // the lattice: two families of curving diagonals, white, crossing into long diamonds
+    for (const ctx of [g, m]) {
+      ctx.strokeStyle = ctx === g ? "#f7f6f2" : wall;
+      ctx.lineWidth = 14 * k;
+      for (const dir of [1, -1]) {
+        for (let q = -2; q <= 2; q++) {
+          ctx.beginPath();
+          for (let y = 0; y <= 512; y += 16) {
+            const xx = q * 256 + 128 + dir * (y * 0.5 + 18 * Math.sin((y / 512) * Math.PI * 2));
+            if (y === 0) ctx.moveTo(xx * k, y * k);
+            else ctx.lineTo(xx * k, y * k);
+          }
+          ctx.stroke();
+        }
+      }
+    }
+    cells(() => P.wins.push([20, 14, 100, 100], [136, 14, 100, 100], [20, 142, 100, 100], [136, 142, 100, 100]));
   } else if (kind === "roof") {
-    both("#8a8c8d", wall, 0, 0, 512, 512);
+    // a pale membrane with solar arrays on it: rows of modules between service walks, keeping their own colour
+    both("#9a9c9d", wall, 0, 0, 512, 512);
     for (let i = 0; i < 900; i++) rect(g, `rgba(0,0,0,${R.next() * 0.08})`, R.next() * 512, R.next() * 512, 4, 4);
+    for (const [bx, by] of [
+      [24, 24],
+      [276, 276],
+    ]) {
+      for (let row = 0; row < 4; row++) {
+        for (let col = 0; col < 5; col++) {
+          const x = bx + col * 42;
+          const y = by + row * 52;
+          both("#1f2f50", keep, x, y, 38, 40);
+          rect(g, "rgba(120,150,200,0.25)", x, y, 38, 8);
+          rect(g, "#c7ccd2", x, y + 40, 38, 3);
+        }
+      }
+    }
   } else if (kind === "copper") {
     both("#5e9b86", wall, 0, 0, 512, 512);
     for (let y = 0; y < 512; y += 24) rect(g, "rgba(30,70,60,0.35)", 0, y, 512, 3);
@@ -362,6 +506,25 @@ function paintLayer(kind: FamilyId, P: Painter, R: Rng): void {
   } else if (kind === "tile") {
     both("#2f7d5a", "#404040", 0, 0, 512, 512);
     for (let x = 0; x < 512; x += 22) rect(g, "rgba(0,0,0,0.25)", x, 0, 5, 512);
+  } else if (kind === "pad") {
+    // a drone landing pad seen from above, the whole tile one pad: charcoal deck, a white circle, a white H and a
+    // ring of yellow edge marks; its corners stay plain deck, for the pad's sides and the parked drone
+    both("#3b4047", keep, 0, 0, 512, 512);
+    g.lineWidth = 16 * k;
+    g.strokeStyle = "#ecebe4";
+    g.beginPath();
+    g.arc(256 * k, 256 * k, 178 * k, 0, Math.PI * 2);
+    g.stroke();
+    rect(g, "#ecebe4", 186, 166, 36, 180);
+    rect(g, "#ecebe4", 290, 166, 36, 180);
+    rect(g, "#ecebe4", 222, 238, 68, 36);
+    g.lineWidth = 12 * k;
+    g.strokeStyle = "#f2c230";
+    g.setLineDash([26 * k, 22 * k]);
+    g.beginPath();
+    g.arc(256 * k, 256 * k, 230 * k, 0, Math.PI * 2);
+    g.stroke();
+    g.setLineDash([]);
   }
 }
 
@@ -405,11 +568,11 @@ export function paintFacadeArrays(lowEnd: boolean): FacadeArrays {
     e.fillStyle = "#000";
     e.fillRect(0, 0, E, E);
     if (L < FACADE_LAYERS) {
-      const share = kind === "dark" ? 0.4 : kind === "warehouse" ? 0.45 : kind === "pixel" || kind === "vancouver" ? 0.38 : 0.32;
+      const share = kind === "exo" ? 0.6 : kind === "dark" || kind === "mullion" ? 0.4 : kind === "warehouse" ? 0.45 : kind === "pixel" || kind === "vancouver" || kind === "ribbon" ? 0.38 : 0.32;
       const ke = E / 1024;
       for (let cy = 0; cy < 8; cy++) {
         for (let cx = 0; cx < 8; cx++) {
-          for (const [wx, wy, ww, wh] of P.wins.slice(0, 4)) {
+          for (const [wx, wy, ww, wh] of P.cellWins?.[(cy % 2) * 2 + (cx % 2)] ?? P.wins.slice(0, 4)) {
             if (R.next() < share) {
               e.fillStyle = warm[Math.floor(R.next() * warm.length)];
               e.globalAlpha = 0.65 + R.next() * 0.35;
@@ -460,18 +623,30 @@ export type BuildingMaterials = {
   house: MeshStandardMaterial;
 };
 
-/** Patch a standard material to read the arrays by the per-vertex layer, tinting only where the mask allows. */
-function patch(mat: MeshStandardMaterial, arrays: FacadeArrays, house = false): void {
+/** The sky's two colours, which the glass reflects. */
+export type SkyColours = { top: { value: Color }; hor: { value: Color } };
+
+/**
+ * Patch a standard material to read the arrays by the per-vertex layer, tinting only where the mask allows. Lit
+ * windows grow brighter with distance (a far façade's mipmaps average them with the dark wall between) and carry
+ * through the fog, so a skyline glows across the city at night. `sky` makes it glass: the sky reflected by a
+ * fresnel term (strongest at grazing angles, least on white frames), with the lit windows kept on top.
+ */
+function patch(mat: MeshStandardMaterial, arrays: FacadeArrays, house = false, sky?: SkyColours): void {
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.uFacade = { value: arrays.albedo };
     sh.uniforms.uFacadeE = { value: arrays.emissive };
+    if (sky) {
+      sh.uniforms.uSkyTop = sky.top;
+      sh.uniforms.uSkyHor = sky.hor;
+    }
     sh.vertexShader = sh.vertexShader
       .replace("#include <common>", `#include <common>\nattribute float aLayer;\nattribute vec3 aTint;\n${house ? "attribute vec3 aTint2;\n" : ""}varying float vLayer;\nvarying vec3 vTint;\nvarying vec2 vFUv;`)
-      .replace("#include <uv_vertex>", `#include <uv_vertex>\nvLayer = aLayer;\nvTint = ${house ? "aLayer > 16.5 ? aTint2 : aTint" : "aTint"};\nvFUv = uv;`);
+      .replace("#include <uv_vertex>", `#include <uv_vertex>\nvLayer = aLayer;\nvTint = ${house ? `aLayer > ${FACADE_LAYERS - 0.5} ? aTint2 : aTint` : "aTint"};\nvFUv = uv;`);
     sh.fragmentShader = sh.fragmentShader
       .replace(
         "#include <common>",
-        "#include <common>\nprecision highp sampler2DArray;\nuniform sampler2DArray uFacade;\nuniform sampler2DArray uFacadeE;\nvarying float vLayer;\nvarying vec3 vTint;\nvarying vec2 vFUv;",
+        `#include <common>\nprecision highp sampler2DArray;\nuniform sampler2DArray uFacade;\nuniform sampler2DArray uFacadeE;\nvarying float vLayer;\nvarying vec3 vTint;\nvarying vec2 vFUv;${sky ? "\nuniform vec3 uSkyTop;\nuniform vec3 uSkyHor;" : ""}`,
       )
       .replace(
         "#include <map_fragment>",
@@ -479,18 +654,38 @@ function patch(mat: MeshStandardMaterial, arrays: FacadeArrays, house = false): 
       )
       .replace(
         "#include <emissivemap_fragment>",
-        "totalEmissiveRadiance *= texture(uFacadeE, vec3(vFUv * 0.25, floor(vLayer + 0.5))).rgb;",
-      );
+        "totalEmissiveRadiance *= texture(uFacadeE, vec3(vFUv * 0.25, floor(vLayer + 0.5))).rgb * (1.0 + 1.4 * smoothstep(140.0, 700.0, length(vViewPosition)));",
+      )
+      .replace(
+        "#include <opaque_fragment>",
+        sky
+          ? [
+              "{",
+              "  vec3 vv = normalize(vViewPosition);",
+              "  vec3 rw = (vec4(reflect(-vv, normal), 0.0) * viewMatrix).xyz;",
+              "  vec3 skyC = rw.y > 0.0 ? mix(uSkyHor, uSkyTop, smoothstep(-0.05, 0.35, rw.y)) : mix(uSkyHor, uSkyHor * 0.4, smoothstep(0.0, -0.3, rw.y));",
+              // tinted glass reflects in its own colour (gold glass gold, emerald green)
+              "  skyC *= mix(vec3(1.0), vTint * 1.08, 0.75);",
+              "  float fres = 0.1 + 0.9 * pow(1.0 - clamp(dot(normal, vv), 0.0, 1.0), 4.0);",
+              "  float frame = smoothstep(0.62, 0.86, dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114)));",
+              "  float refl = fres * (1.0 - 0.8 * frame) * 0.6;",
+              "  outgoingLight = mix(outgoingLight - totalEmissiveRadiance, skyC, refl) + totalEmissiveRadiance;",
+              "}",
+              "#include <opaque_fragment>",
+            ].join("\n")
+          : "#include <opaque_fragment>",
+      )
+      .replace("#include <fog_fragment>", "#include <fog_fragment>\n#ifdef USE_FOG\ngl_FragColor.rgb += totalEmissiveRadiance * fogFactor * 0.8;\n#endif");
   };
-  mat.customProgramCacheKey = () => (house ? "facade-array-house" : "facade-array");
+  mat.customProgramCacheKey = () => (house ? "facade-array-house" : sky ? "facade-array-glass" : "facade-array");
 }
 
-export function createBuildingMaterials(arrays: FacadeArrays, envTex: Texture): BuildingMaterials {
+export function createBuildingMaterials(arrays: FacadeArrays, envTex: Texture, sky: SkyColours): BuildingMaterials {
   const solid = new MeshStandardMaterial({ color: 0xffffff, roughness: 0.86, emissive: 0xffffff, emissiveIntensity: 0 });
   const glass = new MeshStandardMaterial({ color: 0xffffff, roughness: 0.3, metalness: 0.28, emissive: 0xffffff, emissiveIntensity: 0, envMap: envTex, envMapIntensity: 0.5 });
   const house = new MeshStandardMaterial({ color: 0xffffff, roughness: 0.88, emissive: 0xffffff, emissiveIntensity: 0 });
   patch(solid, arrays);
-  patch(glass, arrays);
+  patch(glass, arrays, false, sky);
   patch(house, arrays, true);
   return {
     solid,

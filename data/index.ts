@@ -27,6 +27,7 @@ export type StationId =
 
 export type ProjectLink = { label: string; href: string };
 
+/** A card under a project: a real figure, or (where a project has none to show) a feature or result in a few words. */
 export type Metric = { value: string; label: string };
 
 export type Shot = { src: string; width: number; height: number; caption: string };
@@ -40,7 +41,7 @@ export type Project = {
   problem: string;
   approach: string;
   result: string;
-  /** Real figures only. */
+  /** Real figures, or the project's key features and results; never invented numbers. */
   metrics: Metric[];
   tags: string[];
   links: ProjectLink[];
@@ -50,9 +51,14 @@ export type Project = {
 
 export type MiniProject = { title: string; copy: string; href?: string };
 
-export type Role = { period: string; title: string; detail: string };
+export type Role = {
+  period: string;
+  title: string;
+  detail: string;
+  /** A shorter title for the scene's caption, where the full one would not fit. */
+  short?: string;
+};
 
-export type SkillGroup = { name: string; items: string[] };
 
 export type Station = {
   id: StationId;
@@ -75,39 +81,27 @@ export type Station = {
 
 export const person = {
   name: "Linh Hoang",
-  tagline: "Software developer · ML systems · BCIT Computer Systems Technology 2026",
+  tagline: "Software developer · Co-founder, Awdon · BCIT Computer Systems Technology 2026",
   url: "https://linh-hoang.vercel.app",
 };
 
 export const intro = {
-  kicker: "Portfolio · Expo Line · Vancouver, 2100",
-  lead: "Software developer building ML systems and LLM agents that are honest about their limits. The work sits at ten stops along the Expo Line through an imagined Vancouver, 2100, Waterfront to Patterson. Ride the line, or ask the attendant to take you.",
-  keys: [
-    ["W / scroll", "drive forward, the train settles at the next station"],
-    ["Drag", "look around a full 360°; click a landmark to circle it"],
-    ["1 – 0", "drive to a stop; each arrival plays as a scene"],
-    ["E", "show or hide the station's section"],
-    ["Ask", "the attendant answers from this page and can drive you to the right stop"],
-  ] as [string, string][],
+  kicker: "Portfolio",
+  lead: "Software developer building ML systems and LLM agents that are honest about their limits. The work sits at ten stops along the Expo Line through an imagined Vancouver, 2100, Waterfront to Patterson.",
 };
 
 export const depart = {
   title: "Linh Hoang",
   lead: "Software developer building ML systems and LLM agents that are honest about their limits: deterministic cores, models at the edges, and a human approving what goes out.",
-  meta: ["BCIT Computer Systems Technology · 2026", "Now: Software QA Engineer intern · Kaggle Gemma 4 agent competition"],
+  meta: ["BCIT Computer Systems Technology · 2026", "Now: Co-founder, Awdon · awdon.app"],
   body: "Ten stops on this line: who I am, where I have worked, five projects with the numbers behind them, more I have built, and how to reach me.",
 };
 
 export const about = {
-  title: "Ten years leading teams, then software.",
-  bio: "BCIT Computer Systems Technology graduate (2026) with ten years of leadership and client-service experience before software. I like systems that are honest about their limits: deterministic cores, LLMs at the edges, and a human approving anything that goes out.",
-  now: "Now: Kaggle Gemma 4 Developer Agent competition · Software QA Engineer intern",
-  skillGroups: [
-    { name: "ML / AI", items: ["Python", "PyTorch", "scikit-learn", "DINOv2", "YOLO", "OpenAI & Claude APIs"] },
-    { name: "Backend", items: ["FastAPI", "Node.js", "PostgreSQL", "Prisma", "SQLite", "Azure"] },
-    { name: "Frontend", items: ["TypeScript", "React", "Next.js", "Tailwind", "Three.js"] },
-    { name: "Tooling", items: ["Claude Code", "Playwright", "Docker", "Git", "GCP"] },
-  ] satisfies SkillGroup[],
+  title: "From test automation to AI products.",
+  bio: "I co-founded Awdon, an AI-native workspace for small software agencies, and built its FastAPI backend, React front end and a multi-provider LLM pipeline with MCP and tool integrations. Before that I was a Software QA Engineer at Incognito Software Systems, owning Jenkins and the CI/CD pipeline and building Java test frameworks on Playwright and JUnit. I like systems that are honest about their limits: deterministic cores, LLMs at the edges, and a human approving anything that goes out.",
+  now: "Now: Co-founder, Awdon · awdon.app",
+  tools: ["Python", "TypeScript", "scikit-learn", "PyTorch", "Claude Code"],
 };
 
 export const featured: Project[] = [
@@ -121,9 +115,9 @@ export const featured: Project[] = [
       "Imports Zoom, Teams and Meet transcripts, fills the team's own .docx or Google Doc templates, and proposes Jira board changes with undo and a decision log.",
     result: "Best Use of CLōD. In early access with real teams.",
     metrics: [
-      { value: "Best Use of CLōD", label: "Award" },
-      { value: "Early access", label: "Status" },
-      { value: "3 sources", label: "Zoom · Teams · Meet" },
+      { value: "Calls → tasks", label: "Transcripts update the board" },
+      { value: "Your templates", label: "Fills the team's own docs" },
+      { value: "PM approves", label: "Before anything is sent" },
     ],
     tags: ["FastAPI", "React", "TypeScript", "SQLite", "LLM agents", "Jira", "Google Docs"],
     links: [
@@ -156,9 +150,9 @@ export const featured: Project[] = [
     approach: "YOLO with SAHI slicing: detect on overlapping tiles, then merge.",
     result: "A detector anyone can try in the browser.",
     metrics: [
-      { value: "YOLO + SAHI", label: "Detector" },
-      { value: "HF Space", label: "Deployed" },
-      { value: "2025", label: "Victoria" },
+      { value: "Tiny boats", label: "Found in full scenes" },
+      { value: "Tiled passes", label: "Overlapping tiles, merged" },
+      { value: "Live demo", label: "Public on Hugging Face" },
     ],
     tags: ["YOLO", "SAHI", "PyTorch", "Hugging Face"],
     links: [{ label: "Hugging Face Space", href: "https://huggingface.co/spaces/linhoang/yolo_boat_detector" }],
@@ -219,11 +213,6 @@ export const moreProjects: MiniProject[] = [
     href: "https://github.com/linhoangce/law-hacks",
   },
   {
-    title: "Unidentified",
-    copy: "Private identity handoff for agent transactions",
-    href: "https://github.com/linhoangce/Unidentified",
-  },
-  {
     title: "An",
     copy: "Hospital voice interpreter on Alebex Voice and Twilio",
     href: "https://github.com/linhoangce/alebex-hack",
@@ -236,20 +225,21 @@ export const moreProjects: MiniProject[] = [
   { title: "JobBee", copy: "Job-search agent. Local only, no public link yet" },
 ];
 
+/** Newest first. The Experience stop raises one portal per role, its start year on the lintel. */
 export const roles: Role[] = [
   {
-    period: "2025 — now",
-    title: "Software QA Engineer Intern",
-    detail: "Playwright, Java and Jenkins. Kafka, MQTT and TR-069 on multi-VM Linux.",
+    period: "2026 — now",
+    title: "Co-Founder, Awdon",
+    detail:
+      "An AI-native workspace that turns client meetings into an updated project plan and drafts the reports a team needs. FastAPI and React, a two-pass LLM pipeline with failover across four providers, a 15-tool MCP connector, and a 2,500-test pytest suite in CI.",
   },
-  { period: "2021 — 2023", title: "Medical Interpreter, Level 4", detail: "English and Vietnamese, clinical settings." },
-  { period: "2019 — 2020", title: "Project Manager", detail: "Launched a new cafe concept. Sales up 166 percent." },
   {
-    period: "2018 — 2019",
-    title: "Training & Development Specialist",
-    detail: "Lean programs across stores. Sales up 198 percent.",
+    period: "2025 — 2026",
+    title: "Software QA Engineer, Incognito Software Systems",
+    short: "QA Engineer, Incognito",
+    detail: "Owned Jenkins CI/CD, built Java test frameworks on Playwright and JUnit, and ran the RHEL/CentOS test environments.",
   },
-  { period: "2014 — 2016", title: "Operations Supervisor", detail: "Scheduling, training and service standards." },
+  { period: "2019 — 2020", title: "Project Manager, Haviland House", detail: "Led the operations transition: sales up 166 percent, monthly profit 320 percent over target." },
 ];
 
 export const contact = {
@@ -275,7 +265,7 @@ export const stations: Station[] = [
     km: [0, 0],
     panel: "depart",
     corpus:
-      "Waterfront station, the start of the line: Linh Hoang. Software developer, ML systems. BCIT Computer Systems Technology graduate 2026, based in Vancouver, BC. Now: Software QA Engineer intern and competing in the Kaggle Gemma 4 Developer Agent competition.",
+      "Waterfront station, the start of the line: Linh Hoang. Software developer and co-founder of Awdon (awdon.app). BCIT Computer Systems Technology graduate 2026 (Predictive Analytics), based in Vancouver, BC.",
   },
   {
     id: "burrard",
@@ -285,7 +275,7 @@ export const stations: Station[] = [
     km: [-0.552, 0.06],
     panel: "about",
     corpus:
-      "Burrard station, About: BCIT Computer Systems Technology graduate (2026) with ten years of leadership and client-service experience before software. Likes systems that are honest about their limits: deterministic cores, LLMs at the edges, and a human approving anything that goes out. Skills. ML/AI: Python, PyTorch, scikit-learn, DINOv2, YOLO, OpenAI and Claude APIs. Backend: FastAPI, Node.js, PostgreSQL, Prisma, SQLite, Azure. Frontend: TypeScript, React, Next.js, Tailwind, Three.js. Tooling: Claude Code, Playwright, Docker, Git, GCP.",
+      "Burrard station, About: co-founder of Awdon, an AI-native workspace for small software agencies (FastAPI backend, React front end, multi-provider LLM pipeline with MCP and tool integrations). Before that, Software QA Engineer at Incognito Software Systems (owned Jenkins and the CI/CD pipeline, built Java test frameworks on Playwright and JUnit). Likes systems that are honest about their limits: deterministic cores, LLMs at the edges, and a human approving anything that goes out. Favourite tools: Python, TypeScript, scikit-learn, PyTorch and Claude Code.",
   },
   {
     id: "granville",
@@ -295,7 +285,7 @@ export const stations: Station[] = [
     km: [-0.278, 0.328],
     panel: "experience",
     corpus:
-      "Granville station, Experience: 2025 to now Software QA Engineer Intern (Playwright, Java, Jenkins; Kafka, MQTT and TR-069 on multi-VM Linux). 2021 to 2023 Medical Interpreter Level 4, English and Vietnamese. 2019 to 2020 Project Manager, launched a new cafe concept, sales up 166 percent. 2018 to 2019 Training and Development Specialist, lean programs, sales up 198 percent. 2014 to 2016 Operations Supervisor.",
+      "Granville station, Experience: June 2026 to now, Co-Founder of Awdon (awdon.app), an AI-native workspace that turns client meeting transcripts into an updated project plan and drafts reports, minutes, timesheets and emails with human approval; FastAPI/SQLAlchemy backend and React/TypeScript front end around a concurrent two-pass LLM pipeline, integrations with Zoom, Teams, Google Meet, Slack, Gmail/Outlook, GitHub and Jira, a VS Code extension, a Claude Code hook and a 15-tool MCP connector, failover across four LLM providers, one Docker image on Render with SQLite replicated to Cloudflare R2, a 2,500-test pytest suite in GitHub Actions; grew out of Sidekik, Cursor Hackathon Vancouver 2026, Best Use of CLoD. January 2025 to May 2026, Software QA Engineer at Incognito Software Systems: owned Jenkins setup and administration with automated test stages in CI/CD, built Java test frameworks with Playwright and JUnit, managed RHEL/CentOS test environments. September 2019 to February 2020, Project Manager at Haviland House: led the operations transition, sales up 166 percent, expenses under 25 percent of budget, monthly profit 320 percent over target.",
   },
   {
     id: "stadium",
@@ -322,7 +312,7 @@ export const stations: Station[] = [
     code: "05",
     name: "Commercial–Broadway",
     section: "Vessel Vision",
-    km: [3.13, 2.705],
+    km: [3.13, 2.6545],
     panel: "vessel-vision",
     corpus:
       "Commercial–Broadway station, Vessel Vision (Ocean Hackathon Victoria 2025). YOLO plus SAHI multi-scale vessel detection in high-resolution coastal imagery, deployed as a public Hugging Face Space at https://huggingface.co/spaces/linhoang/yolo_boat_detector. Stack: YOLO, SAHI, PyTorch, Hugging Face.",
@@ -355,7 +345,7 @@ export const stations: Station[] = [
     km: [5.848, 5.317],
     panel: "more-projects",
     corpus:
-      "Joyce–Collingwood station, More projects. Also built: Mini OpenClaw (AI assistant gateway with Telegram, memory, shell and cron tools, https://github.com/linhoangce/mini_openclaw), LEXMind (voice legal assistant on OpenAI Realtime with an Obsidian vault, https://github.com/linhoangce/law-hacks), Unidentified (private identity handoff for agent transactions, https://github.com/linhoangce/Unidentified), An (hospital voice interpreter on Alebex Voice and Twilio, https://github.com/linhoangce/alebex-hack), Otto Judge (pixel-art judge reacting live to hackathon scores, Codechella Victoria 2026 team project, https://github.com/nhepner1/judgejudgejudge), JobBee (job-search agent, local only).",
+      "Joyce–Collingwood station, More projects, shown as the Project Gallery (an exhibition hall by the station): Mini OpenClaw (AI assistant gateway with Telegram, memory, shell and cron tools, https://github.com/linhoangce/mini_openclaw), LEXMind (voice legal assistant on OpenAI Realtime with an Obsidian vault, https://github.com/linhoangce/law-hacks), An (hospital voice interpreter on Alebex Voice and Twilio, https://github.com/linhoangce/alebex-hack), Otto Judge (pixel-art judge reacting live to hackathon scores, Codechella Victoria 2026 team project, https://github.com/nhepner1/judgejudgejudge), JobBee (job-search agent, local only).",
   },
   {
     id: "patterson",

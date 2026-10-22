@@ -4,8 +4,9 @@ import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo } from "react";
 import { AdditiveBlending, BufferAttribute, Color, InstancedBufferAttribute, InstancedBufferGeometry, Mesh, ShaderMaterial, Vector3 } from "three";
 
-import { getCityData, getZoning } from "./cityData";
-import { GRID, SEA } from "./constants";
+import { getCityData } from "./cityData";
+import { landClass } from "./roadNetwork";
+import { SEA } from "./constants";
 import { reflectRegistry, type ReflectSource } from "./reflectionSources";
 import { groundAt, sdfAt } from "./terrain";
 import { mirrorState, skipInMirror } from "./waterMirror";
@@ -90,17 +91,15 @@ export function Reflections() {
       out.push({ x: l.x, z: l.z, y: groundAt(l.x, l.z), h: l.h, w: Math.min(l.w, l.d) * 0.8, col: WARM[i % WARM.length], gain, rank: l.h / (8 + Math.max(0, sd)) });
     });
     out.sort((a, b) => b.rank - a.rank);
-    // and the glow of every lit block along the shore: street lights and low windows, a broad warm wash
-    const z = getZoning(lowEnd);
+    // and the glow of the city's land along the shore (the land-use raster, a cell every 44 × 22 units): street
+    // lights and low windows, a broad warm wash
     const glow: ReflectSource[] = [];
-    for (let j = 0; j < z.nj; j++) {
-      for (let i = 0; i < z.ni; i++) {
-        if (!z.data[j * z.ni + i]) continue;
-        const x = GRID.x0 + (z.i0 + i + 0.5) * GRID.cw;
-        const zz = GRID.z0 + (z.j0 + j + 0.5) * GRID.ch;
+    for (let j = 0, zz = -450; zz < 858; j++, zz += 22) {
+      for (let i = 0, x = -520; x < 998; i++, x += 44) {
+        if (!landClass(x, zz)) continue;
         const sd = sdfAt(x, zz);
         if (sd < 0 || sd > 40) continue;
-        glow.push({ x, z: zz, y: groundAt(x, zz), h: 9, w: GRID.cw * 0.35, col: WARM[(i + j) % 2], gain: 0.28 });
+        glow.push({ x, z: zz, y: groundAt(x, zz), h: 9, w: 15, col: WARM[(i + j) % 2], gain: 0.28 });
       }
     }
     return [...glow, ...out.slice(0, lowEnd ? 420 : 900)];

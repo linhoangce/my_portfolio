@@ -2,11 +2,14 @@ import { CatmullRomCurve3, MathUtils, Vector3 } from "three";
 
 import { stations } from "@/data";
 
-import { CROSS_LEN, CUT, DECK, K, LANE } from "./constants";
-import { addModifier, inBasin, lerp, rectPad } from "./terrain";
+import { BALLAST, CROSS_LEN, DECK, K, LANE } from "./constants";
+import { addRailBed, addRailTrenches, bedPoints, profileAt } from "./rail";
+import { EXPO_STRUCT } from "./railData";
+import { addModifier, demAt, inBasin, rectPad } from "./terrain";
 import { TRACK_RAW } from "./trackData";
 import { solveProfile } from "./trackProfile";
 
+export { cutNear } from "./rail";
 export { groundAt, inWater, slopeAt } from "./terrain";
 
 export const UP = new Vector3(0, 1, 0);
@@ -33,11 +36,12 @@ export const STATION_XZ: [number, number][] = stations.map((st) => [st.km[0] * K
 const nearestPoint = ([sx, sz]: [number, number]) => TRACK.reduce((b, [x, z], i) => ((x - sx) ** 2 + (z - sz) ** 2 < (TRACK[b][0] - sx) ** 2 + (TRACK[b][1] - sz) ** 2 ? i : b), 0);
 const stationIdx = STATION_XZ.map(nearestPoint);
 
-// deck heights over the real terrain, with the Grandview Cut from Clark Drive to past 29th Avenue
-const iMain = stationIdx[stations.findIndex((s) => s.id === "mainstreet")];
-const i29 = stationIdx[stations.findIndex((s) => s.id === "29th")];
-const sAt = (i: number) => { let s = 0; for (let k = 1; k <= i; k++) s += Math.hypot(TRACK[k][0] - TRACK[k - 1][0], TRACK[k][1] - TRACK[k - 1][1]); return s; };
-export const profile = solveProfile(TRACK, stationIdx, sAt(iMain) + CUT.afterMain, sAt(i29) + CUT.after29th);
+// deck heights over the real terrain, from OSM's structure along the line: elevated from Waterfront across the
+// Grandview Cut and Commercial–Broadway, down at grade, in a cutting and a short covered trench between Nanaimo and
+// Joyce, elevated again to the end (the 16 lead-in points ride the viaduct)
+const STRUCT = new Array<string>(TRACK_RAW.length).fill("V");
+for (const [a, b, c] of EXPO_STRUCT) for (let i = a; i <= b; i++) STRUCT[i] = c;
+export const profile = solveProfile(TRACK, stationIdx, "V".repeat(TRACK.length - TRACK_RAW.length) + STRUCT.join(""));
 
 export const controlPoints: Vector3[] = TRACK.map(([x, z], i) => new Vector3(x, profile.y[i], z));
 export const curve = new CatmullRomCurve3(controlPoints, false, "centripetal", 0.5);
@@ -147,10 +151,103 @@ function buildLoop(end: LoopEnd, R: number, alpha: number, centre?: P2, neck = 2
 }
 
 /** West of Waterfront the loop swings north over Burrard Inlet; east of Patterson it runs straight on over Central Park. */
+/** The loop at Waterfront's end: its circle's centre and radius (a second track runs inside it, Guideway.tsx). */
+export const NEAR_LOOP = { c: [82, -34] as [number, number], r: 16 };
 export const LOOPS: Record<LoopEnd, Loop> = {
-  near: buildLoop("near", 16, 0.6, [82, -34]),
+  near: buildLoop("near", NEAR_LOOP.r, 0.6, NEAR_LOOP.c),
   far: buildLoop("far", 17, 0.7),
 };
+
+/* ------------------------------------------------------------------ the line beyond the loop */
+
+/** The stations of the line past the turnback loop, at the real ones' places. */
+export const EXT_STATIONS: { name: string; x: number; z: number }[] = [
+  { name: "Royal Oak", x: 989, z: 810 },
+  { name: "Edmonds", x: 1223, z: 903 },
+  { name: "22nd Street", x: 1304, z: 1054 },
+  { name: "New Westminster", x: 1595, z: 1036 },
+];
+export type Extension = { curve: CatmullRomCurve3; L: number; samples: Frame[]; stationT: number[] };
+/**
+ * The junction where the line beyond the loop leaves: from s0 to s1 (just short of the line's end) its deck runs
+ * alongside the line's, EXT_GAP to the left, the two one wide deck; switches there carry the outbound track across onto
+ * it and its inbound track back (Guideway leaves the facing parapets out, Extension.tsx lays the switches).
+ */
+export const EXT_JOIN = { s0: LEN - 46, s1: LEN - 6 };
+export const EXT_GAP = 12.6;
+
+/**
+ * The Expo runs on past the turnback loop, as the real line does, to Royal Oak, Edmonds, 22nd Street and New Westminster. Its deck leaves
+ * beside the line's own (left of travel, the two decks side by side like a junction's) before the loop, swings round
+ * the loop's north side and runs on through the real stations. The ride's trains turn on the loop; a train of its own
+ * runs this stretch. Its deck stands DECK over the ground (smoothed), from the line's height where it leaves; `heightAt`
+ * gives the ground (the far terrain beyond the city's, once loaded).
+ */
+export function buildExtension(heightAt: (x: number, z: number) => number): Extension {
+  const f = makeFrame();
+  // left of the line's travel, `back` before its end (or `-back` past it, straight on)
+  const beside = (back: number, lat: number): P2 => {
+    frameAt(Math.min(LEN, LEN - back), f);
+    const on = Math.max(0, -back);
+    return [f.p.x + f.t.x * on - f.r.x * lat, f.p.z + f.t.z * on - f.r.z * lat];
+  };
+  const J = EXT_JOIN.s1 - EXT_JOIN.s0;
+  const xz: P2[] = [beside(LEN - EXT_JOIN.s0, EXT_GAP), beside(LEN - EXT_JOIN.s0 - J / 2, EXT_GAP), beside(LEN - EXT_JOIN.s1, EXT_GAP), beside(-10, 16), beside(-20, 23), beside(-30, 30), beside(-45, 37), [952, 748], [970, 775], ...EXT_STATIONS.slice(0, 1).map((s): P2 => [s.x, s.z]), [1040, 833], [1100, 855], [1160, 878], [EXT_STATIONS[1].x, EXT_STATIONS[1].z], [1262, 950], [1290, 1000], [EXT_STATIONS[2].x, EXT_STATIONS[2].z], [1335, 1100], [1400, 1092], [1470, 1068], [1540, 1046], [EXT_STATIONS[3].x, EXT_STATIONS[3].z], [1640, 1030]];
+  const flat = new CatmullRomCurve3(
+    xz.map(([x, z]) => new Vector3(x, 0, z)),
+    false,
+    "centripetal",
+  );
+  const L0 = flat.getLength();
+  const n = Math.ceil(L0 / 2);
+  const pts = flat.getSpacedPoints(n);
+  // the ground along it, smoothed over 30 units either way; the first 50 units ease up from the line's own deck
+  const g = pts.map((p) => heightAt(p.x, p.z));
+  const W = 15;
+  // level with the line's deck alongside it through the junction, then easing over 50 units to its own
+  const lineY = (t: number) => samples[Math.round((Math.min(LEN, EXT_JOIN.s0 + t) / LEN) * SAMPLES)].p.y;
+  const ys = pts.map((_, i) => {
+    let s = 0;
+    let k = 0;
+    for (let j = Math.max(0, i - W); j <= Math.min(n, i + W); j++) {
+      s += g[j];
+      k++;
+    }
+    const lift = Math.max(s / k, g[i] + 1) + DECK;
+    const t = (i * L0) / n;
+    const u = MathUtils.clamp((t - J) / 50, 0, 1);
+    return lineY(t) + (lift - lineY(t)) * u * u * (3 - 2 * u);
+  });
+  const curve = new CatmullRomCurve3(
+    pts.map((p, i) => new Vector3(p.x, ys[i], p.z)),
+    false,
+    "centripetal",
+  );
+  curve.arcLengthDivisions = 3000;
+  const L = curve.getLength();
+  const list: Frame[] = [];
+  const m = Math.ceil(L / 1.5);
+  for (let i = 0; i <= m; i++) {
+    const fr = makeFrame();
+    curve.getPointAt(i / m, fr.p);
+    curve.getTangentAt(i / m, fr.t).normalize();
+    fr.r.crossVectors(fr.t, UP).normalize();
+    list.push(fr);
+  }
+  const stationT = EXT_STATIONS.map((st) => {
+    let best = 0;
+    list.forEach((fr, i) => {
+      if ((fr.p.x - st.x) ** 2 + (fr.p.z - st.z) ** 2 < (list[best].p.x - st.x) ** 2 + (list[best].p.z - st.z) ** 2) best = i;
+    });
+    return (best / m) * L;
+  });
+  return { curve, L, samples: list, stationT };
+}
+/**
+ * The extension's course for the clearance rules, over the map's own heights (the ground is not final while the
+ * modules load; Extension.tsx builds it again on the drawn ground and the far terrain).
+ */
+export const EXTENSION = buildExtension(demAt);
 
 const lp = new Vector3();
 /** A loop's frame at distance t along it (extrapolated straight beyond either end); `sgn` orients t along +s. */
@@ -183,9 +280,9 @@ export function trainFrameAt(sc: number, dir: number, lane: number, out: Frame):
   return frameAt(sc, out, lane);
 }
 
-/** Every track sample, the loops included, for the clearance rules (buildings, trees, cameras). */
-export const PATH_SAMPLES: Frame[] = [...samples, ...LOOPS.near.samples, ...LOOPS.far.samples];
-const coarse = [...samples.filter((_, i) => i % 4 === 0), ...LOOPS.near.samples.filter((_, i) => i % 3 === 0), ...LOOPS.far.samples.filter((_, i) => i % 3 === 0)];
+/** Every track sample, the loops and the line beyond them included, for the clearance rules (buildings, trees, cameras). */
+export const PATH_SAMPLES: Frame[] = [...samples, ...LOOPS.near.samples, ...LOOPS.far.samples, ...EXTENSION.samples];
+const coarse = [...samples.filter((_, i) => i % 4 === 0), ...LOOPS.near.samples.filter((_, i) => i % 3 === 0), ...LOOPS.far.samples.filter((_, i) => i % 3 === 0), ...EXTENSION.samples.filter((_, i) => i % 3 === 0)];
 
 /** Deck height at arc length s. */
 export const deckY = (s: number): number => samples[Math.round(MathUtils.clamp(s / LEN, 0, 1) * SAMPLES)].p.y;
@@ -249,9 +346,8 @@ export function nearestStation(s: number): number {
  */
 export const CROSSOVERS: number[] = [
   stationS[0] - 58,
-  ...stationS.map((ss, i) =>
-    i === stationS.length - 1 || stationS[i + 1] - 13 - (ss + 30 + CROSS_LEN) >= 8 ? ss + 30 : -1,
-  ),
+  // past the last station it starts at the platform's end, leaving the stretch before the loop to the junction
+  ...stationS.map((ss, i) => (i === stationS.length - 1 ? ss + 16 : stationS[i + 1] - 13 - (ss + 30 + CROSS_LEN) >= 8 ? ss + 30 : -1)),
 ].filter((c0) => c0 >= 0 && c0 + CROSS_LEN <= LEN);
 
 export const smoothstep01 = (u: number): number => {
@@ -260,79 +356,20 @@ export const smoothstep01 = (u: number): number => {
 };
 
 // ---------------------------------------------------------------- ground the track asks for
-// station pads: the ground under each station sits DECK below its level deck (or just under the girder in the cut)
+// station pads: the ground under each station sits DECK below its level deck, or a ballast's depth under the rails
+// where the line has come down, wide enough for the platforms
+export const lowAt = (s: number): number => profileAt({ profile, len: LEN }, "low", s);
 {
   const f = makeFrame();
   for (const ss of stationS) {
     frameAt(ss, f);
     const tx = f.t.x / Math.hypot(f.t.x, f.t.z);
     const tz = f.t.z / Math.hypot(f.t.x, f.t.z);
-    const inCut = profileCutAt(ss) > 0.5;
-    const pad = rectPad(f.p.x, f.p.z, tx, tz, 34, inCut ? 13 : 22, inCut ? 6 : 26, f.p.y - (inCut ? 2.4 : DECK));
+    const low = lowAt(ss) > 0.5;
+    const pad = rectPad(f.p.x, f.p.z, tx, tz, 34, low ? 16 : 22, low ? 8 : 26, f.p.y - (low ? BALLAST : DECK));
     addModifier((x, z, h) => (inBasin(x, z) ? h : pad(x, z, h)));
   }
 }
-// the Grandview Cut: dug, never built up: a floor just under the girder within 14 units, banks rising to floor + CUT.bank
-// by 40, back to the DEM by 55
-{
-  const cutPts = samples
-    .map((f, i) => ({ x: f.p.x, z: f.p.z, floor: f.p.y - 2.4, w: profileCutAt((i / SAMPLES) * LEN) }))
-    .filter((p, i) => i % 3 === 0 && p.w > 0.01);
-  if (cutPts.length) {
-    const xs = cutPts.map((p) => p.x);
-    const zs = cutPts.map((p) => p.z);
-    const box = [Math.min(...xs) - 60, Math.max(...xs) + 60, Math.min(...zs) - 60, Math.max(...zs) + 60];
-    addModifier((x, z, h) => {
-      if (x < box[0] || x > box[1] || z < box[2] || z > box[3]) return h;
-      let bd = 1e9;
-      let bp = cutPts[0];
-      for (const p of cutPts) {
-        const d = (p.x - x) ** 2 + (p.z - z) ** 2;
-        if (d < bd) {
-          bd = d;
-          bp = p;
-        }
-      }
-      const lat = Math.sqrt(bd);
-      if (lat > 55) return h;
-      const t = Math.min(1, Math.max(0, (lat - 14) / 26));
-      // only ever digs: where the deck runs above the ground the guideway simply stands on its piers
-      const target = Math.min(h, bp.floor + CUT.bank * t * t * (3 - 2 * t));
-      const fade = Math.min(1, Math.max(0, (lat - 40) / 15));
-      return lerp(h, target, bp.w * (1 - fade * fade * (3 - 2 * fade)));
-    });
-  }
-}
-/**
- * How much of the Grandview Cut a ground point belongs to (0 outside, 1 on the trench floor and the banks out to 30
- * units, fading by 45), from a 6-unit raster painted along the cut: the buildings and the trees use it.
- */
-const CUT_CELL = 6;
-const cutCells = new Map<number, number>();
-{
-  for (let i = 0; i <= SAMPLES; i += 2) {
-    const s = (i / SAMPLES) * LEN;
-    const w = profileCutAt(s);
-    if (w < 0.02) continue;
-    const p = samples[i].p;
-    const ci = Math.round(p.x / CUT_CELL);
-    const cj = Math.round(p.z / CUT_CELL);
-    for (let di = -8; di <= 8; di++) {
-      for (let dj = -8; dj <= 8; dj++) {
-        const d = Math.hypot((ci + di) * CUT_CELL - p.x, (cj + dj) * CUT_CELL - p.z);
-        const v = w * (1 - smoothstep01((d - 30) / 15));
-        const k = (ci + di) * 100000 + (cj + dj);
-        if (v > (cutCells.get(k) ?? 0)) cutCells.set(k, v);
-      }
-    }
-  }
-}
-export const cutNear = (x: number, z: number): number => cutCells.get(Math.round(x / CUT_CELL) * 100000 + Math.round(z / CUT_CELL)) ?? 0;
-
-function profileCutAt(s: number): number {
-  const ps = profile.s;
-  const k = ps.findIndex((v) => v >= s);
-  if (k <= 0) return profile.cut[Math.max(0, k)];
-  const u = (s - ps[k - 1]) / (ps[k] - ps[k - 1]);
-  return profile.cut[k - 1] + (profile.cut[k] - profile.cut[k - 1]) * u;
-}
+// where the Expo comes down, its bed and its cutting; then the Millennium Line's and the Broadway Extension's
+addRailBed(bedPoints({ curve, len: LEN, profile }));
+addRailTrenches();

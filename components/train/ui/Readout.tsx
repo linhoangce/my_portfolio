@@ -7,11 +7,11 @@ import { stations } from "@/data";
 import { EVENT_META } from "../lookTypes";
 import { hasSidebar } from "../scene/copy";
 import { useTrain } from "../store";
-import { eventSwatch } from "./MonumentCard";
 
 /**
- * Bottom-left: the event the city is lit for, "At About · Burrard" or "Next stop Awdon · 540 m · 46 km/h"
- * (aria-live), and the key hints until the visitor's first input, after which they fold into a "?" button.
+ * A small footnote in the bottom-right corner, above the map credit: "At About · Burrard" or "Next stop Awdon · 540 m
+ * · 46 km/h" (aria-live), the event the city is lit for and the season, and the key hints until the visitor's first
+ * input, after which they fold into a "Controls" link.
  */
 export function Readout() {
   const readout = useTrain((s) => s.readout);
@@ -58,7 +58,7 @@ export function Readout() {
       <>
         Next stop <b>{stations[readout.idx].section}</b>
         {` · ${m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${m} m`}`}
-        {kmh > 0 ? <span className="kmh"> · {kmh} km/h</span> : null}
+        {kmh > 0 ? ` · ${kmh} km/h` : null}
       </>
     );
   } else if (readout.kind === "loop") {
@@ -71,27 +71,15 @@ export function Readout() {
 
   const ev = event ? EVENT_META[event] : null;
   return (
-    <div className="hud">
-      {ev ? (
-        <span className="evt">
-          <i style={{ background: eventSwatch(event!) }} aria-hidden="true" />
-          {ev.label} · {season}
-        </span>
-      ) : null}
-      <div className="readout" aria-live="polite">
-        <span className="dot" aria-hidden="true" />
-        <span>{body}</span>
-      </div>
-      {hints ? (
-        <div className="hint">
-          <kbd>W</kbd> / scroll drive · <kbd>S</kbd> reverse · drag to look around (360°) · <kbd>ctrl</kbd>+scroll zoom · click a landmark ·{" "}
-          <kbd>?</kbd> controls
-        </div>
-      ) : (
-        <button type="button" className="btn btn-icon hint-btn" aria-label="Controls" onClick={() => setUi("help")}>
-          ?
+    <div className="foot">
+      <p aria-live="polite">{body}</p>
+      <p>
+        {ev ? `${ev.label} · ${season} · ` : `${season[0].toUpperCase()}${season.slice(1)} · `}
+        {hints && introDone ? <span className="foot-hint">W / scroll drive · drag look around · </span> : null}
+        <button type="button" onClick={() => setUi("help")}>
+          Controls
         </button>
-      )}
+      </p>
     </div>
   );
 }

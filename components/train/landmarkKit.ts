@@ -1,8 +1,9 @@
 /**
  * The four landmarks with the most to them: Canada Place (the five white sails over the cruise terminal, a docked
  * cruise ship), Harbour Centre (an office podium, the banded tower, glass elevators and the Lookout's saucer), Science
- * World (a double layer of LED nodes on the geodesic sphere, joined by a glowing lattice) and BC Place (the LED fascia,
- * lit masts and cable lights). Built in each landmark's local frame; client only.
+ * World (the sphere of stainless pyramids with its double layer of LED nodes, the drum and A-frames, the round base
+ * and its deck over the water, the solar-roofed wing and the science park) and BC Place (the LED fascia, lit masts
+ * and cable lights); the Waterfront hub; and the bridges over False Creek. Built in each landmark's local frame; client only.
  */
 import {
   AdditiveBlending,
@@ -14,6 +15,7 @@ import {
   Color,
   CylinderGeometry,
   DoubleSide,
+  Float32BufferAttribute,
   Group,
   IcosahedronGeometry,
   InstancedMesh,
@@ -24,6 +26,7 @@ import {
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
+  OctahedronGeometry,
   PlaneGeometry,
   Quaternion,
   RepeatWrapping,
@@ -34,13 +37,18 @@ import {
 } from "three";
 
 import { SEA } from "./constants";
+import { CONVENTION, DECK_Y, FLOAT_DOCK, FORECOURT, FORECOURT_TREES, GREEN_CAFES, harbourfrontBenches, harbourfrontTrees, inConvention, PLAZA, PLAZA_SOUTH, PLAZA_X, PROMENADE, PROMENADE_W } from "./harbourfront";
+import { SET_RECT, toStation } from "./sets/zones";
+import { pavilion, type Pieces, UMBRELLAS, warmLights } from "./pavilion";
 import { registerPattern } from "./eventLights";
 import { EVENT_META } from "./lookTypes";
 import { addReflections } from "./reflectionSources";
+import { merged, type Part } from "./merge";
 import { canvasTexture, cap, merge, type P2, paint, roundRect, walls } from "./shapes";
-import type { PlacedLandmark } from "./sites";
-import { sdfAt } from "./terrain";
-import { cabinTexture, cruiseShip } from "./vessels";
+import { type Bridge, BRIDGES, type PlacedLandmark, SW_ROOF } from "./sites";
+import { groundAt, polySdf, sdfAt, surfaceAt } from "./terrain";
+import { HUB_BLOCKS, HUB_CANOPY, HUB_DECK, HUB_DECK_BOX, HUB_GALLERY } from "./waterfrontHub";
+import { cabinTexture, cruiseShip, floatplane } from "./vessels";
 import type { World } from "./world";
 
 export type Built = { group: Group; animate?: (t: number) => void };
@@ -145,36 +153,47 @@ const hotelTexture = () =>
   );
 
 /**
- * The sail roof: one membrane over the terminal, pulled up into a peak at each of five masts with concave flanks,
- * the long edges lifting in arches between the anchor points.
+ * The sail roof as the fabric hangs: one membrane over the terminal, pulled up to a sharp point at the head of every
+ * mast, its flanks falling concave (steep at the peak, flattening toward the foot) and creased where two peaks meet;
+ * round the edge it is held by cables between anchor points, so the hem lifts in a scallop between each pair. The
+ * grid runs through every mast, so each peak is a vertex and stays sharp.
  */
-function sailRoof(halfW: number, halfL: number, base: number, masts: number[], peak: number, nx: number, nz: number): BufferGeometry {
-  const R = 9.5;
+function sailRoof(halfW: number, halfL: number, base: number, masts: P2[], peaks: number[], R: number, step: number, zc = 0): BufferGeometry {
+  const anchors = 9;
   const h = (x: number, z: number) => {
     let top = 0;
-    let dzNear = 1e9;
-    for (const zm of masts) {
-      const d = Math.hypot(x * 1.12, z - zm);
-      if (d < R) top = Math.max(top, peak * Math.pow(1 - d / R, 1.7));
-      dzNear = Math.min(dzNear, Math.abs(z - zm));
+    for (let k = 0; k < masts.length; k++) {
+      const d = Math.hypot(x - masts[k][0], z - masts[k][1]) / R;
+      if (d < 1) top = Math.max(top, peaks[k] * (1 - d) ** 2.6);
     }
-    const spacing = masts.length > 1 ? masts[1] - masts[0] : 15;
-    const arch = Math.sin(Math.min(1, dzNear / (spacing / 2)) * (Math.PI / 2)) ** 2;
-    return base + top + 1.7 * sstep(0.62, 1, Math.abs(x) / halfW) * arch * sstep(halfL, halfL - 4, Math.abs(z));
+    // the hem: scallops between anchors along the sides and across the ends
+    const side = Math.abs(Math.sin((((z - zc + halfL) / (2 * halfL)) * anchors * Math.PI) % Math.PI));
+    const end = Math.abs(Math.sin((((x + halfW) / (2 * halfW)) * 3 * Math.PI) % Math.PI));
+    const lift = 1.9 * sstep(halfW - 3.4, halfW, Math.abs(x)) * side + 1.6 * sstep(halfL - 3.4, halfL, Math.abs(z - zc)) * end;
+    return base + top + lift;
   };
+  const xs: number[] = [];
+  const zs: number[] = [];
+  for (let x = -halfW; x <= halfW + 1e-6; x += step) xs.push(x);
+  for (let z = zc - halfL; z <= zc + halfL + 1e-6; z += step) zs.push(z);
+  for (const [mx, mz] of masts) {
+    if (!xs.some((x) => Math.abs(x - mx) < 1e-3)) xs.push(mx);
+    if (!zs.some((z) => Math.abs(z - mz) < 1e-3)) zs.push(mz);
+  }
+  xs.sort((a, b) => a - b);
+  zs.sort((a, b) => a - b);
+  const nx = xs.length - 1;
   const pos: number[] = [];
   const idx: number[] = [];
-  for (let j = 0; j <= nz; j++) {
-    for (let i = 0; i <= nx; i++) {
-      const x = -halfW + (2 * halfW * i) / nx;
-      const z = -halfL + (2 * halfL * j) / nz;
+  zs.forEach((z, j) => {
+    xs.forEach((x, i) => {
       pos.push(x, h(x, z), z);
-      if (i < nx && j < nz) {
+      if (i < nx && j < zs.length - 1) {
         const a = j * (nx + 1) + i;
         idx.push(a, a + nx + 1, a + 1, a + 1, a + nx + 1, a + nx + 2);
       }
-    }
-  }
+    });
+  });
   const g = new BufferGeometry();
   g.setAttribute("position", new BufferAttribute(new Float32Array(pos), 3));
   g.setIndex(idx);
@@ -225,41 +244,70 @@ export function buildCanadaPlace(l: PlacedLandmark, world: World): Built {
   const hotelMat = cityToned(world, new MeshStandardMaterial({ map: ht.map, emissiveMap: ht.glow, emissive: 0xffffff, roughness: 0.6 }));
   const terminal = new Mesh(merge([walls(rect(27, 78), deck, lower, { uPer: 8, vPer: 4.6 }), walls(rect(24, 74), lower, upper, { uPer: 8, vPer: 3.2 })]), terminalMat);
   const hotelMesh = new Mesh(walls(hotel.map(([x, z]) => [x, z + hz] as P2), upper, hotelTop, { uPer: 4, vPer: 3.2 }), hotelMat);
-  // the sails: five peaks along the centreline, a mast through each
-  const masts = [-26, -13, 0, 13, 26];
-  const sailMat = new MeshStandardMaterial({ color: 0xfbfbf9, roughness: 0.65, side: DoubleSide, emissive: 0xfff1d8, emissiveIntensity: 0 });
-  // after dark each sail is floodlit in its own colour: blue, green, white, orange and red, or the event's colours
-  const sailCols = { value: masts.map(() => new Color()) };
+  // the sails: ten peaks in two rows of five down the pier, the seaward ones the tallest, a mast through each and
+  // standing a little proud of its peak; the roof stops short of the hotel at the shore end (SAIL_ROOF: its centre
+  // and half-length along the pier) so no sail runs into it
+  const SAIL_Z = [-28, -16.5, -5, 6.5, 18].map((z) => z * shore);
+  const SAIL_ROOF = { zc: -6 * shore, half: 29 };
+  const masts: P2[] = SAIL_Z.flatMap((z): P2[] => [
+    [-5.4, z - 2.4],
+    [5.4, z + 2.4],
+  ]);
+  const peaks = masts.map(([, z]) => 9.4 + 2.6 * sstep(-30, 30, -shore * z));
+  const sailMat = new MeshStandardMaterial({ color: 0xfbfbf9, roughness: 0.6, side: DoubleSide, emissive: 0xfff1d8, emissiveIntensity: 0 });
+  // after dark each pair of sails is floodlit in its own colour: blue, green, white, orange and red, or the event's;
+  // the fabric's seams run down from every peak
+  const sailCols = { value: SAIL_Z.map(() => new Color()) };
   const sailTint = { value: 0 };
+  const mastUni = { value: masts.map(([x, z]) => new Vector2(x, z)) };
   sailMat.onBeforeCompile = (sh) => {
     sh.uniforms.uSail = sailCols;
     sh.uniforms.uTint = sailTint;
+    sh.uniforms.uMast = mastUni;
     sh.vertexShader = sh.vertexShader
-      .replace("#include <common>", "#include <common>\nvarying float vSailZ;")
-      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvSailZ = position.z;");
-    sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nuniform vec3 uSail[5];\nuniform float uTint;\nvarying float vSailZ;").replace(
-      "#include <emissivemap_fragment>",
-      [
+      .replace("#include <common>", "#include <common>\nvarying vec2 vSailXZ;")
+      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvSailXZ = position.xz;");
+    sh.fragmentShader = sh.fragmentShader
+      .replace("#include <common>", `#include <common>\nuniform vec3 uSail[5];\nuniform float uTint;\nuniform vec2 uMast[${masts.length}];\nvarying vec2 vSailXZ;`)
+      .replace(
+        "#include <map_fragment>",
+        [
+          "#include <map_fragment>",
+          "vec2 near = uMast[0]; float nd = 1e9;",
+          `for ( int i = 0; i < ${masts.length}; i++ ) { float d = distance( vSailXZ, uMast[i] ); if ( d < nd ) { nd = d; near = uMast[i]; } }`,
+          "vec2 rel = vSailXZ - near;",
+          "float sf16 = fract( atan( rel.y, rel.x ) * 2.546 );",
+          "float arcd = min( sf16, 1.0 - sf16 ) * nd * 0.3927;",
+          "diffuseColor.rgb *= 1.0 - 0.08 * smoothstep( 0.09, 0.0, arcd ) * step( 0.6, nd );",
+        ].join("\n"),
+      )
+      .replace(
         "#include <emissivemap_fragment>",
-        "float sf = clamp( ( vSailZ + 26.0 ) / 13.0, 0.0, 4.0 );",
-        "int s0 = int( floor( sf ) );",
-        "vec3 sc = mix( uSail[ s0 ], uSail[ min( s0 + 1, 4 ) ], smoothstep( 0.4, 0.6, fract( sf ) ) );",
-        "totalEmissiveRadiance *= mix( vec3( 1.0 ), sc, uTint );",
-      ].join("\n"),
-    );
+        [
+          "#include <emissivemap_fragment>",
+          `float sf = clamp( ( vSailXZ.y - ( ${SAIL_Z[0].toFixed(2)} ) ) / ( ${(SAIL_Z[1] - SAIL_Z[0]).toFixed(2)} ), 0.0, 4.0 );`,
+          "int s0 = int( floor( sf ) );",
+          "vec3 sc = mix( uSail[ s0 ], uSail[ min( s0 + 1, 4 ) ], smoothstep( 0.4, 0.6, fract( sf ) ) );",
+          "totalEmissiveRadiance *= mix( vec3( 1.0 ), sc, uTint );",
+        ].join("\n"),
+      );
   };
-  const roof = new Mesh(sailRoof(12.5, 34, upper, masts, 9.5, lowEnd ? 14 : 24, lowEnd ? 48 : 90), sailMat);
+  const roof = new Mesh(sailRoof(12.5, SAIL_ROOF.half, upper, masts, peaks, 9.2, lowEnd ? 0.9 : 0.5, SAIL_ROOF.zc), sailMat);
   roof.castShadow = !lowEnd;
-  const mastGeo: BufferGeometry[] = masts.map((z) => paint(new CylinderGeometry(0.16, 0.24, 13.5, 8).translate(0, upper + 6.4, z), 0xf3f4f6));
+  const mastGeo: BufferGeometry[] = masts.map(([x, z], k) => paint(new CylinderGeometry(0.13, 0.22, peaks[k] + 2.2, 8).translate(x, upper + (peaks[k] + 2.2) / 2, z), 0xf3f4f6));
+  // the teal canopies along the terminal's upper walk, the band of colour under the white
+  for (const x of [-13.6, 13.6]) for (let z = -33; z <= 33; z += 6) mastGeo.push(paint(new BoxGeometry(1.6, 0.18, 5.2).translate(x + Math.sign(x) * 0.6, lower + 2.6, z), 0x3f9c8e));
   // uplights along the sails' feet, in the event's colours
-  for (const [i, z] of masts.entries()) {
-    const up = new Mesh(new BoxGeometry(1.2, 0.3, 8), i % 2 ? events.glowB : events.glow);
-    up.position.set(i % 2 ? 9 : -9, upper + 0.2, z);
-    g.add(up);
+  // (one mesh for each of the two colours)
+  for (const odd of [0, 1]) {
+    const ups = [...SAIL_Z.entries()].filter(([i]) => i % 2 === odd).map(([, z]) => new BoxGeometry(1.2, 0.3, 8).translate(odd ? 9.5 : -9.5, upper + 0.2, z));
+    if (ups.length) g.add(new Mesh(merge(ups), odd ? events.glowB : events.glow));
   }
   const solidMesh = new Mesh(merge([...solid, ...mastGeo]), cityToned(world, new MeshStandardMaterial({ vertexColors: true, roughness: 0.7 })));
   solidMesh.receiveShadow = true;
-  // the cruise ship alongside, bow to the sea
+  // the cruise ship alongside, bow to the sea, berthed toward the pier's end so its stern keeps off the bank at the
+  // pier's root (its bow reaches a little past the end)
+  const BERTH = -shore * 16;
   const ship = cruiseShip(lowEnd);
   const shipGroup = new Group();
   const shipSolid = new Mesh(ship.solid, cityToned(world, new MeshStandardMaterial({ vertexColors: true, roughness: 0.5, envMap: envTex, envMapIntensity: 0.4 })));
@@ -267,7 +315,7 @@ export function buildCanadaPlace(l: PlacedLandmark, world: World): Built {
   const shipCabins = new Mesh(ship.cabins, cityToned(world, new MeshStandardMaterial({ map: ct.map, emissiveMap: ct.glow, emissive: 0xffffff, roughness: 0.4, envMap: envTex, envMapIntensity: 0.5 }), 1.2));
   shipSolid.castShadow = !lowEnd;
   shipGroup.add(shipSolid, shipCabins);
-  shipGroup.position.set(15.5 + 4.4 + 0.4, water + 0.05, 0);
+  shipGroup.position.set(15.5 + 4.4 + 0.4, water + 0.05, BERTH);
   shipGroup.rotation.y = shore > 0 ? Math.PI : 0;
   g.add(solidMesh, terminal, hotelMesh, roof, shipGroup, lamps);
   // the fabric is translucent: a little light through it by day, floodlit in colour after dark
@@ -275,16 +323,16 @@ export function buildCanadaPlace(l: PlacedLandmark, world: World): Built {
   const warm = new Color(0xffd29a);
   const shipSide = shore > 0 ? -1 : 1;
   addReflections([
-    ...masts.map((z, k) => {
+    ...SAIL_Z.map((z, k) => {
       const [x, wz] = toWorld(0, z);
-      return { x, z: wz, y: l.padY + upper, h: 9.5, w: 9, col: sailCols.value[k], gain: 0.9 };
+      return { x, z: wz, y: l.padY + upper, h: 11, w: 10, col: sailCols.value[k], gain: 0.9 };
     }),
     ...[-24, 0, 24].map((z) => {
       const [x, wz] = toWorld(-15.5, z);
       return { x, z: wz, y: l.padY + deck, h: upper - deck, w: 16, col: warm, gain: 0.45 };
     }),
     ...[-24, -8, 8, 24].map((z) => {
-      const [x, wz] = toWorld(20.3, z * shipSide);
+      const [x, wz] = toWorld(20.3, z * shipSide + BERTH);
       return { x, z: wz, y: l.padY + water, h: 16, w: 14, col: warm, gain: 0.5 };
     }),
   ]);
@@ -406,22 +454,222 @@ export function buildHarbourCentre(world: World): Built {
 
 /* ------------------------------------------------------------------ Science World */
 
+/** A flat annular sector (r0..r1, a0..a1 radians in the x-z plane, x = cos, z = sin) at height y, facing up or down. */
+function sector(r0: number, r1: number, a0: number, a1: number, y: number, seg: number, up = true): BufferGeometry {
+  const pos: number[] = [];
+  for (let k = 0; k < seg; k++) {
+    const u = a0 + ((a1 - a0) * k) / seg;
+    const v = a0 + ((a1 - a0) * (k + 1)) / seg;
+    const p = [
+      [Math.cos(u) * r0, Math.sin(u) * r0],
+      [Math.cos(u) * r1, Math.sin(u) * r1],
+      [Math.cos(v) * r1, Math.sin(v) * r1],
+      [Math.cos(v) * r0, Math.sin(v) * r0],
+    ];
+    // (p0, p2, p1) faces up for an increasing angle (z grows with the angle, so the turn is clockwise seen from above)
+    const order = up === a1 > a0 ? [0, 2, 1, 0, 3, 2] : [0, 1, 2, 0, 2, 3];
+    for (const i of order) pos.push(p[i][0], y, p[i][1]);
+  }
+  const g = new BufferGeometry();
+  g.setAttribute("position", new Float32BufferAttribute(pos, 3));
+  g.computeVertexNormals();
+  const uv = new Float32Array((pos.length / 3) * 2);
+  for (let i = 0; i < pos.length / 3; i++) uv.set([pos[i * 3] / 4, pos[i * 3 + 2] / 4], i * 2);
+  g.setAttribute("uv", new BufferAttribute(uv, 2));
+  return g;
+}
+
+/** A curved wall on radius r from angle a0 to a1, y0 to y1, facing out (or in), u along the arc in `uPer` units. */
+function arcWall(r: number, a0: number, a1: number, y0: number, y1: number, seg: number, uPer = 1, vPer = y1 - y0, out = true): BufferGeometry {
+  const pos: number[] = [];
+  const nor: number[] = [];
+  const uv: number[] = [];
+  const du = (Math.abs(a1 - a0) * r) / seg / uPer;
+  for (let k = 0; k < seg; k++) {
+    const u = a0 + ((a1 - a0) * k) / seg;
+    const v = a0 + ((a1 - a0) * (k + 1)) / seg;
+    const q = [
+      [Math.cos(u) * r, y0, Math.sin(u) * r, k * du, 0, u],
+      [Math.cos(v) * r, y0, Math.sin(v) * r, (k + 1) * du, 0, v],
+      [Math.cos(v) * r, y1, Math.sin(v) * r, (k + 1) * du, (y1 - y0) / vPer, v],
+      [Math.cos(u) * r, y1, Math.sin(u) * r, k * du, (y1 - y0) / vPer, u],
+    ];
+    // (q0, q1, q2) faces inward when the angle grows; flip for the outward face
+    const order = out === a1 > a0 ? [0, 2, 1, 0, 3, 2] : [0, 1, 2, 0, 2, 3];
+    for (const i of order) {
+      pos.push(q[i][0], q[i][1], q[i][2]);
+      const s = out ? 1 : -1;
+      nor.push(Math.cos(q[i][5]) * s, 0, Math.sin(q[i][5]) * s);
+      uv.push(q[i][3], q[i][4]);
+    }
+  }
+  const g = new BufferGeometry();
+  g.setAttribute("position", new Float32BufferAttribute(pos, 3));
+  g.setAttribute("normal", new Float32BufferAttribute(nor, 3));
+  g.setAttribute("uv", new Float32BufferAttribute(uv, 2));
+  return g;
+}
+
 /**
- * The geodesic sphere and its double layer of lights: a node on every vertex, a second node raised over the middle
- * of every face, and a lattice of struts joining each raised node to its face's three corners, so every node sits in
- * a starburst. Both layers and the lattice take the event's pattern; after dark the shell faintly takes its colour.
+ * Science World's round base, two storeys to a tile: a red fascia, a storey of red panels with white joints, a white
+ * band, and the ground storey of glass between slim mullions, lit at night.
  */
-export function buildScienceWorld(world: World, centre: Vector3): Built {
+const swCladTexture = () =>
+  facade(
+    128,
+    128,
+    (g) => {
+      g.fillStyle = "#c8202c";
+      g.fillRect(0, 0, 128, 62);
+      g.fillStyle = "#b01a26";
+      g.fillRect(0, 0, 128, 7);
+      g.fillStyle = "#e9e4e0";
+      for (let x = 0; x < 128; x += 32) g.fillRect(x, 7, 2, 55);
+      g.fillRect(0, 34, 128, 2);
+      g.fillStyle = "#f3f3f1";
+      g.fillRect(0, 62, 128, 8);
+      g.fillStyle = "#6f767c";
+      g.fillRect(0, 124, 128, 4);
+    },
+    (g, lit) => {
+      let k = 0;
+      for (let x = 0; x < 128; x += 16) {
+        g.fillStyle = lit ? WARM[k++ % 4] : "#3f6170";
+        g.fillRect(x + 1, 72, 14, 51);
+        if (!lit) {
+          g.fillStyle = "rgba(200,225,235,0.3)";
+          g.fillRect(x + 1, 72, 14, 16);
+        }
+      }
+    },
+  );
+
+/**
+ * The east front, two storeys to a tile: bays of red panels crossed by white bracing and grey bays crossed in red,
+ * over a ground floor of glass between grey piers.
+ */
+const swBraceTexture = () =>
+  facade(
+    256,
+    128,
+    (g) => {
+      g.fillStyle = "#dcdfe1";
+      g.fillRect(0, 0, 256, 128);
+      g.fillStyle = "#c5cacd";
+      for (let x = 0; x < 256; x += 16) g.fillRect(x, 0, 1, 128);
+      g.fillStyle = "#c8202c";
+      g.fillRect(0, 0, 256, 8);
+      g.fillRect(10, 14, 108, 62);
+      g.fillRect(0, 82, 256, 4);
+      g.lineCap = "square";
+      g.strokeStyle = "#f3f3f1";
+      g.lineWidth = 6;
+      g.beginPath();
+      g.moveTo(13, 17);
+      g.lineTo(115, 73);
+      g.moveTo(115, 17);
+      g.lineTo(13, 73);
+      g.stroke();
+      g.strokeStyle = "#c8202c";
+      g.lineWidth = 7;
+      g.beginPath();
+      g.moveTo(140, 14);
+      g.lineTo(244, 76);
+      g.moveTo(244, 14);
+      g.lineTo(140, 76);
+      g.stroke();
+      g.fillStyle = "#f2c12e";
+      g.fillRect(224, 40, 12, 12);
+      g.fillStyle = "#2f6eb5";
+      g.fillRect(148, 40, 11, 11);
+      g.fillStyle = "#6f767c";
+      g.fillRect(0, 122, 256, 6);
+    },
+    (g, lit) => {
+      let k = 0;
+      for (let x = 4; x < 256; x += 32) {
+        g.fillStyle = lit ? WARM[k++ % 4] : "#2b3a48";
+        g.fillRect(x, 92, 26, 26);
+      }
+    },
+  );
+
+/** Glazing with slim white mullions, for the entrance hall and the round stair tower. */
+const swGlassTexture = () =>
+  facade(
+    64,
+    64,
+    (g) => {
+      g.fillStyle = "#e8eaec";
+      g.fillRect(0, 0, 64, 64);
+    },
+    (g, lit) => {
+      for (let x = 0; x < 64; x += 16) {
+        for (let y = 0; y < 64; y += 32) {
+          g.fillStyle = lit ? WARM[(x / 16 + y / 32) % 4] : "#4d6478";
+          g.fillRect(x + 1.5, y + 1.5, 13, 29);
+        }
+      }
+    },
+  );
+
+/** Photovoltaic modules from above: dark blue cells in a light frame, four to a tile. */
+const swSolarTexture = () =>
+  canvasTexture(64, 64, (g) => {
+    g.fillStyle = "#b7bec6";
+    g.fillRect(0, 0, 64, 64);
+    for (const [x, y] of [
+      [1, 1],
+      [33, 1],
+      [1, 33],
+      [33, 33],
+    ]) {
+      g.fillStyle = "#1e2d4c";
+      g.fillRect(x, y, 30, 30);
+      g.fillStyle = "#2c4068";
+      for (let k = 6; k < 30; k += 6) {
+        g.fillRect(x, y + k, 30, 1);
+        g.fillRect(x + k, y, 1, 30);
+      }
+    }
+  });
+/**
+ * Science World as it was built for Expo 86, at the head of False Creek, in its local frame (the land side along +x),
+ * with its 2100 touches:
+ * - the geodesic sphere, polished stainless steel in shallow pyramids under a white tube along every edge, an LED
+ *   node on every vertex and every pyramid's apex, joined by a lattice that glows after dark (the double layer of
+ *   lights); by day the nodes are the frame's small white joints;
+ * - the red drum it sits on, its rim lit, in a courtyard roof with the white space frame standing beside it;
+ * - on the water side the round base, a glass storey under red panels, its roof a garden with two white tensile
+ *   tents; round it the promenade deck on piles with its white railing, and the little pier with the orange C;
+ * - on the land side the fan: bays of stepped roofs radiating from the sphere, a glazed clerestory at each step, the
+ *   outer wall in red-and-white panels, a red line where it meets the courtyard; in 2100 its middle steps carry
+ *   solar panels and green roofs in turn and every inner step a skylight; the round glass stair tower and a plaza
+ *   beyond it.
+ * The landmark's yaw turns the group (Landmarks.tsx); the event patterns are registered at their turned positions.
+ */
+export function buildScienceWorld(l: PlacedLandmark, world: World): Built {
   const { events, lowEnd, envTex, mats } = world;
+  const centre = new Vector3(l.px, 0, l.pz);
+  const yaw = l.yaw ?? 0;
   const g = new Group();
-  const r = 11;
-  const cy = 13;
-  const shellMat = new MeshStandardMaterial({ color: 0xc3ccd6, metalness: 0.75, roughness: 0.3, envMap: envTex, envMapIntensity: 0.9, flatShading: true, emissive: 0x000000 });
-  const ball = new Mesh(new IcosahedronGeometry(r, 3), shellMat);
-  ball.position.y = cy;
-  ball.castShadow = !lowEnd;
-  // vertices and faces of the same subdivision, from the non-indexed triangle list
-  const ico = new IcosahedronGeometry(1, 3);
+  // the base stands about a third of the sphere's diameter, as the real one does
+  const R = 11;
+  const DRUM = 8.7;
+  const ROOF = SW_ROOF;
+  const DRUM_TOP = 9.4;
+  const cy = DRUM_TOP + Math.sqrt(R * R - DRUM * DRUM);
+  const BASE = 14;
+  const DECK = 18.5;
+  /** The roof garden's arc on the water side, and the fan's arc over the land and its reach (local angles). */
+  const GARDEN: [number, number] = [2.2, 4.4];
+  const FAN = { a0: -1.35, a1: 1.3, r: 30 };
+  const SHELL = 0xc8ced5;
+  const deckY = 0.28;
+  const toWorld = (v: Vector3) => v.clone().applyAxisAngle(UPV, yaw).add(centre);
+
+  // the sphere: a shallow stainless pyramid on every face of a geodesic (icosahedron, 4 subdivisions)
+  const ico = new IcosahedronGeometry(1, 4);
   const pa = ico.attributes.position;
   const keyOf = (i: number) => `${pa.getX(i).toFixed(3)},${pa.getY(i).toFixed(3)},${pa.getZ(i).toFixed(3)}`;
   const index = new Map<string, number>();
@@ -442,12 +690,34 @@ export function buildScienceWorld(world: World, centre: Vector3): Built {
     faces.push(f as [number, number, number]);
   }
   ico.dispose();
+  const at = (d: Vector3, rr: number) => new Vector3(d.x * rr, d.y * rr + cy, d.z * rr);
+  const spos: number[] = [];
+  for (const [a, b, c] of faces) {
+    const A = at(dirs[a], R);
+    const B = at(dirs[b], R);
+    const C = at(dirs[c], R);
+    const P = at(dirs[a].clone().add(dirs[b]).add(dirs[c]).normalize(), R + 0.11);
+    // the icosahedron's faces wind outward, so each side of the pyramid keeps its edge's order
+    for (const [u, v] of [
+      [A, B],
+      [B, C],
+      [C, A],
+    ]) spos.push(u.x, u.y, u.z, v.x, v.y, v.z, P.x, P.y, P.z);
+  }
+  const shellGeo = new BufferGeometry();
+  shellGeo.setAttribute("position", new Float32BufferAttribute(spos, 3));
+  shellGeo.computeVertexNormals();
+  const shellMat = new MeshStandardMaterial({ color: SHELL, metalness: 0.92, roughness: 0.16, envMap: envTex, envMapIntensity: 1.3, flatShading: true, emissive: 0x000000 });
+  const ball = new Mesh(shellGeo, shellMat);
+  ball.castShadow = !lowEnd;
+
+  // the lights: a node on every vertex and on every apex
   const led = new MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
-  const outerPts = dirs.map((d) => d.clone().multiplyScalar(r + 0.3).setY(d.y * (r + 0.3) + cy));
-  const apexPts = faces.map(([a, b, c]) => dirs[a].clone().add(dirs[b]).add(dirs[c]).normalize().multiplyScalar(r + 0.95).add(new Vector3(0, cy, 0)));
-  // the lights read as points of light, so plain icosahedra (20 triangles) do
-  const outer = new InstancedMesh(new IcosahedronGeometry(0.36, 0), led, outerPts.length);
-  const apex = new InstancedMesh(new IcosahedronGeometry(0.26, 0), led, apexPts.length);
+  const outerPts = dirs.map((d) => at(d, R + 0.07));
+  const apexPts = faces.map(([a, b, c]) => at(dirs[a].clone().add(dirs[b]).add(dirs[c]).normalize(), R + 0.2));
+  // octahedra: at this size they read as points of light, for 8 triangles each
+  const outer = new InstancedMesh(new OctahedronGeometry(0.17, 0), led, outerPts.length);
+  const apex = new InstancedMesh(new OctahedronGeometry(0.12, 0), led, apexPts.length);
   for (const [mesh, pts] of [
     [outer, outerPts],
     [apex, apexPts],
@@ -457,15 +727,14 @@ export function buildScienceWorld(world: World, centre: Vector3): Built {
       mesh.setMatrixAt(i, m4);
       mesh.setColorAt(i, new Color(0xffffff));
     });
-    registerPattern(events, mesh, "nodes", pts.map((v) => v.clone().add(centre)), centre);
+    registerPattern(events, mesh, "nodes", pts.map(toWorld), centre);
   }
-  // the lattice: each raised node to its face's corners
+  // the lattice: each apex node to its face's corners
   const lpos = new Float32Array(faces.length * 6 * 3);
   const lcol = new Float32Array(faces.length * 6 * 3);
   faces.forEach((f, fi) => {
     f.forEach((vi, k) => {
-      const o = (fi * 6 + k * 2) * 3;
-      lpos.set([apexPts[fi].x, apexPts[fi].y, apexPts[fi].z, outerPts[vi].x, outerPts[vi].y, outerPts[vi].z], o);
+      lpos.set([apexPts[fi].x, apexPts[fi].y, apexPts[fi].z, outerPts[vi].x, outerPts[vi].y, outerPts[vi].z], (fi * 6 + k * 2) * 3);
     });
   });
   const lgeo = new BufferGeometry();
@@ -473,49 +742,258 @@ export function buildScienceWorld(world: World, centre: Vector3): Built {
   lgeo.setAttribute("color", new BufferAttribute(lcol, 3));
   // additive: a dim colour adds next to nothing by day, so the lattice only shows as light after dark
   const lattice = new LineSegments(lgeo, new LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9, toneMapped: false, blending: AdditiveBlending, depthWrite: false }));
+
+  // the red drum the sphere sits on, and its lit rim
+  const red = cityToned(world, new MeshStandardMaterial({ color: 0xc41f2b, roughness: 0.5 }), 0);
+  const white = cityToned(world, new MeshStandardMaterial({ color: 0xf1f2f3, roughness: 0.45, metalness: 0.15 }), 0);
+  const drum = new Mesh(new CylinderGeometry(DRUM, DRUM, DRUM_TOP - ROOF, 48, 1, true), red);
+  drum.position.y = (ROOF + DRUM_TOP) / 2;
+  const rim = new Mesh(new TorusGeometry(DRUM + 0.08, 0.16, 6, 64), events.glow);
+  rim.rotation.x = Math.PI / 2;
+  rim.position.y = DRUM_TOP;
+
+  // the sphere's structure: a white tube along every edge of the geodesic, standing just proud of the steel
+  const edgeKeys = new Set<string>();
+  const edges: [number, number][] = [];
+  for (const f of faces) {
+    for (let k = 0; k < 3; k++) {
+      const a = Math.min(f[k], f[(k + 1) % 3]);
+      const b = Math.max(f[k], f[(k + 1) % 3]);
+      if (edgeKeys.has(`${a},${b}`)) continue;
+      edgeKeys.add(`${a},${b}`);
+      edges.push([a, b]);
+    }
+  }
+  const struts = new InstancedMesh(new CylinderGeometry(0.07, 0.07, 1, 5, 1, true), white, edges.length);
+  edges.forEach(([a, b], i) => {
+    const A = at(dirs[a], R + 0.05);
+    const B = at(dirs[b], R + 0.05);
+    const d = B.clone().sub(A);
+    p.addVectors(A, B).multiplyScalar(0.5);
+    q.setFromUnitVectors(UPV, d.clone().normalize());
+    m4.compose(p, q, new Vector3(1, d.length(), 1));
+    struts.setMatrixAt(i, m4);
+  });
+
+  // the round base on the water side: glass below, red panels above; its roof a terrace round the drum, with a
+  // garden and two white tensile tents on the water side
+  const clad = swCladTexture();
+  const cladMat = cityToned(world, new MeshStandardMaterial({ map: clad.map, emissiveMap: clad.glow, emissive: 0xffffff, roughness: 0.55 }), 0.9);
+  const base = new Mesh(arcWall(BASE, FAN.a1, FAN.a0 + Math.PI * 2, 0, ROOF, 48, 12, ROOF), cladMat);
+  const roofMat = cityToned(world, new MeshStandardMaterial({ color: 0xd4d6d4, roughness: 0.85 }), 0);
+  const roofs = new Mesh(sector(DRUM, BASE + 0.12, GARDEN[1], GARDEN[0] + Math.PI * 2, ROOF, 40), roofMat);
+  roofs.receiveShadow = true;
+  const garden = new Mesh(sector(DRUM, BASE + 0.12, GARDEN[0], GARDEN[1], ROOF + 0.04, 32), mats.roofGreen);
+  garden.receiveShadow = true;
+  const parapet = new Mesh(arcWall(BASE + 0.12, FAN.a1, FAN.a0 + Math.PI * 2, ROOF, ROOF + 0.7, 48), white);
+  const tentMat = new MeshStandardMaterial({ color: 0xf6f6f2, roughness: 0.6, side: DoubleSide, emissive: 0xfff1d8, emissiveIntensity: 0 });
+  const tents: BufferGeometry[] = [];
+  const masts: BufferGeometry[] = [];
+  for (const a of [3.35, 3.95]) {
+    const tx = Math.cos(a) * 11.3;
+    const tz = Math.sin(a) * 11.3;
+    tents.push(new CylinderGeometry(0.25, 3.4, 2.2, 6, 1, true).translate(tx, ROOF + 4.6, tz));
+    for (let k = 0; k < 6; k++) {
+      const b = (k / 6) * Math.PI * 2;
+      masts.push(new CylinderGeometry(0.07, 0.07, 3.6, 4).translate(tx + Math.cos(b) * 3.3, ROOF + 1.8, tz + Math.sin(b) * 3.3));
+    }
+    masts.push(new CylinderGeometry(0.1, 0.1, 5.9, 5).translate(tx, ROOF + 2.95, tz));
+  }
+  const tentMesh = new Mesh(merge(tents), tentMat);
+
+  // the fan, as the Expo Centre was built: bays of stepped roofs radiating from the sphere over the land side, a
+  // glazed clerestory at each step, the outer wall in red-and-white panels, a red trim line facing the sphere; in
+  // 2100 the middle steps carry solar panels and green roofs in turn, and every inner step a skylight
+  const brace = swBraceTexture();
+  const braceMat = cityToned(world, new MeshStandardMaterial({ map: brace.map, emissiveMap: brace.glow, emissive: 0xffffff, roughness: 0.6 }), 0.9);
+  const glassTex = swGlassTexture();
+  const glassMat = cityToned(world, new MeshStandardMaterial({ map: glassTex.map, emissiveMap: glassTex.glow, emissive: 0xffffff, roughness: 0.15, metalness: 0.3, envMap: envTex, envMapIntensity: 0.8 }), 1);
+  const STEPS: [number, number, number][] = [
+    [BASE, 19, 8.8],
+    [19, 24.5, 7.4],
+    [24.5, FAN.r, 6.0],
+  ];
+  const NB = 10;
+  const fanRoof: BufferGeometry[] = [];
+  const fanPv: BufferGeometry[] = [];
+  const fanGreen: BufferGeometry[] = [];
+  const fanGlass: BufferGeometry[] = [arcWall(19, FAN.a0, FAN.a1, 7.4, 8.8, 40, 3, 1.4), arcWall(24.5, FAN.a0, FAN.a1, 6.0, 7.4, 48, 3, 1.4)];
+  const fanWhite: BufferGeometry[] = [];
+  const fanFront: BufferGeometry[] = [arcWall(FAN.r, FAN.a0, FAN.a1, 0, 6.0, 64, 9, 6.0)];
+  // the fan's two ends, step by step (both windings, so they show from either side)
+  for (const a of [FAN.a0, FAN.a1]) {
+    for (const [r0, r1, h] of STEPS) {
+      const c = Math.cos(a);
+      const s = Math.sin(a);
+      const P = [
+        [c * r0, 0, s * r0, 0, 0],
+        [c * r1, 0, s * r1, (r1 - r0) / 9, 0],
+        [c * r1, h, s * r1, (r1 - r0) / 9, h / 6],
+        [c * r0, h, s * r0, 0, h / 6],
+      ];
+      const pos: number[] = [];
+      const uv: number[] = [];
+      for (const i of [0, 1, 2, 0, 2, 3, 0, 2, 1, 0, 3, 2]) {
+        pos.push(P[i][0], P[i][1], P[i][2]);
+        uv.push(P[i][3], P[i][4]);
+      }
+      const geo = new BufferGeometry();
+      geo.setAttribute("position", new Float32BufferAttribute(pos, 3));
+      geo.setAttribute("uv", new Float32BufferAttribute(uv, 2));
+      geo.computeVertexNormals();
+      fanFront.push(geo);
+    }
+  }
+  for (let b = 0; b < NB; b++) {
+    const a0 = FAN.a0 + ((FAN.a1 - FAN.a0) * b) / NB;
+    const a1 = FAN.a0 + ((FAN.a1 - FAN.a0) * (b + 1)) / NB;
+    const am = (a0 + a1) / 2;
+    STEPS.forEach(([r0, r1, h], i) => {
+      fanRoof.push(sector(r0, r1 + 0.05, a0, a1, h, 4));
+      if (i === 1) (b % 2 ? fanGreen : fanPv).push(sector(r0 + 0.7, r1 - 0.7, a0 + 0.03, a1 - 0.03, h + 0.08, 3));
+      if (i === 0) fanGlass.push(new BoxGeometry(1.4, 0.9, 2.6).rotateY(-am).translate(Math.cos(am) * 16.5, h + 0.45, Math.sin(am) * 16.5));
+    });
+  }
+  // the bays' dividing walls, a white line over each step
+  for (let b = 0; b <= NB; b++) {
+    const a = FAN.a0 + ((FAN.a1 - FAN.a0) * b) / NB;
+    for (const [r0, r1, h] of STEPS) {
+      const rm = (r0 + r1) / 2;
+      fanWhite.push(new BoxGeometry(r1 - r0, 0.7, 0.24).rotateY(-a).translate(Math.cos(a) * rm, h + 0.35, Math.sin(a) * rm));
+    }
+  }
+  // the red line where the fan meets the courtyard round the drum, facing the sphere
+  const trim = new Mesh(arcWall(BASE - 0.05, FAN.a0, FAN.a1, ROOF, 8.8 + 0.5, 40, 1, 1.9, false), red);
+  const fanRoofMesh = new Mesh(merge(fanRoof), roofMat);
+  fanRoofMesh.receiveShadow = true;
+  const fanPvMesh = new Mesh(merge(fanPv), new MeshStandardMaterial({ map: swSolarTexture(), roughness: 0.3, metalness: 0.5, envMap: envTex, envMapIntensity: 0.7 }));
+  const fanGreenMesh = new Mesh(merge(fanGreen), mats.roofGreen);
+  const fanGlassMesh = new Mesh(merge(fanGlass), glassMat);
+  const fanFrontMesh = new Mesh(merge(fanFront), braceMat);
+  fanFrontMesh.castShadow = !lowEnd;
+
+  // the white space frame standing on the courtyard roof beside the sphere, two cells square and three high
+  const S = 2.2;
+  const fc = new Vector3(Math.cos(-0.95) * 11.4 - S, ROOF, Math.sin(-0.95) * 11.4 - S);
+  const frame: [Vector3, Vector3][] = [];
+  const P3 = (i: number, j: number, k: number) => new Vector3(fc.x + i * S, fc.y + j * S, fc.z + k * S);
+  for (let i = 0; i <= 2; i++) {
+    for (let j = 0; j <= 3; j++) {
+      for (let k = 0; k <= 2; k++) {
+        if (i < 2) frame.push([P3(i, j, k), P3(i + 1, j, k)]);
+        if (j < 3) frame.push([P3(i, j, k), P3(i, j + 1, k)]);
+        if (k < 2) frame.push([P3(i, j, k), P3(i, j, k + 1)]);
+        if (i < 2 && j < 3 && (i + j + k) % 2 === 0) frame.push([P3(i, j, k), P3(i + 1, j + 1, k)]);
+      }
+    }
+  }
+  const spaceFrame = new InstancedMesh(new CylinderGeometry(0.1, 0.1, 1, 5), white, frame.length);
+  frame.forEach(([a, b], i) => {
+    const d = b.clone().sub(a);
+    p.addVectors(a, b).multiplyScalar(0.5);
+    q.setFromUnitVectors(UPV, d.clone().normalize());
+    m4.compose(p, q, new Vector3(1, d.length(), 1));
+    spaceFrame.setMatrixAt(i, m4);
+  });
+  // the round glass stair tower just outside the fan
+  const tower = new Group();
+  const towerBody = new Mesh(walls(oval(2.1, 2.1, 24), 0, 9.6, { uPer: 1.65, vPer: 2.4, smooth: true }), glassMat);
+  const towerCap = new Mesh(new CylinderGeometry(2.3, 2.3, 0.4, 24), white);
+  towerCap.position.y = 9.8;
+  tower.add(towerBody, towerCap);
+  tower.position.set(Math.cos(0.35) * (FAN.r + 3), 0, Math.sin(0.35) * (FAN.r + 3));
+
+  // the promenade deck out over the water on piles round the base, its white railing, the little pier with the C
+  const deckMat = cityToned(world, new MeshStandardMaterial({ color: 0xd9d6cf, roughness: 0.85 }), 0);
+  const d0 = FAN.a1 - 0.04;
+  const d1 = FAN.a0 + Math.PI * 2 + 0.04;
+  const pierA = 2.45;
+  const deck = new Mesh(
+    merge([
+      sector(BASE - 0.1, DECK, d0, d1, deckY, 64),
+      sector(BASE - 0.1, DECK, d0, d1, -0.35, 64, false),
+      arcWall(DECK, d0, d1, -0.35, deckY, 64),
+      new BoxGeometry(4.2, 0.63, 4.2).translate(Math.cos(pierA) * 20.4, deckY - 0.315, Math.sin(pierA) * 20.4),
+    ]),
+    deckMat,
+  );
+  deck.receiveShadow = true;
+  // down from the deck's underside to the bed below the sea
+  const pileLen = Math.max(1, deckY - 0.35 - (SEA - 1.5 - l.padY));
+  const pileSpots: P2[] = [];
+  for (let a = d0 + 0.06; a < d1; a += 0.2) for (const rr of [15.6, 17.9]) pileSpots.push([Math.cos(a) * rr, Math.sin(a) * rr]);
+  const piles = new InstancedMesh(new CylinderGeometry(0.26, 0.26, 1, 6), new MeshStandardMaterial({ color: 0x4a4540, roughness: 0.9 }), pileSpots.length);
+  pileSpots.forEach(([x, z], i) => {
+    p.set(x, deckY - 0.35 - pileLen / 2, z);
+    m4.compose(p, q.identity(), new Vector3(1, pileLen, 1));
+    piles.setMatrixAt(i, m4);
+  });
+  const railR = DECK - 0.18;
+  const posts: P2[] = [];
+  for (let a = d0; a <= d1 + 1e-6; a += 1.2 / railR) posts.push([Math.cos(a) * railR, Math.sin(a) * railR]);
+  const railPosts = new InstancedMesh(new BoxGeometry(0.1, 1.05, 0.1), white, posts.length);
+  posts.forEach(([x, z], i) => {
+    m4.makeTranslation(x, deckY + 0.52, z);
+    railPosts.setMatrixAt(i, m4);
+  });
+  const rails = new Mesh(
+    merge(
+      [deckY + 1.05, deckY + 0.6].map((y) => {
+        const t = new TorusGeometry(railR, 0.06, 4, 96, d1 - d0);
+        t.rotateX(Math.PI / 2);
+        t.rotateY(-d0);
+        t.translate(0, y, 0);
+        return t;
+      }),
+    ),
+    white,
+  );
+  const orange = new MeshStandardMaterial({ color: 0xf28a1a, roughness: 0.45 });
+  const cSculpt = new Mesh(new TorusGeometry(0.95, 0.34, 10, 20, Math.PI * 1.5), orange);
+  cSculpt.position.set(Math.cos(pierA) * 20.4, deckY + 1.32, Math.sin(pierA) * 20.4);
+  // the arc opens toward +x before the turn; z first, then the turn to face out over the water
+  cSculpt.rotation.set(0, -pierA + Math.PI / 2, Math.PI / 4, "YXZ");
+  // the plaza beyond the fan
+  const paving = new Mesh(sector(FAN.r + 0.1, FAN.r + 3.5, FAN.a0, FAN.a1, 0.08, 48), cityToned(world, new MeshStandardMaterial({ color: 0xc9c5bb, roughness: 0.95 }), 0));
+  paving.receiveShadow = true;
+
+  // lights: the night shell and the tents lit from below
   const ca = new Color();
   const cb = new Color();
-  events.followers.push((level, _ev, t) => {
+  const joint = new Color(0xe9edf1);
+  events.followers.push((level) => {
     const oc = outer.instanceColor;
     const ac = apex.instanceColor;
     if (!oc || !ac) return;
-    const dim = 0.1 + 0.6 * nightOf(level);
+    const n = nightOf(level);
+    // by day the nodes are the frame's white joints; the event's colours come up with the dark
+    for (const [mesh, attr] of [
+      [outer, oc],
+      [apex, ac],
+    ] as const) {
+      const arr = attr.array as Float32Array;
+      for (let i = 0; i < mesh.count; i++) {
+        ca.fromArray(arr, i * 3).lerp(joint, 1 - n);
+        ca.toArray(arr, i * 3);
+      }
+      attr.needsUpdate = true;
+    }
+    const dim = 0.06 + 0.64 * n;
     faces.forEach((f, fi) => {
       ca.fromArray(ac.array as Float32Array, fi * 3).multiplyScalar(dim);
       f.forEach((vi, k) => {
         cb.fromArray(oc.array as Float32Array, vi * 3).multiplyScalar(dim);
-        const o = (fi * 6 + k * 2) * 3;
-        lcol.set([ca.r, ca.g, ca.b, cb.r, cb.g, cb.b], o);
+        lcol.set([ca.r, ca.g, ca.b, cb.r, cb.g, cb.b], (fi * 6 + k * 2) * 3);
       });
     });
     (lgeo.attributes.color as BufferAttribute).needsUpdate = true;
     // after dark the shell recedes and takes a faint wash of the light
-    const n = nightOf(level);
-    shellMat.color.setHex(0xc3ccd6).multiplyScalar(1 - 0.75 * n);
-    shellMat.envMapIntensity = 0.9 * (1 - 0.9 * n);
+    shellMat.color.setHex(SHELL).multiplyScalar(1 - 0.75 * n);
+    shellMat.envMapIntensity = 1.3 * (1 - 0.9 * n);
     shellMat.emissive.copy(events.glow.emissive).multiplyScalar(0.1 * n);
-    void t;
+    tentMat.emissiveIntensity = 0.5 * n;
   });
-  const base = new Mesh(new CylinderGeometry(9.5, 10.5, 4.2, 40), new MeshStandardMaterial({ color: 0x223040, metalness: 0.4, roughness: 0.15, envMap: envTex, envMapIntensity: 0.9, emissive: 0xffe2b8, emissiveIntensity: 0 }));
-  base.position.y = 2.1;
-  const roofRing = new Mesh(new CylinderGeometry(10.8, 10.8, 0.6, 40), mats.landmark);
-  roofRing.position.y = 4.4;
-  const band = new Mesh(new TorusGeometry(10.3, 0.22, 8, 64), events.glow);
-  band.rotation.x = Math.PI / 2;
-  band.position.y = 5.0;
-  const plaza = new Mesh(new CylinderGeometry(15.5, 16, 0.5, 48), mats.concrete);
-  plaza.position.y = 0.05;
-  plaza.receiveShadow = true;
-  const cols = new InstancedMesh(new CylinderGeometry(0.35, 0.35, 4.2, 8), mats.landmark, 10);
-  for (let i = 0; i < 10; i++) {
-    const a = (i / 10) * Math.PI * 2;
-    m4.makeTranslation(Math.cos(a) * 11.2, 2.1, Math.sin(a) * 11.2);
-    cols.setMatrixAt(i, m4);
-  }
-  events.followers.push((level) => {
-    (base.material as MeshStandardMaterial).emissiveIntensity = 0.6 * nightOf(level);
-  });
-  g.add(ball, outer, apex, lattice, base, roofRing, band, plaza, cols);
+  g.add(ball, struts, outer, apex, lattice, drum, rim, base, roofs, garden, parapet, tentMesh, new Mesh(merge(masts), white), trim, fanRoofMesh, fanPvMesh, fanGreenMesh, fanGlassMesh, new Mesh(merge(fanWhite), white), fanFrontMesh, spaceFrame, tower, deck, piles, railPosts, rails, cSculpt, paving);
   // its lights show in False Creek, in the event's colours
   addReflections([{ x: centre.x, z: centre.z, y: centre.y, h: 26, w: 22, col: events.glow.emissive, gain: 0.8 }]);
   return { group: g };
@@ -887,5 +1365,926 @@ export function buildRogersArena(world: World): Built {
   g.add(walls0, band, roof, ribs, glass, seats, ice, boards, score, hang, glow);
   // smaller than BC Place by more than life would have it, so the two sit side by side on the basin
   g.scale.setScalar(0.82);
+  return { group: g };
+}
+
+/* ------------------------------------------------------------------ False Creek's bridges */
+
+/** Four lanes of asphalt: white edge lines, dashed lines between the lanes, a median down the middle. */
+const roadTexture = () =>
+  canvasTexture(64, 128, (g) => {
+    g.fillStyle = "#43464c";
+    g.fillRect(0, 0, 64, 128);
+    g.fillStyle = "#e9e9e4";
+    g.fillRect(2, 0, 1.5, 128);
+    g.fillRect(60.5, 0, 1.5, 128);
+    for (const x of [17, 46]) for (let y = 0; y < 128; y += 32) g.fillRect(x, y, 1.2, 16);
+    g.fillStyle = "#b9b6ad";
+    g.fillRect(30.5, 0, 3, 128);
+  });
+
+/** A steel truss panel, see-through between its members: chords, verticals and a pair of diagonals. */
+const trussTexture = (hex: string) =>
+  canvasTexture(128, 64, (g) => {
+    g.strokeStyle = hex;
+    g.lineCap = "square";
+    g.lineWidth = 7;
+    g.beginPath();
+    g.moveTo(0, 4);
+    g.lineTo(128, 4);
+    g.moveTo(0, 60);
+    g.lineTo(128, 60);
+    g.stroke();
+    g.lineWidth = 5;
+    g.beginPath();
+    for (const x of [0, 64, 128]) {
+      g.moveTo(x, 4);
+      g.lineTo(x, 60);
+    }
+    g.moveTo(0, 60);
+    g.lineTo(64, 4);
+    g.lineTo(128, 60);
+    g.moveTo(0, 4);
+    g.lineTo(64, 60);
+    g.lineTo(128, 4);
+    g.stroke();
+  });
+
+/** A ribbon of quads through matching rows of points (each row a cross-section or a pair of edge points). */
+function ribbon(rows: Vector3[][], uv?: (i: number, k: number) => [number, number]): BufferGeometry {
+  const pos: number[] = [];
+  const uvs: number[] = [];
+  for (let i = 0; i < rows.length - 1; i++) {
+    for (let k = 0; k < rows[i].length - 1; k++) {
+      const quad = [
+        [i, k],
+        [i + 1, k],
+        [i + 1, k + 1],
+        [i, k],
+        [i + 1, k + 1],
+        [i, k + 1],
+      ];
+      for (const [a, b] of quad) {
+        const v = rows[a][b];
+        pos.push(v.x, v.y, v.z);
+        uvs.push(...(uv ? uv(a, b) : [0, 0]));
+      }
+    }
+  }
+  const g = new BufferGeometry();
+  g.setAttribute("position", new Float32BufferAttribute(pos, 3));
+  g.setAttribute("uv", new Float32BufferAttribute(uvs, 2));
+  g.computeVertexNormals();
+  return g;
+}
+
+/**
+ * One bridge: the deck rises from the ground at each end to its clearance over the water (no steeper than a road
+ * should be) and is drawn as a box girder with parapets and four lanes; piers stand on the creek bed or the ground
+ * wherever the deck is up in the air; lamps line both parapets. Granville's deck rides on a steel deck truss;
+ * Burrard's middle span runs between see-through truss walls, with a pair of concrete towers at each end of it.
+ */
+function buildBridge(br: Bridge, world: World): Group {
+  const { lowEnd, mats } = world;
+  const g = new Group();
+  const [ax, az] = br.a;
+  const [bx, bz] = br.b;
+  const L = Math.hypot(bx - ax, bz - az);
+  const ux = (bx - ax) / L;
+  const uz = (bz - az) / L;
+  // across the deck, to the right of a → b
+  const rx = -uz;
+  const rz = ux;
+  const h = br.half;
+  const n = Math.ceil(L / 2) + 1;
+  const T = Array.from({ length: n }, (_, i) => (i * L) / (n - 1));
+  const at = (t: number, lat: number): [number, number] => [ax + ux * t + rx * lat, az + uz * t + rz * lat];
+  const wet = T.map((t) => sdfAt(...at(t, 0)) < 0);
+  const i0 = wet.indexOf(true);
+  const i1 = wet.lastIndexOf(true);
+  const ground = T.map((t) => Math.max(...[-h, 0, h].map((l) => groundAt(...at(t, l)))));
+  const raw = T.map((_, i) => (wet[i] ? SEA + br.clear * (0.88 + 0.12 * Math.sin((Math.PI * (i - i0)) / Math.max(1, i1 - i0))) : ground[i] + 0.4));
+  // no steeper than the grade from any high point
+  const grade = br.kind === "deckTruss" ? 0.11 : 0.13;
+  const deck = T.map((t) => Math.max(...raw.map((r, j) => r - grade * Math.abs(t - T[j]))));
+  const depth = br.kind === "girder" ? 1.5 : br.kind === "deckTruss" ? 0.7 : 1.2;
+  const P = (t: number, lat: number, y: number) => {
+    const [x, z] = at(t, lat);
+    return new Vector3(x, y, z);
+  };
+  const concrete = cityToned(world, new MeshStandardMaterial({ color: 0xd3cec4, roughness: 0.85, side: DoubleSide }), 0);
+  // the girder and its parapets as one extruded cross-section (lateral, height over the road)
+  const section: [number, number][] = [
+    [-h - 0.3, 0.9],
+    [-h, 0.9],
+    [-h, 0.02],
+    [h, 0.02],
+    [h, 0.9],
+    [h + 0.3, 0.9],
+    [h + 0.3, -depth],
+    [-h - 0.3, -depth],
+    [-h - 0.3, 0.9],
+  ];
+  const shell = new Mesh(ribbon(T.map((t, i) => section.map(([l, v]) => P(t, l, deck[i] + v)))), concrete);
+  shell.castShadow = !lowEnd;
+  shell.receiveShadow = true;
+  const road = new Mesh(
+    ribbon(
+      T.map((t, i) => [P(t, -h, deck[i] + 0.04), P(t, h, deck[i] + 0.04)]),
+      (i, k) => [k, T[i] / 8],
+    ),
+    cityToned(world, new MeshStandardMaterial({ map: roadTexture(), roughness: 0.9 }), 0),
+  );
+  road.receiveShadow = true;
+  g.add(shell, road);
+  // piers wherever the deck is up in the air, and an abutment at an end that stays above the ground
+  const pierEvery = br.kind === "deckTruss" ? 14 : br.kind === "throughTruss" ? 11 : 9;
+  const below = br.kind === "deckTruss" ? depth + 3.4 : depth;
+  const piers: Part[] = [];
+  for (let i = 0; i < n; i++) {
+    if (i % Math.round(pierEvery / 2) !== 0) continue;
+    const base = wet[i] ? SEA - 2.5 : ground[i] - 0.3;
+    const top = deck[i] - below;
+    if (top - base < 1.2) continue;
+    const H = top - base;
+    const [cx, cz] = at(T[i], 0);
+    for (const s of [-1, 1]) {
+      const [px, pz] = at(T[i], s * (h - 0.9));
+      piers.push({ geo: new CylinderGeometry(br.kind === "deckTruss" ? 0.75 : 0.55, br.kind === "deckTruss" ? 0.9 : 0.6, H, 10), position: [px, base + H / 2, pz] });
+    }
+    piers.push({ geo: new BoxGeometry(2 * h + 0.6, 0.8, 1.4), position: [cx, top - 0.4, cz], rotation: [0, Math.atan2(ux, uz), 0] });
+  }
+  for (const i of [0, n - 1]) {
+    const lift = deck[i] - depth - ground[i];
+    if (lift < 0.3) continue;
+    const [cx, cz] = at(T[i], 0);
+    piers.push({ geo: new BoxGeometry(2 * h + 0.6, lift + 1, 1.6), position: [cx, ground[i] + lift / 2 - 0.5, cz], rotation: [0, Math.atan2(ux, uz), 0] });
+  }
+  if (piers.length) {
+    const pierMesh = new Mesh(merged(piers), concrete);
+    pierMesh.castShadow = !lowEnd;
+    g.add(pierMesh);
+  }
+  // lamps along both parapets
+  const posts: Part[] = [];
+  const heads: Part[] = [];
+  for (let t = 4; t < L - 2; t += 10) {
+    const i = Math.round((t / L) * (n - 1));
+    for (const s of [-1, 1]) {
+      const [px, pz] = at(t, s * (h + 0.15));
+      posts.push({ geo: new CylinderGeometry(0.07, 0.09, 2.8, 5), position: [px, deck[i] + 2.3, pz] });
+      const [hx, hz] = at(t, s * (h - 0.35));
+      heads.push({ geo: new BoxGeometry(0.6, 0.14, 0.3), position: [hx, deck[i] + 3.65, hz], rotation: [0, Math.atan2(ux, uz) + Math.PI / 2, 0] });
+    }
+  }
+  if (posts.length) g.add(new Mesh(merged(posts), mats.post), new Mesh(merged(heads), mats.lamp));
+  // the steel: Granville's deck truss under the deck where it is high, Burrard's truss walls and towers over the water
+  if (br.kind === "deckTruss") {
+    const tex = trussTexture("#58695f");
+    const steel = cityToned(world, new MeshStandardMaterial({ map: tex, alphaTest: 0.5, side: DoubleSide, roughness: 0.6, metalness: 0.3 }), 0);
+    const high = T.map((_, i) => deck[i] - depth - 3.4 - (wet[i] ? SEA : ground[i]) > 0.8);
+    const sides: BufferGeometry[] = [];
+    let run: number[] = [];
+    const flush = () => {
+      if (run.length > 1) {
+        for (const s of [-1, 1]) {
+          sides.push(
+            ribbon(
+              run.map((i) => [P(T[i], s * (h - 0.2), deck[i] - depth - 3.4), P(T[i], s * (h - 0.2), deck[i] - depth)]),
+              (a, k) => [T[run[a]] / 6, k],
+            ),
+          );
+        }
+      }
+      run = [];
+    };
+    for (let i = 0; i < n; i++) {
+      if (high[i]) run.push(i);
+      else flush();
+    }
+    flush();
+    if (sides.length) g.add(new Mesh(merge(sides), steel));
+  } else if (br.kind === "throughTruss" && i0 >= 0) {
+    const tex = trussTexture("#6f8174");
+    const steel = cityToned(world, new MeshStandardMaterial({ map: tex, alphaTest: 0.5, side: DoubleSide, roughness: 0.6, metalness: 0.3 }), 0);
+    // the middle of the water span, between the towers
+    const s0 = i0 + Math.round((i1 - i0) * 0.28);
+    const s1 = i1 - Math.round((i1 - i0) * 0.28);
+    const idx = Array.from({ length: s1 - s0 + 1 }, (_, k) => s0 + k);
+    const walls2 = [-1, 1].map((s) =>
+      ribbon(
+        idx.map((i) => [P(T[i], s * (h + 0.35), deck[i] + 0.9), P(T[i], s * (h + 0.35), deck[i] + 6.4)]),
+        (a, k) => [(T[idx[a]] - T[s0]) / 6, k],
+      ),
+    );
+    const braces: Part[] = [];
+    for (let i = s0; i <= s1; i += 3) {
+      const [cx, cz] = at(T[i], 0);
+      braces.push({ geo: new BoxGeometry(2 * h + 0.9, 0.3, 0.3), position: [cx, deck[i] + 6.3, cz], rotation: [0, Math.atan2(ux, uz), 0] });
+    }
+    // the towers: a pair at each end of the truss, joined by a portal over the road
+    for (const i of [s0, s1]) {
+      const base = wet[i] ? SEA - 2.5 : ground[i];
+      const topY = deck[i] + 9.5;
+      for (const s of [-1, 1]) {
+        const [px, pz] = at(T[i], s * (h + 1.5));
+        braces.push({ geo: new BoxGeometry(2.2, topY - base, 2.4), position: [px, (topY + base) / 2, pz], rotation: [0, Math.atan2(ux, uz), 0] });
+        braces.push({ geo: new BoxGeometry(1.6, 1.4, 1.8), position: [px, topY + 0.7, pz], rotation: [0, Math.atan2(ux, uz), 0] });
+      }
+      const [cx, cz] = at(T[i], 0);
+      braces.push({ geo: new BoxGeometry(2 * h + 5.2, 1.2, 2), position: [cx, deck[i] + 7.6, cz], rotation: [0, Math.atan2(ux, uz), 0] });
+    }
+    g.add(new Mesh(merge(walls2), steel), new Mesh(merged(braces), concrete));
+  }
+  return g;
+}
+
+/** Cambie, Granville and Burrard Bridges over False Creek. */
+export function buildBridges(world: World): Built {
+  const g = new Group();
+  for (const br of BRIDGES) g.add(buildBridge(br, world));
+  return { group: g };
+}
+
+/* ------------------------------------------------------------------ the Waterfront hub */
+
+/**
+ * The hub towers' skin: pale glass with the floor plates showing through, slim mullions, and a white lattice of
+ * diagonals over it, one diamond to a tile; the night glow lights most floors.
+ */
+const latticeTexture = () =>
+  facade(
+    128,
+    128,
+    (g) => {
+      const gr = g.createLinearGradient(0, 0, 128, 128);
+      gr.addColorStop(0, "#bcd4e4");
+      gr.addColorStop(0.5, "#8fb0c8");
+      gr.addColorStop(1, "#a9c4d8");
+      g.fillStyle = gr;
+      g.fillRect(0, 0, 128, 128);
+      // the floor plates through the glass, and the mullions
+      g.fillStyle = "#eef3f5";
+      for (let y = 0; y < 128; y += 16) g.fillRect(0, y, 128, 2.5);
+      g.fillStyle = "rgba(120,150,170,0.35)";
+      for (let x = 0; x < 128; x += 16) g.fillRect(x, 0, 1, 128);
+    },
+    (g, lit) => {
+      // the floors between the plates: by day a faint band; at night runs of lit offices with dark breaks
+      let k = 0;
+      for (let y = 0; y < 128; y += 16) {
+        if (!lit) {
+          g.fillStyle = "rgba(120,160,185,0.22)";
+          g.fillRect(0, y + 3, 128, 12);
+          continue;
+        }
+        for (let x = 0; x < 128; ) {
+          const run = 10 + ((k * 37 + y * 3) % 34);
+          if ((k * 7 + y) % 5 < 3) {
+            g.fillStyle = WARM[k % 4];
+            g.fillRect(x, y + 3, run, 12);
+          }
+          x += run + 2;
+          k++;
+        }
+      }
+      // the lattice over the glass: white by day, a dark line across the lit floors at night
+      g.strokeStyle = lit ? "#000" : "#fbfcfc";
+      g.lineWidth = 3.2;
+      g.beginPath();
+      g.moveTo(0, 0);
+      g.lineTo(128, 128);
+      g.moveTo(128, 0);
+      g.lineTo(0, 128);
+      g.moveTo(64, 0);
+      g.lineTo(0, 64);
+      g.moveTo(64, 0);
+      g.lineTo(128, 64);
+      g.moveTo(0, 64);
+      g.lineTo(64, 128);
+      g.moveTo(128, 64);
+      g.lineTo(64, 128);
+      g.stroke();
+    },
+  );
+
+/** A space frame seen from above: a square grid with its diagonals, in `line` over glass of opacity `glass`. */
+const spaceFrameTexture = (line: string, glass: number) => {
+  const t = canvasTexture(128, 128, (g) => {
+    g.clearRect(0, 0, 128, 128);
+    if (glass > 0) {
+      g.fillStyle = `rgba(214,232,242,${glass})`;
+      g.fillRect(0, 0, 128, 128);
+    }
+    g.strokeStyle = line;
+    g.lineWidth = 3;
+    g.beginPath();
+    for (const v of [0, 64, 128]) {
+      g.moveTo(v, 0);
+      g.lineTo(v, 128);
+      g.moveTo(0, v);
+      g.lineTo(128, v);
+    }
+    g.moveTo(0, 0);
+    g.lineTo(128, 128);
+    g.moveTo(128, 0);
+    g.lineTo(0, 128);
+    g.stroke();
+  });
+  return t;
+};
+
+/** A flat grid at height y over a rectangle (local x0..x1, z0..z1), its uvs one tile per `tile` units, facing up. */
+function slab(x0: number, x1: number, z0: number, z1: number, y: number, tile: number, lift = 0): BufferGeometry {
+  const nx = Math.max(1, Math.round((x1 - x0) / 2));
+  const nz = Math.max(1, Math.round((z1 - z0) / 2));
+  const pos: number[] = [];
+  const uv: number[] = [];
+  const idx: number[] = [];
+  for (let j = 0; j <= nz; j++) {
+    for (let i = 0; i <= nx; i++) {
+      const x = x0 + ((x1 - x0) * i) / nx;
+      const z = z0 + ((z1 - z0) * j) / nz;
+      // a gentle vault across the short side
+      const u = (z - z0) / (z1 - z0);
+      pos.push(x, y + lift * Math.sin(u * Math.PI), z);
+      uv.push(x / tile, z / tile);
+      if (i < nx && j < nz) {
+        const a = j * (nx + 1) + i;
+        idx.push(a, a + nx + 1, a + 1, a + 1, a + nx + 1, a + nx + 2);
+      }
+    }
+  }
+  const g = new BufferGeometry();
+  g.setAttribute("position", new Float32BufferAttribute(pos, 3));
+  g.setAttribute("uv", new Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
+/**
+ * The Waterfront hub (waterfrontHub.ts lays it out): the deck on its piles, the stepped glass towers in their white
+ * lattice with a white slab edge at every step and the maintenance frame on the tallest, the canopy (glass over a
+ * timber lattice on slim white columns) and the gallery out into the inlet with its end pavilion. Lit floors, a
+ * faintly glowing canopy and their reflections after dark.
+ */
+export function buildWaterfrontHub(l: PlacedLandmark, world: World): Built {
+  const { lowEnd, envTex, mats } = world;
+  const g = new Group();
+  const deck = HUB_DECK - l.padY;
+  const water = SEA - l.padY;
+  const D = HUB_DECK_BOX;
+  const white = cityToned(world, new MeshStandardMaterial({ color: 0xf4f5f3, roughness: 0.45, metalness: 0.1 }), 0);
+  // the deck, its edge and the piles under it, and the gallery's
+  const deckParts: BufferGeometry[] = [paint(new BoxGeometry(D.x1 - D.x0, 1.2, D.z1 - D.z0).translate((D.x0 + D.x1) / 2, deck - 0.6, (D.z0 + D.z1) / 2), 0xbcb8ae)];
+  const G = HUB_GALLERY;
+  deckParts.push(paint(new BoxGeometry(G.half * 2 + 2, 0.8, G.z0 - G.z1).translate(G.x, deck - 0.4, (G.z0 + G.z1) / 2), 0xb08a5e));
+  const piles: [number, number][] = [];
+  for (let x = D.x0 + 2; x < D.x1; x += 5) for (let z = D.z0 + 2; z < D.z1; z += 5) if (x < D.x0 + 3 || x > D.x1 - 4 || z < D.z0 + 3 || z > D.z1 - 4) piles.push([x, z]);
+  for (let z = G.z0 - 3; z > G.z1; z -= 5) for (const s of [-1, 1]) piles.push([G.x + s * (G.half + 0.6), z]);
+  for (const [x, z] of piles) deckParts.push(paint(new CylinderGeometry(0.35, 0.35, deck - water + 2.4, 6).translate(x, (deck + water - 2.4) / 2 - 0.6, z), 0x5d5850));
+  const deckMesh = new Mesh(merge(deckParts), cityToned(world, new MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }), 0));
+  deckMesh.receiveShadow = true;
+  // the towers
+  const lt = latticeTexture();
+  const glassMat = cityToned(world, new MeshStandardMaterial({ map: lt.map, emissiveMap: lt.glow, emissive: 0xffffff, roughness: 0.18, metalness: 0.35, envMap: envTex, envMapIntensity: 0.9 }), 0.8);
+  const towerWalls: BufferGeometry[] = [];
+  const edges: BufferGeometry[] = [];
+  const roofs: BufferGeometry[] = [];
+  for (const b of HUB_BLOCKS) {
+    const ring = rect(b.x1 - b.x0, b.z1 - b.z0, (b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2);
+    towerWalls.push(walls(ring, deck, deck + b.h, { uPer: 8, vPer: 8, vFrom: deck }));
+    roofs.push(cap(ring, deck + b.h));
+    // the white slab edge round each roof, a little proud of the glass
+    edges.push(walls(rect(b.x1 - b.x0 + 0.5, b.z1 - b.z0 + 0.5, (b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2), deck + b.h - 0.5, deck + b.h + 0.6));
+    edges.push(cap(rect(b.x1 - b.x0 + 0.5, b.z1 - b.z0 + 0.5, (b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2), deck + b.h + 0.6));
+  }
+  const towers = new Mesh(merge(towerWalls), glassMat);
+  towers.castShadow = !lowEnd;
+  // the roofs are gardens (the trees on them come from the tree layer)
+  const roofMesh = new Mesh(merge(roofs.map((r) => r.translate(0, 0.05, 0))), mats.roofGreen);
+  // the maintenance frame on the tallest: two white posts and a beam reaching out over the edge
+  const top = HUB_BLOCKS.reduce((a, b) => (b.h > a.h ? b : a));
+  const ty = deck + top.h + 0.6;
+  for (const x of [top.x0 + 2, top.x1 - 2]) edges.push(new BoxGeometry(0.7, 9, 0.7).translate(x, ty + 4.5, (top.z0 + top.z1) / 2));
+  edges.push(new BoxGeometry(top.x1 - top.x0, 0.8, 0.8).translate((top.x0 + top.x1) / 2, ty + 9, (top.z0 + top.z1) / 2));
+  edges.push(new BoxGeometry(0.6, 0.6, 9).translate(top.x1 - 2, ty + 8.4, top.z0 - 1.5));
+  // the canopy: glass over a timber lattice, a gentle vault, on slim white columns
+  const C = HUB_CANOPY;
+  const glassTop = spaceFrameTexture("rgba(250,251,252,0.95)", 0.28);
+  const canopyMat = new MeshStandardMaterial({ map: glassTop, transparent: true, depthWrite: false, side: DoubleSide, roughness: 0.15, metalness: 0.2, envMap: envTex, envMapIntensity: 0.8, emissive: 0xffe2b8, emissiveIntensity: 0 });
+  const timberMat = cityToned(world, new MeshStandardMaterial({ map: spaceFrameTexture("#b9824a", 0), alphaTest: 0.5, side: DoubleSide, roughness: 0.7, emissive: 0xffc98a, emissiveIntensity: 0 }), 0);
+  const canopy = new Mesh(slab(C.x0, C.x1, C.z0, C.z1, deck + C.h, 6, 1.4), canopyMat);
+  canopy.renderOrder = 2;
+  const lattice = new Mesh(slab(C.x0 + 0.3, C.x1 - 0.3, C.z0 + 0.3, C.z1 - 0.3, deck + C.h - 0.9, 3, 1.4), timberMat);
+  for (let x = C.x0 + 3; x < C.x1; x += 8) for (const z of [C.z0 + 2, C.z1 - 2]) edges.push(new CylinderGeometry(0.22, 0.28, C.h, 8).translate(x, deck + C.h / 2, z));
+  // the gallery: glass walls under a glass roof, the pavilion at its end two storeys high
+  const galleryGlass: BufferGeometry[] = [walls(rect(G.half * 2, G.z0 - G.z1 - 10, G.x, (G.z0 + G.z1 - 10) / 2 + 5), deck, deck + 5, { uPer: 8, vPer: 16 })];
+  const pav = rect(G.half * 2 + 7, 10, G.x, G.z1 + 5);
+  galleryGlass.push(walls(pav, deck, deck + 9, { uPer: 8, vPer: 16 }));
+  const galleryMesh = new Mesh(merge(galleryGlass), glassMat);
+  const galleryRoof = new Mesh(merge([slab(G.x - G.half - 0.4, G.x + G.half + 0.4, G.z1 + 10, G.z0, deck + 5.1, 6, 0.6), slab(G.x - G.half - 4, G.x + G.half + 4, G.z1, G.z1 + 10, deck + 9.1, 6, 0.8)]), canopyMat);
+  galleryRoof.renderOrder = 2;
+  const whiteMesh = new Mesh(merge(edges), white);
+  whiteMesh.castShadow = !lowEnd;
+  // its lit floors show in the inlet after dark
+  const warm = new Color();
+  world.events.followers.push((level) => {
+    const n = nightOf(level);
+    canopyMat.emissiveIntensity = 0.35 * n;
+    timberMat.emissiveIntensity = 0.5 * n;
+    canopyMat.envMapIntensity = 0.8 * (1 - 0.85 * n);
+    warm.setHex(0xffd29a).multiplyScalar(n);
+  });
+  g.add(deckMesh, towers, roofMesh, whiteMesh, lattice, canopy, galleryMesh, galleryRoof);
+  addReflections(
+    HUB_BLOCKS.slice(0, 3).map((b) => ({ x: l.px + (b.x0 + b.x1) / 2, z: l.pz + b.z0, y: HUB_DECK, h: b.h, w: b.x1 - b.x0, col: warm, gain: 0.35 })),
+  );
+  return { group: g };
+}
+
+/* ------------------------------------------------------------------ the Convention Centre and the harbourfront */
+
+/**
+ * Three floors of glass to the floor, a slab at each floor in white, the timber ceilings warm behind the glass; slim
+ * mullions. After dark the halls light warm and the ceilings glow.
+ */
+const hallTexture = () =>
+  facade(
+    64,
+    64,
+    (g) => {
+      const grd = g.createLinearGradient(0, 0, 0, 64);
+      grd.addColorStop(0, "#5f7d96");
+      grd.addColorStop(1, "#2c4154");
+      g.fillStyle = grd;
+      g.fillRect(0, 0, 64, 64);
+    },
+    (g, lit) => {
+      if (lit) {
+        g.fillStyle = "#ffd9a8";
+        g.globalAlpha = 0.6;
+        g.fillRect(0, 8, 64, 48);
+        g.globalAlpha = 1;
+      }
+      // the timber ceiling under each slab, the slab, the mullions
+      g.fillStyle = lit ? "#ffc27a" : "#c8955a";
+      g.fillRect(0, 2, 64, 6);
+      g.fillStyle = lit ? "#000" : "#eef0f1";
+      g.fillRect(0, 0, 64, 2);
+      g.fillRect(0, 58, 64, 6);
+      for (let x = 0; x < 64; x += 16) g.fillRect(x, 0, 2, 64);
+    },
+  );
+
+/** The part of a convex polygon (x, z) where k0 <= x·dx + z·dz < k1 (Sutherland–Hodgman against both lines). */
+function band(poly: P2[], dx: number, dz: number, k0: number, k1: number): P2[] {
+  const clip = (pts: P2[], keep: (pt: P2) => number): P2[] => {
+    const out: P2[] = [];
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i];
+      const b = pts[(i + 1) % pts.length];
+      const fa = keep(a);
+      const fb = keep(b);
+      if (fa >= 0) out.push(a);
+      if (fa >= 0 !== fb >= 0) {
+        const t = fa / (fa - fb);
+        out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+      }
+    }
+    return out;
+  };
+  return clip(
+    clip(poly, ([x, z]) => x * dx + z * dz - k0),
+    ([x, z]) => k1 - (x * dx + z * dz),
+  );
+}
+
+/** Whether a triangle of (x, z) points faces up as given (else it needs two of them swapped). */
+const facesUp = (t: P2[]) => (t[1][1] - t[0][1]) * (t[2][0] - t[0][0]) - (t[1][0] - t[0][0]) * (t[2][1] - t[0][1]) > 0;
+
+/**
+ * A plane of the living roof over a convex outline, at the height `y` gives each point: meadow grasses in diagonal
+ * drifts of green and gold (as the real roof's are), a white fascia round its edge, dark lightwells cut through it,
+ * and (on the cantilevered prow) a timber soffit under it.
+ */
+function meadowPlane(poly: P2[], y: (x: number, z: number) => number, wells: P2[][], soffit = false): BufferGeometry[] {
+  const pos: number[] = [];
+  const col: number[] = [];
+  const lin = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  const tones = [0x6f8f3a, 0x84993f, 0xa39552, 0x76913f, 0x5f863a, 0x9a9a4a, 0x7d9a45, 0xb09a58];
+  const dx = 0.86;
+  const dz = 0.51;
+  const ks = poly.map(([x, z]) => x * dx + z * dz);
+  const BW = 1.7;
+  for (let k = Math.floor(Math.min(...ks) / BW); k * BW < Math.max(...ks); k++) {
+    const piece = band(poly, dx, dz, k * BW, (k + 1) * BW);
+    if (piece.length < 3) continue;
+    const hex = tones[((k % tones.length) + tones.length) % tones.length];
+    const c = [lin(((hex >> 16) & 255) / 255), lin(((hex >> 8) & 255) / 255), lin((hex & 255) / 255)];
+    // a fan from the first point
+    for (let i = 1; i + 1 < piece.length; i++) {
+      const tri = [piece[0], piece[i], piece[i + 1]];
+      for (const [x, z] of facesUp(tri) ? tri : [tri[0], tri[2], tri[1]]) {
+        pos.push(x, y(x, z), z);
+        col.push(...c);
+      }
+    }
+  }
+  const grass = new BufferGeometry();
+  grass.setAttribute("position", new Float32BufferAttribute(pos, 3));
+  grass.setAttribute("color", new Float32BufferAttribute(col, 3));
+  grass.setAttribute("uv", new Float32BufferAttribute(new Float32Array((pos.length / 3) * 2), 2));
+  grass.computeVertexNormals();
+  const out: BufferGeometry[] = [grass];
+  // the fascia: a white band down from the roof's edge
+  const fas: number[] = [];
+  for (let i = 0; i < poly.length; i++) {
+    const [ax, az] = poly[i];
+    const [bx, bz] = poly[(i + 1) % poly.length];
+    const ya = y(ax, az);
+    const yb = y(bx, bz);
+    fas.push(ax, ya + 0.12, az, ax, ya - 0.5, az, bx, yb + 0.12, bz, bx, yb + 0.12, bz, ax, ya - 0.5, az, bx, yb - 0.5, bz);
+  }
+  const fg = new BufferGeometry();
+  fg.setAttribute("position", new Float32BufferAttribute(fas, 3));
+  out.push(paint(fg, 0xf1f2ee));
+  // lightwells: dark slots lying just on the grass
+  for (const [a, b, c2, d] of wells) {
+    const q4: number[] = [];
+    for (const [x, z] of facesUp([a, b, c2]) ? [a, b, c2, a, c2, d] : [a, c2, b, a, d, c2]) q4.push(x, y(x, z) + 0.04, z);
+    const wg = new BufferGeometry();
+    wg.setAttribute("position", new Float32BufferAttribute(q4, 3));
+    out.push(paint(wg, 0x1d2126));
+  }
+  // under the cantilever, a timber soffit facing down
+  if (soffit) {
+    const s: number[] = [];
+    for (let i = 1; i + 1 < poly.length; i++) {
+      const tri = [poly[0], poly[i], poly[i + 1]];
+      for (const [x, z] of facesUp(tri) ? [tri[0], tri[2], tri[1]] : tri) s.push(x, y(x, z) - 0.45, z);
+    }
+    const sg = new BufferGeometry();
+    sg.setAttribute("position", new Float32BufferAttribute(s, 3));
+    out.push(paint(sg, 0xc8955a));
+  }
+  return out;
+}
+
+/**
+ * The Convention Centre West (harbourfront.ts CONVENTION, built in its turned frame: x along the shore, the water at
+ * -z), after the real building:
+ * - three floors of glass halls on a stone plinth, the seaward third on piles over the water;
+ * - the west end drawn to a prow toward the inlet under a cantilevered roof on one raking white strut;
+ * - a six-acre living roof in three folded planes: the long east plane, the prow's plane rising to its tip, and a
+ *   lower plane falling to the city, a glazed slot between the first two and a clerestory where the lower one meets them;
+ * - meadow grasses in diagonal drifts, white fascias, dark lightwells;
+ * - a tall glass lobby at the east end onto Jack Poole Plaza and an entrance canopy on the city side;
+ * - the Drop, the tall blue raindrop, leaning out over the promenade at the west end.
+ */
+export function buildConvention(world: World): Built {
+  const { lowEnd } = world;
+  const { w: W, d: D, h: H } = CONVENTION;
+  const g = new Group();
+  // the halls' outline: square along the water and the city, drawn to a point at the west end
+  const ring: P2[] = [
+    [-17, -D / 2],
+    [W / 2, -D / 2],
+    [W / 2, D / 2],
+    [-12, D / 2],
+    [-23, -3],
+  ];
+  const solid: BufferGeometry[] = [
+    paint(new BoxGeometry(W + 1.2, 1.4, D + 1.2).translate(0, -0.6, 0), 0xb9b4aa),
+    // the east lobby's roof slab, the entrance canopy
+    paint(new BoxGeometry(4.4, 0.4, 11).translate(W / 2 + 2, H + 2.2, 0), 0xf1f2ee),
+    paint(new BoxGeometry(14, 0.3, 3.4).translate(-2, 4.6, D / 2 + 1.7), 0xf1f2ee),
+  ];
+  for (const x of [-8, -4, 0, 4]) solid.push(paint(new CylinderGeometry(0.16, 0.16, 4.5, 8).translate(x, 2.25, D / 2 + 3), 0xe6e9ec));
+  // planters with clipped hedges along the seawall side
+  for (let x = -W / 2 + 7; x <= W / 2 - 3; x += 6) {
+    solid.push(paint(new BoxGeometry(4.6, 0.8, 1.2).translate(x, 0.4, -D / 2 - 1.2), 0xc9c6bd));
+    solid.push(paint(new BoxGeometry(4.2, 0.6, 0.9).translate(x, 1.05, -D / 2 - 1.2), 0x4f7a3c));
+  }
+  // the halls and the lobby's glass, three floors, lit with the city
+  const ht = hallTexture();
+  const hallMat = cityToned(world, new MeshStandardMaterial({ map: ht.map, emissiveMap: ht.glow, emissive: 0xffffff, roughness: 0.15, metalness: 0.35, envMap: world.envTex, envMapIntensity: 0.9 }), 0.8);
+  const halls = new Mesh(merge([walls(ring, 0, H, { uPer: 3, vPer: H / 3 }), walls(rect(4, 10, W / 2 + 2, 0), 0, H + 2.2, { uPer: 3, vPer: H / 3 })]), hallMat);
+  // the roof's three planes: the long east one rising toward the city, the prow's rising to its tip, the lower one
+  // falling to the city; the prow's reaches out past the glass
+  const yEast = (_x: number, z: number) => H + 0.35 + 0.19 * (z + D / 2 + 0.8);
+  const yProw = (x: number, z: number) => H + 0.6 + 0.19 * (z + D / 2 + 0.8) + 0.13 * Math.max(0, -4.5 - x);
+  const yCity = (_x: number, z: number) => H + 0.95 - 0.16 * (z - 2.5);
+  const roofParts = [
+    ...meadowPlane(
+      [
+        [-3, -D / 2 - 0.8],
+        [W / 2 + 0.8, -D / 2 - 0.8],
+        [W / 2 + 0.8, 2.5],
+        [-3, 2.5],
+      ],
+      yEast,
+      [
+        [
+          [8, -4.6],
+          [16, -4.6],
+          [16, -3.6],
+          [8, -3.6],
+        ],
+      ],
+    ),
+    ...meadowPlane(
+      [
+        [-4.5, -D / 2 - 0.8],
+        [-4.5, 2.5],
+        [-12.6, 2.5],
+        [-27, -3.6],
+        [-18, -D / 2 - 0.8],
+      ],
+      yProw,
+      [
+        [
+          [-16, -3.4],
+          [-9, -3.4],
+          [-9, -2.4],
+          [-16, -2.4],
+        ],
+      ],
+      true,
+    ),
+    ...meadowPlane(
+      [
+        [-12.6, 2.5],
+        [W / 2 + 0.8, 2.5],
+        [W / 2 + 0.8, D / 2 + 0.8],
+        [-9.5, D / 2 + 0.8],
+      ],
+      yCity,
+      [
+        [
+          [2, 4.2],
+          [9, 4.2],
+          [9, 5.3],
+          [2, 5.3],
+        ],
+        [
+          [-6, 4.6],
+          [-2, 4.6],
+          [-2, 5.7],
+          [-6, 5.7],
+        ],
+      ],
+    ),
+  ];
+  // glass: the slot between the east and prow planes, and the clerestory where the city plane meets them
+  const glass: number[] = [];
+  const quad = (a: number[], b: number[], c: number[], d: number[]) => glass.push(...a, ...b, ...c, ...a, ...c, ...d);
+  quad([-4.5, H + 0.45, -D / 2], [-3, H + 0.45, -D / 2], [-3, H + 0.45, 2.5], [-4.5, H + 0.45, 2.5]);
+  const clerestoryTop = (x: number) => (x > -3.75 ? yEast(x, 2.5) : yProw(x, 2.5)) - 0.4;
+  for (let k = 0; k < 16; k++) {
+    const x0 = -12.6 + ((W / 2 + 12.6) * k) / 16;
+    const x1 = -12.6 + ((W / 2 + 12.6) * (k + 1)) / 16;
+    quad([x0, yCity(x0, 2.5), 2.5], [x1, yCity(x1, 2.5), 2.5], [x1, clerestoryTop(x1), 2.5], [x0, clerestoryTop(x0), 2.5]);
+  }
+  const glassGeo = new BufferGeometry();
+  glassGeo.setAttribute("position", new Float32BufferAttribute(glass, 3));
+  glassGeo.computeVertexNormals();
+  const skylights = new Mesh(glassGeo, world.mats.pane);
+  // the prow's raking strut, from the plinth at the point up to the roof's tip
+  const foot = new Vector3(-21.2, 0.1, -4.6);
+  const head = new Vector3(-25.6, yProw(-25.6, -3.8) - 0.5, -3.8);
+  const len = foot.distanceTo(head);
+  solid.push(
+    paint(
+      new CylinderGeometry(0.32, 0.4, len, 10)
+        .applyQuaternion(q.setFromUnitVectors(UPV, p.subVectors(head, foot).normalize()))
+        .translate((foot.x + head.x) / 2, (foot.y + head.y) / 2, (foot.z + head.z) / 2),
+      0xf1f2ee,
+    ),
+  );
+  // the seaward third stands on piles over the water, down from the building's plinth
+  const below = -1.3 - (SEA - 1.5);
+  for (let x = -W / 2 + 4; x <= W / 2 - 2; x += 4) {
+    for (const z of [-D / 2 + 0.6, -D / 2 + 3.4]) solid.push(paint(new CylinderGeometry(0.35, 0.35, Math.max(0.5, below + 3), 8).translate(x, -1.3 - Math.max(0.5, below + 3) / 2, z), 0x6b6862));
+  }
+  // the Drop: a tall blue raindrop leaning out over the promenade at the west end
+  solid.push(paint(new SphereGeometry(1, 16, 12).scale(0.7, 3.4, 0.7).rotateZ(0.22).translate(-18.5, 3.1, -D / 2 - 3.6), 0x2f8fd8));
+  // the meadow roof with the rest: one mesh
+  const solidMesh = new Mesh(merge([...solid, ...roofParts]), cityToned(world, new MeshStandardMaterial({ vertexColors: true, roughness: 0.8, side: DoubleSide })));
+  solidMesh.receiveShadow = true;
+  solidMesh.castShadow = !lowEnd;
+  g.add(halls, solidMesh, skylights);
+  return { group: g };
+}
+
+/**
+ * The harbourfront round it, in world space (harbourfront.ts): Jack Poole Plaza paved in granite with a row of flags
+ * and its trees in planters, the seawall promenade's railing along the water and lamps along its inland edge (lit
+ * after dark), benches facing the water. The promenade's own paving is the ground's (one of its walks); the trees are
+ * the tree layer's.
+ */
+export function buildHarbourfront(world: World): Built {
+  const { lowEnd, events } = world;
+  const g = new Group();
+  const stride = lowEnd ? 2 : 1;
+  // the plaza: granite pavers on a grid draped on the ground, a darker band every few
+  const step = 0.75;
+  const pos: number[] = [];
+  const col: number[] = [];
+  const lin = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  const tone = (x: number, z: number) => {
+    const band = Math.floor(x / 3) % 4 === 0 || Math.floor(z / 3) % 4 === 0;
+    const v = band ? 0.62 : 0.78 + 0.04 * Math.sin(x * 3.1 + z * 1.7);
+    return [lin(v), lin(v * 0.99), lin(v * 0.96)];
+  };
+  const xs = PLAZA.map(([x]) => x);
+  const zs = PLAZA.map(([, z]) => z);
+  for (let x = Math.min(...xs); x < Math.max(...xs); x += step) {
+    for (let z = Math.min(...zs); z < Math.max(...zs); z += step) {
+      const quad: [number, number][] = [
+        [x, z],
+        [x, z + step],
+        [x + step, z],
+        [x + step, z],
+        [x, z + step],
+        [x + step, z + step],
+      ];
+      if (quad.some(([a, b]) => polySdf(PLAZA, a, b) > 0.2)) continue;
+      const c = tone(x + step / 2, z + step / 2);
+      for (const [a, b] of quad) {
+        pos.push(a, surfaceAt(a, b, stride) + 0.13, b);
+        col.push(...c);
+      }
+    }
+  }
+  // the forecourt at the foot of the Canada Place pier: only the pier's own deck (the shoreline's water, raised), and
+  // short of the Waterfront set, which paves its own
+  const d0 = SET_RECT[0] as [number, number, number, number];
+  for (let x = FORECOURT.x0; x < FORECOURT.x1; x += step) {
+    for (let z = FORECOURT.z0; z < FORECOURT.z1; z += step) {
+      const cx = x + step / 2;
+      const cz = z + step / 2;
+      const [da, dl] = toStation(0, cx, cz);
+      if (sdfAt(cx, cz) >= 0.6 || surfaceAt(cx, cz, stride) < SEA + 0.4 || (da > d0[0] - 1 && da < d0[1] + 1 && dl > d0[2] - 1 && dl < d0[3] + 1)) continue;
+      const c = tone(cx, cz);
+      for (const [a, b] of [
+        [x, z],
+        [x, z + step],
+        [x + step, z],
+        [x + step, z],
+        [x, z + step],
+        [x + step, z + step],
+      ]) {
+        pos.push(a, surfaceAt(a, b, stride) + 0.13, b);
+        col.push(...c);
+      }
+    }
+  }
+  const paveGeo = new BufferGeometry();
+  paveGeo.setAttribute("position", new Float32BufferAttribute(pos, 3));
+  paveGeo.setAttribute("color", new Float32BufferAttribute(col, 3));
+  paveGeo.computeVertexNormals();
+  // the paving lies in the painted mesh with the railing, lamps and benches
+  // the promenade's height: the ground, or the deck where it runs over the water
+  const walkY = (x: number, z: number) => (sdfAt(x, z) < 0.8 ? DECK_Y : surfaceAt(x, z, stride));
+  // the railing on the water side of the promenade and the lamps on its inland side
+  const parts: BufferGeometry[] = [];
+  // over the water, a timber deck on piles
+  for (let i = 1; i < PROMENADE.length; i++) {
+    const [ax, az] = PROMENADE[i - 1];
+    const [bx, bz] = PROMENADE[i];
+    if (sdfAt((ax + bx) / 2, (az + bz) / 2) >= 0.8) continue;
+    const L = Math.hypot(bx - ax, bz - az);
+    const ry = Math.atan2(bx - ax, bz - az);
+    parts.push(paint(new BoxGeometry(PROMENADE_W + 0.6, 0.35, L + 0.1).rotateY(ry).translate((ax + bx) / 2, DECK_Y - 0.17, (az + bz) / 2), 0xb08a64));
+    parts.push(paint(new CylinderGeometry(0.22, 0.22, DECK_Y - SEA + 2, 6).translate(ax, (DECK_Y + SEA - 2) / 2, az), 0x5c5a55));
+  }
+  const lampAt: [number, number, number][] = [];
+  let run = 0;
+  for (let i = 1; i < PROMENADE.length; i++) {
+    const [ax, az] = PROMENADE[i - 1];
+    const [bx, bz] = PROMENADE[i];
+    const L = Math.hypot(bx - ax, bz - az);
+    // the inland normal (-t.z, t.x) of the eastward tangent; the water is the other way
+    const nx = -(bz - az) / L;
+    const nz = (bx - ax) / L;
+    const off = PROMENADE_W / 2 + 0.1;
+    const rx0 = ax - nx * off;
+    const rz0 = az - nz * off;
+    const rx1 = bx - nx * off;
+    const rz1 = bz - nz * off;
+    const y0 = walkY(rx0, rz0);
+    const y1 = walkY(rx1, rz1);
+    const ry = Math.atan2(rx1 - rx0, rz1 - rz0);
+    const mx = (rx0 + rx1) / 2;
+    const mz = (rz0 + rz1) / 2;
+    parts.push(paint(new BoxGeometry(0.08, 0.08, L + 0.05).rotateY(ry).translate(mx, (y0 + y1) / 2 + 1.05, mz), 0xe6e9ec));
+    parts.push(paint(new BoxGeometry(0.06, 0.06, L + 0.05).rotateY(ry).translate(mx, (y0 + y1) / 2 + 0.55, mz), 0xb9c0c7));
+    parts.push(paint(new BoxGeometry(0.1, 1.1, 0.1).translate(rx0, y0 + 0.55, rz0), 0xb9c0c7));
+    run += L;
+    if (run >= 6) {
+      run = 0;
+      const lx = ax + nx * (PROMENADE_W / 2 + 0.35);
+      const lz = az + nz * (PROMENADE_W / 2 + 0.35);
+      if (!inConvention(lx, lz, 0.5)) {
+        const ly = walkY(lx, lz);
+        parts.push(paint(new CylinderGeometry(0.06, 0.09, 3.4, 6).translate(lx, ly + 1.7, lz), 0x3a3f46));
+        lampAt.push([lx, ly + 3.45, lz]);
+      }
+    }
+  }
+  // benches: a timber seat and back on two steel legs, facing the water
+  for (const b of harbourfrontBenches()) {
+    const y = walkY(b.x, b.z);
+    const bench = merge([
+      paint(new BoxGeometry(1.8, 0.1, 0.5).translate(0, 0.45, 0), 0x9a7048),
+      paint(new BoxGeometry(1.8, 0.45, 0.08).translate(0, 0.72, -0.24), 0x9a7048),
+      paint(new BoxGeometry(0.08, 0.45, 0.45).translate(-0.75, 0.22, 0), 0x3a3f46),
+      paint(new BoxGeometry(0.08, 0.45, 0.45).translate(0.75, 0.22, 0), 0x3a3f46),
+    ]);
+    parts.push(bench.rotateY(b.ry).translate(b.x, y, b.z));
+  }
+  // flags along the plaza's city edge, the Olympic plaza's row of poles
+  const FLAGS = [0xd52b1e, 0xffffff, 0x2f6bff, 0x2fb36b, 0xf2c230];
+  FLAGS.forEach((hex, k) => {
+    const x = PLAZA_X[0] + 3 + ((PLAZA_X[1] - PLAZA_X[0] - 6) * k) / (FLAGS.length - 1);
+    const z = PLAZA_SOUTH - 3.2;
+    const y = surfaceAt(x, z, stride);
+    parts.push(paint(new CylinderGeometry(0.06, 0.08, 7, 6).translate(x, y + 3.5, z), 0xe6e9ec));
+    parts.push(paint(new BoxGeometry(0.04, 1.1, 1.8).translate(x, y + 6.3, z + 0.95), hex));
+  });
+  // the forecourt's trees (the tree layer's) in their planters, a bench under each
+  for (const [x, z] of FORECOURT_TREES) {
+    const y = surfaceAt(x, z, stride);
+    parts.push(paint(new BoxGeometry(1.6, 0.5, 1.6).translate(x, y + 0.25, z), 0xa9a49a));
+    const bench = merge([
+      paint(new BoxGeometry(1.8, 0.1, 0.5).translate(0, 0.45, 0), 0x9a7048),
+      paint(new BoxGeometry(0.08, 0.45, 0.45).translate(-0.75, 0.22, 0), 0x3a3f46),
+      paint(new BoxGeometry(0.08, 0.45, 0.45).translate(0.75, 0.22, 0), 0x3a3f46),
+    ]);
+    parts.push(bench.translate(x + 2, y, z));
+  }
+  // the plaza's trees (planted by the tree layer) each in a granite planter
+  for (const t of harbourfrontTrees()) {
+    if (polySdf(PLAZA, t.x, t.z) > 0.5) continue;
+    parts.push(paint(new BoxGeometry(1.6, 0.5, 1.6).translate(t.x, surfaceAt(t.x, t.z, stride) + 0.25, t.z), 0xa9a49a));
+  }
+  // the floatplane dock in the bay: a gangway down from the seawall, the float and its fingers, a floatplane alongside
+  // each, and the terminal on its own float at the north end
+  const D = FLOAT_DOCK;
+  const FLOAT = 0xd6d2c9;
+  const plank = (x0: number, z0: number, x1: number, z1: number, w: number, y: number) =>
+    parts.push(paint(new BoxGeometry(w, 0.35, Math.hypot(x1 - x0, z1 - z0)).rotateY(Math.atan2(x1 - x0, z1 - z0)).translate((x0 + x1) / 2, y, (z0 + z1) / 2), FLOAT));
+  {
+    const [x0, x1] = D.gangway;
+    const y0 = walkY(x0, D.gangwayZ);
+    const y1 = SEA + 0.55;
+    const L = Math.hypot(x1 - x0, y1 - y0);
+    const tilt = Math.atan2(y1 - y0, x1 - x0);
+    for (const [w, h, dz, hex] of [
+      [1.4, 0.2, 0, 0x9aa3ad],
+      [0.06, 0.06, -0.7, 0xe6e9ec],
+      [0.06, 0.06, 0.7, 0xe6e9ec],
+    ] as const)
+      parts.push(paint(new BoxGeometry(L, h, w).rotateZ(tilt).translate((x0 + x1) / 2, (y0 + y1) / 2 + (w < 1 ? 1 : 0), D.gangwayZ + dz), hex));
+  }
+  plank(D.floatX, D.float[0], D.floatX, D.float[1], 2.2, SEA + 0.35);
+  for (const z of D.fingers) plank(D.floatX + 1.1, z, D.fingerTo, z, 0.8, SEA + 0.33);
+  parts.push(paint(new BoxGeometry(7, 0.4, 7).translate(D.terminal.x, SEA + 0.35, D.terminal.z), FLOAT));
+  D.planes.forEach(([x, z, yaw], k) => parts.push(floatplane([0xe8b23a, 0x2d6cb0, 0xd2452f][k % 3]).rotateY(yaw).translate(x, SEA + 0.02, z)));
+  // the terminal and Harbour Green's cafés: glass pavilions on their decks (pavilion.ts), facing the water
+  const glass: BufferGeometry[] = [];
+  const warm: BufferGeometry[] = [];
+  const place = (pc: Pieces, x: number, y: number, z: number, face: [number, number]) => {
+    const ry = Math.atan2(face[0], face[1]);
+    for (const geo of pc.solid) parts.push(geo.rotateY(ry).translate(x, y, z));
+    for (const geo of pc.glass) glass.push(geo.rotateY(ry).translate(x, y, z));
+    for (const geo of pc.warm) warm.push(geo.rotateY(ry).translate(x, y, z));
+  };
+  place(pavilion({ w: 5, d: 4, front: 2.2, umbrella: UMBRELLAS[3], tables: 1 }), D.terminal.x, SEA + 0.25, D.terminal.z, [1, 0]);
+  for (const c of GREEN_CAFES) {
+    // on the highest ground under its deck
+    let y = -Infinity;
+    for (const [al, ac] of [
+      [-c.d / 2 - 0.8, -c.w / 2 - 0.8],
+      [-c.d / 2 - 0.8, c.w / 2 + 0.8],
+      [c.d / 2 + 3.4, -c.w / 2 - 0.8],
+      [c.d / 2 + 3.4, c.w / 2 + 0.8],
+    ])
+      y = Math.max(y, surfaceAt(c.x + c.face[0] * al - c.face[1] * ac, c.z + c.face[1] * al + c.face[0] * ac, stride));
+    place(pavilion({ w: c.w, d: c.d, umbrella: c.umbrella, well: c.w > 7, roof: c.roof }), c.x, y - 0.02, c.z, c.face);
+  }
+  const panes = new Mesh(merge(glass), world.mats.pane);
+  const lit = new Mesh(merge(warm), warmLights(world, new MeshBasicMaterial({ vertexColors: true, toneMapped: false })));
+  const solid = new Mesh(merge([paveGeo, ...parts]), cityToned(world, new MeshStandardMaterial({ vertexColors: true, roughness: 0.7 })));
+  solid.receiveShadow = true;
+  solid.castShadow = !lowEnd;
+  const lampMat = new MeshBasicMaterial({ color: 0xffe2b0, toneMapped: false });
+  const lamps = new InstancedMesh(new IcosahedronGeometry(0.26, 0), lampMat, Math.max(1, lampAt.length));
+  lampAt.forEach(([x, y, z], i) => lamps.setMatrixAt(i, m4.makeTranslation(x, y, z)));
+  lamps.count = lampAt.length;
+  events.followers.push((level) => lampMat.color.setHex(0xffe2b0).multiplyScalar(0.25 + 1.5 * nightOf(level)));
+  g.add(solid, lamps, panes, lit);
   return { group: g };
 }

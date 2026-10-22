@@ -1,10 +1,12 @@
 /**
  * Where each station's set piece stands: the side of the line it opens onto and a rectangle in the station frame
  * (along the track, lateral toward that side) that the city generator and the tree planter keep clear. Main Street's
- * set stands toward Science World, so its side follows the landmark. No three.js beyond the track frames.
+ * set stands toward Science World, so its side follows the landmark, and its clear zone follows the column in
+ * Creekside Park. No three.js beyond the track frames.
  */
-import { LANDMARKS } from "../sites";
-import { frameAt, makeFrame, stationS } from "../track";
+import { inLandmark, LANDMARKS, parkAt, parkPathDist, PARKS, streamDist } from "../sites";
+import { sdfAt } from "../terrain";
+import { frameAt, makeFrame, stationS, trackDist } from "../track";
 
 /** along [a0, a1], lateral toward the set side [l0, l1]; null where the set lives inside the corridor. */
 type Rect = [number, number, number, number] | null;
@@ -27,20 +29,65 @@ const swSide = (() => {
   return (sw.px - fr.x) * fr.rx + (sw.pz - fr.z) * fr.rz >= 0 ? 1 : -1;
 })();
 
-/** The open side of each stop (1 right of travel, -1 left), where its set stands and its shot looks back from. */
-export const SET_SIDE: (1 | -1)[] = [1, -1, 1, -1, swSide as 1 | -1, -1, 1, -1, 1, -1];
+/**
+ * The open side of each stop (1 right of travel, -1 left), where its set stands and its shot looks back from.
+ * Commercial–Broadway's opens to the west, past Commercial Drive: the Millennium Line's trench runs east under the north
+ * end of its platforms.
+ */
+export const SET_SIDE: (1 | -1)[] = [1, -1, 1, -1, swSide as 1 | -1, 1, 1, -1, 1, -1];
+/**
+ * How far along the track each set stands from its station (Commercial–Broadway's platforms straddle Broadway, so its
+ * set stands south of the street).
+ */
+export const SET_SHIFT: number[] = [0, 0, 0, 0, 0, 21, 0, 0, 0, 0];
 
+/**
+ * Main Street's water column stands on the lawn in Creekside Park, between the station and the head of the basin: the
+ * spot nearest the station that keeps off the guideway, the creek, the shore, the paths and Science World's grounds.
+ */
+export const MAIN_COLUMN: [number, number] = (() => {
+  const park = PARKS.find((p) => p.name === "Creekside Park");
+  const fr = frames[4];
+  let best: [number, number] = [fr.x, fr.z];
+  let bd = Infinity;
+  if (!park || !fr) return best;
+  for (let x = Math.floor(park.x - park.r); x <= park.x + park.r; x++) {
+    for (let z = Math.floor(park.z - park.r); z <= park.z + park.r; z++) {
+      if (parkAt(x, z) !== park || trackDist(x, z) < 12 || streamDist(x, z) < 7.5 || sdfAt(x, z) < 4.5 || inLandmark(x, z, 5) || parkPathDist(x, z) < 3.5) continue;
+      const d = (x - fr.x) ** 2 + (z - fr.z) ** 2;
+      if (d < bd) {
+        bd = d;
+        best = [x, z];
+      }
+    }
+  }
+  return best;
+})();
+// the column in Main Street's station frame, for its clear zone
+const col = (() => {
+  const fr = frames[4];
+  const dx = MAIN_COLUMN[0] - fr.x;
+  const dz = MAIN_COLUMN[1] - fr.z;
+  return [dx * fr.tx + dz * fr.tz, (dx * fr.rx + dz * fr.rz) * SET_SIDE[4]];
+})();
+
+/**
+ * Burrard's covers the Harbour Market, from the harbour's edge round the cedar to the line's far side (sets/squares.ts);
+ * Commercial–Broadway's covers the whole square between Broadway, Commercial Drive and Clark Drive; Stadium's only its
+ * terrace, the ground round it being Chinatown's (commonsLayout.ts); Patterson's the wellness park round the lookout
+ * (sets/wellness.ts).
+ */
 export const SET_RECT: Rect[] = [
   [-24, 24, 13, 46],
-  [-22, 22, 13, 44],
+  [-22, 34, 8, 60],
   null,
-  [-20, 20, 13, 38],
-  [-20, 20, 13, 40],
-  [-20, 20, 13, 40],
-  [-24, 24, 13, 42],
+  [-18, 18, 12, 32],
+  [col[0] - 8, col[0] + 8, col[1] - 8, col[1] + 8],
+  [0, 50, 25, 62],
+  [-24, 24, 13, 50],
   [-20, 20, 13, 40],
   [-24, 24, 13, 40],
-  [-22, 22, 13, 44],
+  [-22, 22, 7, 49],
 ];
 
 /** Station-frame coordinates of a world point for stop i: along, lateral toward the set side. */

@@ -2,7 +2,7 @@
 
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect } from "react";
-import { type InstancedMesh, type Mesh, Vector3 } from "three";
+import { type InstancedMesh, type Mesh, type MeshStandardMaterial, type Object3D, Vector3 } from "three";
 
 import { stations } from "@/data";
 
@@ -15,7 +15,7 @@ import { useTrain } from "./store";
 import { BLOCKERS } from "./cityModel";
 import { getCityData } from "./cityData";
 import { sdfAt } from "./terrain";
-import { CROSSOVERS, deckY, groundAt, LEN, LOOPS, profile, SAMPLES, samples, STATION_XZ, stationS } from "./track";
+import { CROSSOVERS, deckY, groundAt, LEN, LOOPS, lowAt, profile, SAMPLES, samples, STATION_XZ, stationS } from "./track";
 import { useWorld } from "./world";
 
 export type TrainDebug = {
@@ -29,9 +29,12 @@ export type TrainDebug = {
   ground: (x: number, z: number) => number;
   /** Triangles per object (instanced meshes multiplied by their count), largest first. */
   budget: () => [string, number][];
-  profile: () => { s: number[]; y: number[]; cut: number[]; ground: number[]; lower: number[] };
+  /** The next frame's draw calls by source (nearest named ancestor, else material and vertex count). */
+  /** The next frames' draw calls by source: calls and triangles. */
+  draws: () => Promise<[string, number, number][]>;
+  profile: () => { s: number[]; y: number[]; low: number[]; cut: number[]; mode: string; ground: number[]; lower: number[] };
   /** Terrain and deck checks: max grade, platform flatness, clearance, cut offset. */
-  terrain: () => { maxGrade: number; maxGradeAt: number; platformSpread: number[]; minClearance: number; minClearanceAt: number; cutOffset: number };
+  terrain: () => { maxGrade: number; maxGradeAt: number; platformSpread: number[]; minClearance: number; minClearanceAt: number; cutOffset: number; lowRange: [number, number] };
   stations: string[];
   stationS: number[];
   /** Orbit the current view (yaw, pitch in radians) and zoom (log). */
@@ -109,12 +112,36 @@ export function Debug() {
         });
         return out.sort((a, b) => b[1] - a[1]).slice(0, 25);
       },
-      profile: () => ({ s: profile.s, y: profile.y, cut: profile.cut, ground: profile.ground, lower: profile.lower }),
+      draws: () =>
+        new Promise((done) => {
+          // the next frame's draw calls, each by the nearest named ancestor (or its material and size), most first
+          const orig = gl.renderBufferDirect.bind(gl);
+          const seen = new Map<string, number>();
+          const tris = new Map<string, number>();
+          gl.renderBufferDirect = (cam, scene, geo, mat, obj, group) => {
+            let o: Object3D | null = obj;
+            while (o && !o.name) o = o.parent;
+            const m = mat as MeshStandardMaterial;
+            const key = `${o?.name ?? "?"} ${obj.type} ${mat.type}${m.color ? " #" + m.color.getHexString() : ""}${m.vertexColors ? " vc" : ""} ${geo.attributes.position?.count ?? 0}`;
+            seen.set(key, (seen.get(key) ?? 0) + 1);
+            const n = (geo.index?.count ?? geo.attributes.position?.count ?? 0) / 3;
+            tris.set(key, (tris.get(key) ?? 0) + n * ((obj as { count?: number }).count ?? 1));
+            orig(cam, scene, geo, mat, obj, group);
+          };
+          requestAnimationFrame(() =>
+            requestAnimationFrame(() => {
+              gl.renderBufferDirect = orig;
+              done([...seen].map(([k, c]): [string, number, number] => [k, c, Math.round(tris.get(k) ?? 0)]).sort((x, y) => y[1] - x[1]));
+            }),
+          );
+        }),
+      profile: () => ({ s: profile.s, y: profile.y, low: profile.low, cut: profile.cut, mode: profile.mode.join(""), ground: profile.ground, lower: profile.lower }),
       terrain: () => {
         let maxGrade = 0;
         let maxGradeAt = 0;
         let minClearance = 1e9;
         let minClearanceAt = 0;
+        const lowRange: [number, number] = [1e9, -1e9];
         for (let i = 1; i < samples.length; i++) {
           const a = samples[i - 1].p;
           const b = samples[i].p;
@@ -123,13 +150,23 @@ export function Debug() {
             maxGrade = gr;
             maxGradeAt = (i / SAMPLES) * LEN;
           }
+          // the girder's clearance over the ground beside it, where the line is up on its viaduct; where it has come
+          // down, how far its rails sit over the ground under them (a ballast's depth, by the bed it shapes)
           const f = samples[i];
+          const s = (i / SAMPLES) * LEN;
+          if (lowAt(s) > 0.98) {
+            const d = f.p.y - groundAt(f.p.x, f.p.z);
+            lowRange[0] = Math.min(lowRange[0], d);
+            lowRange[1] = Math.max(lowRange[1], d);
+            continue;
+          }
+          if (lowAt(s) > 0.02) continue;
           let g = -1e9;
           for (let lat = -7; lat <= 7; lat += 3.5) g = Math.max(g, groundAt(f.p.x + f.r.x * lat, f.p.z + f.r.z * lat));
           const c = f.p.y - 1.1 - g;
           if (c < minClearance) {
             minClearance = c;
-            minClearanceAt = (i / SAMPLES) * LEN;
+            minClearanceAt = s;
           }
         }
         const platformSpread = stationS.map((s0) => {
@@ -142,7 +179,7 @@ export function Debug() {
           }
           return hi - lo;
         });
-        return { maxGrade, maxGradeAt, platformSpread, minClearance, minClearanceAt, cutOffset: profile.cutOffset };
+        return { maxGrade, maxGradeAt, platformSpread, minClearance, minClearanceAt, cutOffset: profile.cutOffset, lowRange };
       },
       stations: stations.map((s) => s.id),
       stationS,

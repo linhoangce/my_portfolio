@@ -127,6 +127,28 @@ export class GeoBuilder {
     if (!keep) geo.dispose();
   }
 
+  /**
+   * Turns every vertex added since `start` by `ry` about the vertical through (cx, cz), positions and normals alike:
+   * a building is built square to the axes, then turned to face its street.
+   */
+  rotateFrom(start: number, cx: number, cz: number, ry: number): void {
+    if (!ry) return;
+    const c = Math.cos(ry);
+    const s = Math.sin(ry);
+    const P = this.pos.a;
+    const N = this.nrm.a;
+    for (let k = start * 3; k < this.pos.n; k += 3) {
+      const x = P[k] - cx;
+      const z = P[k + 2] - cz;
+      P[k] = cx + x * c + z * s;
+      P[k + 2] = cz - x * s + z * c;
+      const nx = N[k];
+      const nz = N[k + 2];
+      N[k] = nx * c + nz * s;
+      N[k + 2] = -nx * s + nz * c;
+    }
+  }
+
   build(): BufferGeometry {
     const g = new BufferGeometry();
     g.setAttribute("position", new Float32BufferAttribute(this.pos.view().slice(), 3));

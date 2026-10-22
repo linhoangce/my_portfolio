@@ -1,18 +1,24 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
-import { BoxGeometry, BufferAttribute, BufferGeometry, CatmullRomCurve3, CylinderGeometry, InstancedMesh, Matrix4, Quaternion, TubeGeometry, Vector3 } from "three";
+import { BoxGeometry, BufferAttribute, BufferGeometry, CatmullRomCurve3, CylinderGeometry, InstancedMesh, Matrix4, MeshStandardMaterial, Object3D, Quaternion, TubeGeometry, Vector3 } from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
-import { CROSS_LEN, LANE } from "./constants";
-import { CROSSOVERS, frameAt, type Frame, groundAt, LEN, LOOPS, makeFrame, SAMPLES, samples, smoothstep01, stationS, UP } from "./track";
+import { CAR, CROSS_LEN, GAP, LANE, PLATFORM_LEN } from "./constants";
+import { merged } from "./merge";
+import { inRailCut } from "./rail";
+import { isRoad } from "./roadNetwork";
+import { paint } from "./shapes";
+import { CROSSOVERS, EXT_JOIN, frameAt, type Frame, groundAt, LEN, LOOPS, makeFrame, NEAR_LOOP, SAMPLES, samples, smoothstep01, stationS, UP } from "./track";
+import { carGeometry } from "./trainGeometry";
 import { useWorld } from "./world";
+import { nearWce } from "./wce";
 
 /**
  * Extrude a closed 2D profile (lateral, vertical; counter-clockwise) along a run of track frames. With `vLen`, UVs
  * too: u round the profile (0 to 1), v along the track, one unit per `vLen`.
  */
-function ribbon(profile: [number, number][], list: Frame[], closed = true, vLen = 0): BufferGeometry {
+export function ribbon(profile: [number, number][], list: Frame[], closed = true, vLen = 0): BufferGeometry {
   const n = list.length;
   const m = profile.length;
   const pos = new Float32Array(n * m * 3);
@@ -53,10 +59,50 @@ const mergeAll = (geos: BufferGeometry[]): BufferGeometry => {
   return out;
 };
 
-const mirror = (profile: [number, number][]): [number, number][] => profile.map(([l, v]) => [-l, v] as [number, number]).reverse();
+export const mirror = (profile: [number, number][]): [number, number][] => profile.map(([l, v]) => [-l, v] as [number, number]).reverse();
+
+/** The guideway's cross-sections (lateral, up from the rails' base), shared with the line beyond the loop (Extension.tsx). */
+export const SOFFIT: [number, number][] = [
+  [-3, -1.9],
+  [3, -1.9],
+  [5.1, -1.4],
+  [6.1, -0.55],
+  [6.3, 0.9],
+  [6.3, 0.95],
+  [-6.3, 0.95],
+  [-6.3, 0.9],
+  [-6.1, -0.55],
+  [-5.1, -1.4],
+];
+export const PARAPET: [number, number][] = [
+  [6.02, 0.95],
+  [6.3, 0.95],
+  [6.3, 1.75],
+  [6.02, 1.75],
+];
+export const TROUGH: [number, number][] = [
+  [6.3, 0.7],
+  [7.4, 0.7],
+  [7.4, 1.55],
+  [6.3, 1.55],
+];
+/** A clipped hedge on each planter box, rounded on top (only its visible faces). */
+export const HEDGE: [number, number][] = [
+  [7.3, 1.5],
+  [7.34, 1.85],
+  [6.85, 2.12],
+  [6.36, 1.85],
+  [6.4, 1.5],
+];
+export const LED_STRIP: [number, number][] = [
+  [6.13, -0.62],
+  [6.21, -0.62],
+  [6.21, -0.48],
+  [6.13, -0.48],
+];
 
 /** Where the platforms sit the parapets and planters give way to the station's own edge. */
-const atStation = (s: number) => stationS.some((ss) => Math.abs(s - ss) < 14.5);
+const atStation = (s: number) => stationS.some((ss) => Math.abs(s - ss) < PLATFORM_LEN / 2 + 1);
 
 /**
  * The 2100 guideway: a slim white U-girder with a rounded soffit, a planter box with a trimmed hedge along both outer
@@ -67,69 +113,42 @@ const atStation = (s: number) => stationS.some((ss) => Math.abs(s - ss) < 14.5);
 export function Guideway() {
   const world = useWorld();
   const { mats, lowEnd } = world;
+  const parkedMat = useMemo(() => new MeshStandardMaterial({ vertexColors: true, roughness: 0.4, metalness: 0.2 }), []);
+  useEffect(() => () => parkedMat.dispose(), [parkedMat]);
 
   const built = useMemo(() => {
     // every frame, or every other on low-end devices (the curve is smooth enough at twice the spacing)
     const step = lowEnd ? 2 : 1;
     const all = samples.filter((_, i) => i % step === 0 || i === samples.length - 1);
     const sOf = (i: number) => (i * step * LEN) / SAMPLES;
-    const runs: Frame[][] = [];
-    let run: Frame[] = [];
-    all.forEach((f, i) => {
-      if (atStation(sOf(i))) {
-        if (run.length > 1) runs.push(run);
-        run = [];
-      } else run.push(f);
-    });
-    if (run.length > 1) runs.push(run);
-    const alongRuns = (profile: [number, number][]) => mergeAll(runs.map((r) => ribbon(profile, r)));
+    // the runs between the platforms; on the left, between those and the junction too, where the line beyond the loop
+    // runs alongside as one wide deck
+    const runsOf = (skip: (s: number) => boolean) => {
+      const out: Frame[][] = [];
+      let run: Frame[] = [];
+      all.forEach((f, i) => {
+        if (skip(sOf(i))) {
+          if (run.length > 1) out.push(run);
+          run = [];
+        } else run.push(f);
+      });
+      if (run.length > 1) out.push(run);
+      return out;
+    };
+    const runs = runsOf(atStation);
+    const atJoin = (s: number) => s > EXT_JOIN.s0 - 1;
+    const runsLeft = runsOf((s) => atStation(s) || atJoin(s));
+    const alongRuns = (profile: [number, number][]) => mergeAll((profile[0][0] < 0 ? runsLeft : runs).map((r) => ribbon(profile, r)));
 
-    const soffit: [number, number][] = [
-      [-3, -1.9],
-      [3, -1.9],
-      [5.1, -1.4],
-      [6.1, -0.55],
-      [6.3, 0.9],
-      [6.3, 0.95],
-      [-6.3, 0.95],
-      [-6.3, 0.9],
-      [-6.1, -0.55],
-      [-5.1, -1.4],
-    ];
-    const parapet: [number, number][] = [
-      [6.02, 0.95],
-      [6.3, 0.95],
-      [6.3, 1.75],
-      [6.02, 1.75],
-    ];
-    const deckMain = [ribbon(soffit, all), alongRuns(parapet), alongRuns(mirror(parapet))];
-    const trough: [number, number][] = [
-      [6.3, 0.7],
-      [7.4, 0.7],
-      [7.4, 1.55],
-      [6.3, 1.55],
-    ];
-    const plantersMain = [alongRuns(trough), alongRuns(mirror(trough))];
-    // a clipped hedge on each box, rounded on top (only its visible faces, on every other frame: it is soft enough)
-    const hedge: [number, number][] = [
-      [7.3, 1.5],
-      [7.34, 1.85],
-      [6.85, 2.12],
-      [6.36, 1.85],
-      [6.4, 1.5],
-    ];
+    const deckMain = [ribbon(SOFFIT, all), alongRuns(PARAPET), alongRuns(mirror(PARAPET))];
+    const plantersMain = [alongRuns(TROUGH), alongRuns(mirror(TROUGH))];
+    // the hedges on every other frame: they are soft enough
     const half = (r: Frame[]) => r.filter((_, i) => i % 2 === 0 || i === r.length - 1);
-    const hedgesMain = [mergeAll(runs.map((r) => ribbon(hedge, half(r), false, 1.6))), mergeAll(runs.map((r) => ribbon(mirror(hedge), half(r), false, 1.6)))];
+    const hedgesMain = [mergeAll(runs.map((r) => ribbon(HEDGE, half(r), false, 1.6))), mergeAll(runsLeft.map((r) => ribbon(mirror(HEDGE), half(r), false, 1.6)))];
     // the track: a dark slab across the deck and sleepers under each pair of rails, top faces only
     const bedMain = [ribbon([[6.02, 0.955], [-6.02, 0.955]], all, false)];
     const sleepersMain = [-LANE, LANE].map((lane) => ribbon([[lane + 1.3, 0.96], [lane - 1.3, 0.96]], all, false, 0.65));
-    const ledStrip: [number, number][] = [
-      [6.13, -0.62],
-      [6.21, -0.62],
-      [6.21, -0.48],
-      [6.13, -0.48],
-    ];
-    const ledsMain = [ribbon(ledStrip, all), ribbon(mirror(ledStrip), all)];
+    const ledsMain = [ribbon(LED_STRIP, all), ribbon(mirror(LED_STRIP), all.filter((_, i) => !atJoin(sOf(i))))];
     const walk = ribbon(
       [
         [-0.9, 0.95],
@@ -189,6 +208,7 @@ export function Guideway() {
     const paneParts: BufferGeometry[] = [];
     const platParts: BufferGeometry[] = [];
     const lampParts: BufferGeometry[] = [];
+    const layover: { body: BufferGeometry[]; glass: BufferGeometry[]; line: BufferGeometry[] } = { body: [], glass: [], line: [] };
     for (const loop of [LOOPS.near, LOOPS.far]) {
       const fr = loop.samples;
       const n = fr.length;
@@ -196,6 +216,14 @@ export function Guideway() {
       const between = (a: number, b: number) => fr.filter((_, i) => tOf(i) >= a && tOf(i) <= b);
       const stop0 = loop.L / 2 - 14;
       const stop1 = loop.L / 2 + 14;
+      // at Waterfront the loop is double-tracked round its circle: a layover track inside the running one, where a
+      // train waits out of service; its deck widens inward to carry it
+      const [lcx, lcz] = NEAR_LOOP.c;
+      const onArc = loop.end === "near" ? fr.map((f) => Math.abs(Math.hypot(f.p.x - lcx, f.p.z - lcz) - NEAR_LOOP.r) < 0.8) : [];
+      const a0 = onArc.indexOf(true);
+      const a1 = onArc.lastIndexOf(true);
+      const arc = a0 >= 0 && a1 - a0 > 20 ? fr.slice(a0, a1 + 1) : [];
+      const innerRuns = arc.length ? [between(24, tOf(a0)), between(tOf(a1), loop.L - 24)] : [between(24, loop.L - 24)];
       loopDeck.push(
         ribbon(
           [
@@ -221,16 +249,78 @@ export function Guideway() {
           ],
           fr,
         ),
-        ribbon(
-          mirror([
-            [3.32, 0.95],
-            [3.6, 0.95],
-            [3.6, 1.75],
-            [3.32, 1.75],
-          ]),
-          between(24, loop.L - 24),
-        ),
+        ...innerRuns
+          .filter((r) => r.length > 1)
+          .map((r) =>
+            ribbon(
+              mirror([
+                [3.32, 0.95],
+                [3.6, 0.95],
+                [3.6, 1.75],
+                [3.32, 1.75],
+              ]),
+              r,
+            ),
+          ),
       );
+      if (arc.length) {
+        const LAY = 5.6;
+        // the widened deck, its new inner parapet and bed
+        loopDeck.push(
+          ribbon(
+            [
+              [-9.3, -1.0],
+              [-3.4, -1.0],
+              [-3.4, 0.94],
+              [-9.3, 0.94],
+            ],
+            arc,
+          ),
+          ribbon(
+            [
+              [-9.3, 0.95],
+              [-9.02, 0.95],
+              [-9.02, 1.75],
+              [-9.3, 1.75],
+            ],
+            arc,
+          ),
+        );
+        loopBed.push(ribbon([[-3.3, 0.955], [-9.02, 0.955]], arc, false));
+        // the layover track: off the running line at one end of the circle, back onto it at the other
+        const t0 = tOf(a0);
+        const t1 = tOf(a1);
+        const lay = arc.map((f, k): Frame => {
+          const t = tOf(a0 + k);
+          const u = Math.min(1, (t - t0) / 16, (t1 - t) / 16);
+          const lat = -LAY * smoothstep01(Math.max(0, u));
+          return { p: f.p.clone().addScaledVector(f.r, lat), t: f.t, r: f.r };
+        });
+        loopSleepers.push(ribbon([[1.3, 0.96], [-1.3, 0.96]], lay, false, 0.65));
+        for (const side of [-1, 1]) {
+          const pts = lay.map((f) => f.p.clone().addScaledVector(f.r, side * 0.72).addScaledVector(UP, 0.98));
+          tubes.push(new TubeGeometry(new CatmullRomCurve3(pts, false, "catmullrom", 0), Math.ceil(pts.length * (lowEnd ? 0.7 : 1.4)), 0.07, 4, false));
+        }
+        // the train standing on it, at the middle of the circle
+        const mid = Math.round(lay.length / 2);
+        const step = Math.max(1, Math.round(((CAR + GAP) / (t1 - t0)) * lay.length));
+        const geo = carGeometry(CAR, true, false, lowEnd ? 14 : 22);
+        const dummy = new Object3D();
+        for (let k = -1; k <= 1; k++) {
+          const f = lay[Math.min(lay.length - 1, Math.max(0, mid + k * step))];
+          dummy.position.copy(f.p).addScaledVector(UP, 0.98);
+          dummy.lookAt(dummy.position.clone().add(f.t));
+          // the end cars face outward, so the set wears a nose at each end
+          if (k === 1) dummy.rotateY(Math.PI);
+          dummy.updateMatrix();
+          layover.body.push(geo.body.clone().applyMatrix4(dummy.matrix));
+          layover.glass.push(geo.glass.clone().applyMatrix4(dummy.matrix));
+          layover.line.push(geo.line.clone().applyMatrix4(dummy.matrix));
+        }
+        geo.body.dispose();
+        geo.glass.dispose();
+        geo.line.dispose();
+      }
       const trough: [number, number][] = [
         [3.6, 0.7],
         [4.7, 0.7],
@@ -356,7 +446,9 @@ export function Guideway() {
       const gy = groundAt(f.p.x, f.p.z);
       const topY = f.p.y - 1.9 - 3.4;
       const h = topY - gy;
-      const show = f.p.y - 1.9 - gy > 1 ? 1 : 0;
+      // over the Grandview Cut the span carries on to the banks (no pier stands on the Millennium's floor), and over a
+      // street to its far side
+      const show = f.p.y - 1.9 - gy > 1 && !inRailCut(f.p.x, f.p.z, 1) && !isRoad(f.p.x, f.p.z, 1) && !nearWce(f.p.x, f.p.z, -2) ? 1 : 0;
       // where the deck rides too low for the fork (the cut), a plain column under the soffit, or nothing
       const fork = h > 0.6 ? 1 : 0;
       const colTop = fork ? topY : f.p.y - 1.9;
@@ -385,12 +477,21 @@ export function Guideway() {
     const panes = mergeAll(paneParts);
     const plats = mergeAll(platParts);
     const lamps = mergeAll(lampParts);
-    return { deck, planters, hedges, bed, sleepers, leds, walk, plates, rails, col, arm, canopy, panes, plats, lamps };
+    // the parked train painted into one mesh (white body, dark glass, the violet line)
+    const parked = layover.body.length
+      ? merged([
+          ...layover.body.map((g) => ({ geo: paint(g, 0xf3f4f6) })),
+          ...layover.glass.map((g) => ({ geo: paint(g, 0x2a3039) })),
+          ...layover.line.map((g) => ({ geo: paint(g, 0xa78bfa) })),
+        ])
+      : null;
+    return { deck, planters, hedges, bed, sleepers, leds, walk, plates, rails, col, arm, canopy, panes, plats, lamps, parked };
   }, [mats, lowEnd]);
 
   useEffect(
     () => () => {
       for (const g of [built.deck, built.planters, built.hedges, built.bed, built.sleepers, built.leds, built.walk, built.plates, built.rails, built.canopy, built.panes, built.plats, built.lamps]) g.dispose();
+      built.parked?.dispose();
       for (const o of [built.col, built.arm]) {
         o.geometry.dispose();
         o.dispose();
@@ -414,6 +515,7 @@ export function Guideway() {
       <mesh geometry={built.panes} material={mats.pane} />
       <mesh geometry={built.plats} material={mats.plat} receiveShadow />
       <mesh geometry={built.lamps} material={mats.lamp} />
+      {built.parked ? <mesh geometry={built.parked} material={parkedMat} /> : null}
       <primitive object={built.col} />
       <primitive object={built.arm} />
     </>

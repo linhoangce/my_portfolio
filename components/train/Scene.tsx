@@ -6,6 +6,7 @@ import { ACESFilmicToneMapping } from "three";
 
 import { CameraRig } from "./CameraRig";
 import { City } from "./City";
+import { Commons } from "./Commons";
 import { CAM } from "./constants";
 import { Debug } from "./Debug";
 import { Drive } from "./Drive";
@@ -13,6 +14,13 @@ import { Effects } from "./Effects";
 import { Events } from "./Events";
 import { Ground } from "./Ground";
 import { Guideway } from "./Guideway";
+import { Hub } from "./Hub";
+import { Millennium } from "./Millennium";
+import { Roads } from "./Roads";
+import { BusStops } from "./BusStops";
+import { WestCoastExpress } from "./WestCoastExpress";
+import { SeaBus } from "./SeaBus";
+import { Signals } from "./Signals";
 import { Landmarks } from "./Landmarks";
 import { Life } from "./Life";
 import { Lights } from "./Lights";
@@ -61,6 +69,11 @@ export default function Scene({ onContextLost }: { onContextLost?: () => void })
         <Lights />
         <Sky />
         <Ground />
+        <Roads />
+        <Signals />
+        <BusStops />
+        <WestCoastExpress />
+        <SeaBus />
         <Water />
         <Reflections />
         <Mirror />
@@ -68,12 +81,15 @@ export default function Scene({ onContextLost }: { onContextLost?: () => void })
         <City />
         <Trees />
         <Landmarks />
+        <Commons />
         <Events />
         <Nature />
         <Guideway />
         <Stations />
         <Sets />
         <Train />
+        <Millennium />
+        <Hub />
         <Life />
         <Precipitation />
         <Drive />

@@ -175,8 +175,9 @@
   .metric {
     @apply min-w-0 rounded-xl border border-border bg-surface2 p-3;
   }
+  /* a figure, or a feature in two or three words: it wraps rather than cut off */
   .metric .v {
-    @apply overflow-hidden text-ellipsis whitespace-nowrap font-mono text-lg leading-[1.1];
+    @apply font-mono text-lg leading-[1.15] [overflow-wrap:anywhere];
   }
   .metric .k {
     @apply mt-[5px] text-[11px] uppercase tracking-[0.05em] text-muted;
@@ -209,10 +210,7 @@
     @apply ml-1.5 font-mono text-[10px] text-muted;
   }
   .skills {
-    @apply mt-[18px] grid grid-cols-2 gap-2;
-  }
-  .skills > div {
-    @apply flex flex-col gap-2 rounded-xl border border-border bg-surface2 p-3;
+    @apply mt-[18px] flex flex-col gap-2 rounded-xl border border-border bg-surface2 p-3;
   }
   .skills .tags {
     @apply mt-0;
@@ -511,85 +509,60 @@
 .help .keys dd {
   margin: 0;
 }
-.evt {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  width: fit-content;
-  height: 30px;
-  padding: 0 12px;
-  border-radius: 999px;
-  background: rgb(var(--surface) / var(--glass-a));
-  border: 1px solid rgb(var(--border));
-  font-size: 12px;
-  color: rgb(var(--fg-2));
-}
-.evt i {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-}
-.readout .kmh {
-  color: rgb(var(--fg-2));
-}
-.hint-btn {
-  pointer-events: auto;
-  width: 32px;
-  height: 32px;
-  font-family: var(--font-mono), ui-monospace, monospace;
-}
 .top .right {
   display: flex;
   align-items: center;
   gap: 10px;
   white-space: nowrap;
 }
-.hud {
+/* where the train is, the event and season, the controls: a footnote in the bottom-right corner, over the map credit */
+.foot {
   position: fixed;
-  left: 16px;
-  bottom: 16px;
+  right: 10px;
+  bottom: 22px;
   z-index: 9;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  pointer-events: none;
-  max-width: calc(100% - 32px);
-}
-.readout {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  height: 40px;
-  padding: 0 14px 0 12px;
-  border-radius: 999px;
-  background: rgb(var(--surface) / var(--glass-a));
-  border: 1px solid rgb(var(--border));
+  align-items: flex-end;
+  gap: 2px;
+  max-width: calc(100% - 20px);
   font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 12px;
-  letter-spacing: 0.1em;
+  font-size: 10px;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: rgb(var(--muted));
-  width: fit-content;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  text-align: right;
+  color: rgb(var(--fg-2));
+  /* a soft halo of the page colour, so it reads over any part of the scene */
+  text-shadow:
+    0 0 3px rgb(var(--bg)),
+    0 0 8px rgb(var(--bg)),
+    0 0 14px rgb(var(--bg) / 0.8);
+  pointer-events: none;
+  transition: opacity 0.4s;
 }
-.readout b {
+.foot p {
+  margin: 0;
+}
+.foot b {
   color: rgb(var(--fg));
   font-weight: 500;
 }
-.readout .dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: rgb(var(--accent));
-  box-shadow: 0 0 10px rgb(var(--accent));
+.foot button {
+  pointer-events: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: rgb(var(--fg-2));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
 }
-.hint {
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  color: rgb(var(--muted));
-  text-transform: uppercase;
+.foot button:hover,
+.foot button:focus-visible {
+  color: rgb(var(--fg));
 }
 
 .drive {
@@ -727,11 +700,8 @@ html[data-film="on"] .top {
   --accent-ink: 11 7 22;
   color: rgb(var(--fg));
 }
-html[data-film="on"] .hud {
+html[data-film="on"] .foot {
   opacity: 0;
-}
-.hud {
-  transition: opacity 0.4s;
 }
 
 .scene-ov {
@@ -1165,7 +1135,7 @@ html:has(.scene-ov.open) .ask {
     padding: 0 12px;
   }
   .top .label,
-  .hint {
+  .foot-hint {
     display: none;
   }
   .linemap ol {
@@ -1201,7 +1171,7 @@ html:has(.scene-ov.open) .ask {
   .top .btn-primary {
     padding: 0 12px;
   }
-  .hud {
+  .foot {
     bottom: 86px;
   }
   .drive {
@@ -1305,4 +1275,35 @@ html:has(.scene-ov.open) .ask {
   .intro {
     transition: none;
   }
+}
+
+/* the map data's credit, bottom-right, as small as it may be and still be read */
+.map-credit {
+  position: fixed;
+  right: 10px;
+  bottom: 6px;
+  z-index: 8;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: rgb(var(--muted));
+  opacity: 0.75;
+  text-decoration: none;
+}
+.map-credit:hover {
+  opacity: 1;
+  color: rgb(var(--fg));
+}
+.map-sources {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: rgb(var(--muted));
+}
+.map-sources a {
+  color: rgb(var(--fg));
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }

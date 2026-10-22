@@ -4,10 +4,11 @@ import { useFrame } from "@react-three/fiber";
 import { useTheme } from "next-themes";
 import { useEffect, useRef } from "react";
 
-import { AUTO_LOOK_PERIOD, TRAIN_LEN } from "./constants";
+import { AUTO_LOOK_PERIOD } from "./constants";
 import { applyLook, tickLook } from "./lookModel";
 import { useTrain } from "./store";
 import { frameAt, makeFrame, nearestStation, stationS, UP } from "./track";
+import { mirrorUniforms } from "./waterMirror";
 import { useWorld } from "./world";
 
 const fA = makeFrame();
@@ -15,11 +16,12 @@ const fB = makeFrame();
 
 /**
  * Applies theme × season × weather, runs the automatic cycle, eases the look every frame and keeps the sun, sky,
- * stars and station light where they belong.
+ * stars and station light where they belong. The cycle turns day to night every AUTO_LOOK_PERIOD and, at each dawn,
+ * moves on to the next season, weather and event, so each look is seen by day and by night.
  */
 export function Look() {
   const world = useWorld();
-  const { resolvedTheme } = useTheme();
+  const { resolvedTheme, setTheme } = useTheme();
   const theme = resolvedTheme === "light" ? "light" : "dark";
   const season = useTrain((s) => s.season);
   const weather = useTrain((s) => s.weather);
@@ -39,7 +41,9 @@ export function Look() {
       autoT.current += dt;
       if (autoT.current > AUTO_LOOK_PERIOD) {
         autoT.current = 0;
-        st.advanceCycle();
+        const night = document.documentElement.classList.contains("dark");
+        if (night) st.advanceCycle();
+        setTheme(night ? "light" : "dark");
       }
     } else autoT.current = 0;
     const inScene = st.scenePhase === "cut" || st.scenePhase === "establish" || st.scenePhase === "hold";
@@ -49,10 +53,12 @@ export function Look() {
     const { sim } = st;
     if (!sim.stationS.length) return;
     const cam = state.camera.position;
-    frameAt(sim.s - TRAIN_LEN / 2, fA);
+    frameAt(sim.s, fA);
     world.lights.sun.position.copy(fA.p).addScaledVector(world.sunDir, 220);
     world.lights.sun.target.position.copy(fA.p);
     world.sky.mesh.position.copy(cam);
+    world.sky.mat.uniforms.time.value = state.clock.elapsedTime;
+    mirrorUniforms.uMirrorTime.value = state.clock.elapsedTime;
     world.sky.stars.position.copy(cam);
     world.sky.disc.position.copy(cam).addScaledVector(world.sunDir, 2400);
     const ni = nearestStation(sim.s);

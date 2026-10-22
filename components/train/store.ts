@@ -292,7 +292,9 @@ export const useTrain = create<TrainState>((set, get) => ({
     if (ph === "idle" || ph === "exit") return;
     st.sim.film.cooldown = 3;
     st.setPhase("exit");
-    set({ overlay: false });
+    // ended by the visitor: the scene stays ended while the train sits at this stop (the director re-arms it only on
+    // a new arrival), so a zoom out or a look round is not pulled back into it
+    set({ overlay: false, dismissed: st.sim.film.idx });
   },
   setStage: (n) => {
     const st = get();

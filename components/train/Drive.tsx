@@ -3,14 +3,14 @@
 import { useFrame } from "@react-three/fiber";
 import { useRef } from "react";
 
-import { ACC, BRAKE, CAR, CROSS_LEN, DOCK_DIST, DOCK_V, DRAG, KMH_PER_UNIT, LANE, LOOP_V, METRES_PER_UNIT, ONCOMING_DWELL, ONCOMING_RESEAT, ONCOMING_SPEED, TRAIN_LEN, VMAX } from "./constants";
+import { ACC, BRAKE, CROSS_LEN, DOCK_DIST, DOCK_V, DRAG, HEAD, KMH_PER_UNIT, LANE, LOOP_V, METRES_PER_UNIT, ONCOMING_DWELL, ONCOMING_RESEAT, ONCOMING_SPEED, TRAIN_LEN, VMAX } from "./constants";
 import { stepFilm } from "./scene/director";
 import { type Readout, type Sim, useTrain } from "./store";
 import { CROSSOVERS, frameAt, LEN, LOOPS, makeFrame, nearestStation, stationS } from "./track";
 
 const clamp = (x: number, a: number, b: number) => Math.min(b, Math.max(a, x));
-/** From the lead car's centre to the back of the last car. */
-const TAIL = TRAIN_LEN - CAR / 2;
+/** From the train's middle (sim.s) to the back of its last car. */
+const TAIL = TRAIN_LEN / 2;
 
 /** Step v toward a wanted speed: shedding speed at the brake rate, gaining it at the (target) acceleration rate, in either direction. */
 const approach = (v: number, want: number, dt: number) => {
@@ -21,8 +21,10 @@ const approach = (v: number, want: number, dt: number) => {
 
 /** Where the train is relative to the turning loops: heading round one, or back on the line with its tail still in one. */
 export function loopState(sim: Sim): "out" | "tail" | null {
-  const far = sim.s > LEN;
-  const near = sim.s < 0;
+  // the lead car leads it into a loop
+  const head = sim.s + sim.travelDir * HEAD;
+  const far = head > LEN;
+  const near = head < 0;
   if ((far && sim.travelDir > 0) || (near && sim.travelDir < 0)) return "out";
   const tail = sim.s - sim.travelDir * TAIL;
   return tail > LEN || tail < 0 ? "tail" : null;
@@ -63,14 +65,15 @@ export function updateDrive(sim: Sim, dt: number): void {
     sim.target = null;
     sim.v += clamp(sim.travelDir * LOOP_V - sim.v, -BRAKE * dt, ACC * dt);
     sim.s += sim.v * dt;
-    const far = sim.s > LEN;
-    const x = far ? sim.s - LEN : -sim.s;
+    const head = sim.s + sim.travelDir * HEAD;
+    const far = head > LEN;
+    const x = far ? head - LEN : -head;
     const L = far ? LOOPS.far.L : LOOPS.near.L;
     if (x >= L) {
-      // round the loop and onto the other track: the same train, now heading back
+      // round the loop and onto the other track: the same train, now heading back, its lead car just off the loop
       const e = x - L;
-      sim.s = far ? LEN - e : e;
       sim.travelDir = far ? -1 : 1;
+      sim.s = (far ? LEN - e : e) - sim.travelDir * HEAD;
       sim.v = sim.travelDir * Math.abs(sim.v);
       sim.laneFrom = sim.laneTo = LANE * sim.travelDir;
       if (sim.throttle * sim.travelDir > 0) {
@@ -139,10 +142,13 @@ export function updateDrive(sim: Sim, dt: number): void {
     sim.s2 = clamp(sim.s + sim.travelDir * ONCOMING_RESEAT, stationS[0], stationS[stationS.length - 1]);
     sim.dwell2 = 0;
   }
+  // the lead car takes a crossover first
+  const head = sim.s + sim.travelDir * HEAD;
+  const prevHead = prevS + sim.travelDir * HEAD;
   if (sim.laneFrom === sim.laneTo && sim.laneTo !== LANE * sim.travelDir) {
     for (const c0 of CROSSOVERS) {
       const entry = sim.travelDir > 0 ? c0 : c0 + CROSS_LEN;
-      if ((prevS - entry) * sim.travelDir < 0 && (sim.s - entry) * sim.travelDir >= 0) {
+      if ((prevHead - entry) * sim.travelDir < 0 && (head - entry) * sim.travelDir >= 0) {
         sim.laneFrom = sim.laneTo;
         sim.laneTo = LANE * sim.travelDir;
         sim.crossStart = entry;
@@ -150,7 +156,7 @@ export function updateDrive(sim: Sim, dt: number): void {
       }
     }
   }
-  if (sim.laneFrom !== sim.laneTo && (sim.s - sim.crossStart) * sim.travelDir > CROSS_LEN + TRAIN_LEN) sim.laneFrom = sim.laneTo;
+  if (sim.laneFrom !== sim.laneTo && (head - sim.crossStart) * sim.travelDir > CROSS_LEN + TRAIN_LEN) sim.laneFrom = sim.laneTo;
 }
 
 const fo = makeFrame();

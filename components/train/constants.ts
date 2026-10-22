@@ -12,17 +12,30 @@ export const TERRAIN_V = 0.4;
 export const SEA = -0.6;
 /** Deck grade limits: everywhere, and on the Grandview Cut ramps. */
 export const GRADE_CAP = 0.09;
-export const GRADE_CAP_RAMP = 0.11;
+export const GRADE_CAP_RAMP = 0.12;
 /** The deck stays level this far either side of a station. */
 export const PLATFORM_FLAT = 18;
 /** Minimum deck height above the ground beside the track. */
 export const CLEAR_DECK = 7.5;
 /**
- * The Grandview Cut, as on the real line: from about Clark Drive (past the False Creek Flats) to just beyond 29th
- * Avenue the deck rides low in a trench between wooded banks, with Commercial–Broadway, Nanaimo and 29th Avenue's
- * platforms down in it. `afterMain` and `after29th` are arc distances from those stations.
+ * Where the Expo comes down (OSM's structure runs, railData.ts): its rails a ballast's depth over the ground at grade,
+ * the floor of its cutting (and of the covered trench at 29th Avenue) this far under the ground.
  */
-export const CUT = { afterMain: 150, after29th: 115, rampIn: 80, rampOut: 105, offset: 2.5, bank: 9.5 } as const;
+export const BALLAST = 0.6;
+export const CUT_EXPO = 4.5;
+/** The Millennium Line: its viaducts lower than the Expo's, its floor in the Grandview Cut this far under the ground. */
+export const DECK_MILL = 6.5;
+export const CUT_MILL = 7;
+/**
+ * A rail trench's cross-section about each line in it: a level floor out to `floor` either side (wider at a platform:
+ * each bed point carries its own), a steep bank rising `bank` above it within `wall` more, back to the ground within
+ * `fade`; concrete retaining walls stand at the floor's edges (Millennium.tsx). The freight line beside the Millennium
+ * digs its own, so the floor runs on under both.
+ */
+export const TRENCH = { floor: 6.5, bank: 8, wall: 3, fade: 8 } as const;
+/** The freight line's offset from the Millennium's centreline where they share the cut, on the north side (and past a platform). */
+export const FREIGHT_OFFSET = 9;
+export const FREIGHT_OFFSET_PLATFORM = 16;
 /** Vertical scale of the far backdrop (the North Shore range would tower at TERRAIN_V); blended from TERRAIN_V at the city edge. */
 export const FAR_V = 0.26;
 /** Lateral offset of each track from the guideway centreline; ours is +LANE (right-hand running). */
@@ -32,7 +45,16 @@ export const CROSS_LEN = 44;
 
 export const CAR = 9.2;
 export const GAP = 0.7;
-export const TRAIN_LEN = 3 * (CAR + GAP) + CAR;
+/** Cars in a train: three, so a train stands whole at a platform (PLATFORM_LEN) with the stations at their real spacing. */
+export const TRAIN_CARS = 3;
+export const TRAIN_LEN = (TRAIN_CARS - 1) * (CAR + GAP) + CAR;
+/**
+ * A train's position (sim.s) is its middle, so a docked train is centred on its platform; its lead car's centre is
+ * HEAD ahead of that, in the direction of travel.
+ */
+export const HEAD = (TRAIN_LEN - CAR) / 2;
+/** A platform's length: the train and a little to spare. */
+export const PLATFORM_LEN = 31;
 
 // Driving model
 export const VMAX = 46;
@@ -60,6 +82,12 @@ export const CAM = {
   lambdaReduced: 14,
   chase: { right: 11, up: 9.5, back: 30 },
   chasePhone: { right: 13, up: 12, back: 44 },
+  /**
+   * How far the chase view pulls back and up once the train is going: a broad view down on the line over the city
+   * round it, about 27 degrees down; a little less on low-end devices, where a wider view costs more than they have.
+   */
+  pull: { back: 95, up: 55 },
+  pullLite: { back: 65, up: 38 },
   station: { right: 30, up: 13, ahead: 20 },
   stationPhone: { right: 40, up: 17, ahead: 28 },
   cab: { up: 3.1, ahead: 4.4, look: 30 },
@@ -70,17 +98,14 @@ export const CAM = {
   far: 5200,
 } as const;
 
-/** Seasons, weather and events cycle on their own every this many seconds until the menu or the attendant takes over. */
-export const AUTO_LOOK_PERIOD = 10;
+/**
+ * Day turns to night (and night to the next look's day: its season, weather and event) on its own every this many
+ * seconds, until the menu, the day/night button or the attendant takes over.
+ */
+export const AUTO_LOOK_PERIOD = 15;
 
 /** Below this width the layout is the phone layout (bottom sheets, hold buttons). */
 export const PHONE_MAX_WIDTH = 860;
 
 export const PEOPLE_VARIANTS = 6;
 
-/**
- * The street grid as the ground tile paints it: north–south arterials every 44 units from x = 12 with a back lane
- * between them, east–west streets every 22 from z = 18 (an arterial on the lower edge of every odd row). Half widths
- * include the sidewalks. The ground shader (world.ts) and the city zoning (cityData.ts) share them.
- */
-export const GRID = { x0: 12, z0: 18, cw: 44, ch: 22, artHalf: 3.44, locHalf: 2.41 } as const;

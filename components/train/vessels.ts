@@ -205,6 +205,33 @@ export function yacht(): BufferGeometry {
   return merge(parts);
 }
 
+/**
+ * A floatplane, a Beaver of the harbour's fleet: a white fuselage and high wing with a band of `hex` down the side and
+ * on the fin, a dark cockpit, a cowled radial and its propeller, on two floats with their struts. About 6 units long
+ * and as wide, its floats on the water.
+ */
+export function floatplane(hex: number): BufferGeometry {
+  const parts: BufferGeometry[] = [
+    // fuselage, tail boom, cockpit glass, the band along it
+    box(0.85, 0.9, 2.9, 0, 1.55, 0.6, WHITE),
+    paint(new BoxGeometry(0.5, 0.5, 2.6).translate(0, 1.65, -1.95), WHITE),
+    box(0.88, 0.38, 0.8, 0, 1.92, 1.55, GLASS),
+    box(0.87, 0.16, 4.8, 0, 1.4, -0.4, hex),
+    // the cowl and the propeller
+    paint(new CylinderGeometry(0.42, 0.45, 0.6, 10).rotateX(Math.PI / 2).translate(0, 1.55, 2.3), 0x2a2f37),
+    box(1.9, 0.12, 0.06, 0, 1.55, 2.66, 0x15171c),
+    // the high wing, the tail
+    box(5.6, 0.1, 1.0, 0, 2.08, 1.0, WHITE),
+    box(0.06, 0.8, 0.7, 0, 2.15, -3.1, hex),
+    box(1.9, 0.06, 0.55, 0, 1.75, -3.05, WHITE),
+    // floats and struts
+    box(0.32, 0.3, 4.2, -0.85, 0.15, 0.4, DECK),
+    box(0.32, 0.3, 4.2, 0.85, 0.15, 0.4, DECK),
+  ];
+  for (const x of [-0.65, 0.65]) for (const z of [1.5, -0.4]) parts.push(box(0.06, 1.0, 0.06, x, 0.75, z, 0x8a9099));
+  return merge(parts);
+}
+
 /* ------------------------------------------------------------------ drones */
 
 /** A quadcopter about two units across: a dark body, four arms with motors and pale prop discs. */
@@ -318,4 +345,46 @@ export function carLights(): BufferGeometry {
     ...[-0.36, 0.36].map((z) => box(0.06, 0.12, 0.24, 1.24, 0.46, z, 0xfff3d6)),
     ...[-0.4, 0.4].map((z) => box(0.06, 0.1, 0.26, -1.24, 0.5, z, 0xff2a1f)),
   ]);
+}
+
+/** A part's glow: 1 where it lights (signs, lamps, the light line), for the bus material's shader. */
+const glowing = (g: BufferGeometry, v: number): BufferGeometry => {
+  g.setAttribute("aGlow", new Float32BufferAttribute(new Float32Array(g.attributes.position.count).fill(v), 1));
+  return g;
+};
+
+/**
+ * One section of a 2100 articulated electric bus, built nose along +x, wheels on the ground at y 0, 3 long: white
+ * with a wraparound tinted window band and the line's violet light line, a battery pod on the roof. The front section
+ * has the windscreen, the lit route sign, headlights and the charging pantograph; the rear one the rear window, sign
+ * and tail lamps at -x and the bellows at +x, toward the joint. The aGlow attribute marks what lights.
+ */
+export function busSection(front: boolean): BufferGeometry {
+  const parts: BufferGeometry[] = [
+    glowing(box(3.0, 0.3, 1.18, 0, 0.33, 0, 0x2b2f36), 0),
+    glowing(box(3.0, 0.5, 1.24, 0, 0.73, 0, WHITE), 0),
+    glowing(box(3.02, 0.07, 1.26, 0, 0.99, 0, 0xa78bfa), 1),
+    glowing(box(2.96, 0.48, 1.22, 0, 1.27, 0, 0x22303f), 0),
+    glowing(box(3.0, 0.16, 1.24, 0, 1.59, 0, WHITE), 0),
+    glowing(box(1.8, 0.16, 0.86, -0.2, 1.75, 0, 0xd5d9de), 0),
+    ...[-0.95, 0.95].map((x) => glowing(box(0.6, 0.56, 1.28, x, 0.28, 0, 0x16181c), 0)),
+  ];
+  if (front) {
+    parts.push(
+      glowing(box(0.06, 0.62, 1.12, 1.5, 1.15, 0, 0x2a3a4c), 0),
+      glowing(box(0.05, 0.16, 0.86, 1.52, 1.5, 0, 0xffb547), 1),
+      ...[-0.42, 0.42].map((z) => glowing(box(0.05, 0.1, 0.22, 1.52, 0.6, z, 0xfff3d6), 1)),
+      // the pantograph folded on the roof
+      ...[-0.3, 0.3].map((z) => glowing(box(0.05, 0.3, 0.05, 0.55, 1.95, z, 0x3a3f46), 0)),
+      glowing(box(0.9, 0.04, 0.72, 0.25, 2.1, 0, 0x3a3f46), 0),
+    );
+  } else {
+    parts.push(
+      glowing(box(0.06, 0.5, 1.1, -1.5, 1.25, 0, 0x22303f), 0),
+      glowing(box(0.05, 0.14, 0.7, -1.52, 1.52, 0, 0xffb547), 1),
+      ...[-0.44, 0.44].map((z) => glowing(box(0.05, 0.12, 0.24, -1.52, 0.62, z, 0xff2a1f), 1)),
+      glowing(box(0.5, 1.15, 1.08, 1.62, 0.98, 0, 0x2f343c), 0),
+    );
+  }
+  return merge(parts);
 }

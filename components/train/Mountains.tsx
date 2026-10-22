@@ -6,17 +6,21 @@ import { BoxGeometry, BufferAttribute, BufferGeometry, Color, ConeGeometry, Cyli
 
 import { FAR_V, SEA, TERRAIN_V } from "./constants";
 import { registerPattern } from "./eventLights";
+import { buildLionsGate, narrowsLine } from "./lionsGate";
+import { Extension } from "./Extension";
+import { FarCity } from "./FarCity";
+import { farDensity, farReach, farZone } from "./farCityModel";
 import { merged } from "./merge";
 import { useTrain } from "./store";
-import { RASTER, sdfAt } from "./terrain";
+import { RASTER, sdfAt, SHORE_BOX } from "./terrain";
 import { useWorld } from "./world";
 
 type FarModule = typeof import("./terrainFar");
 
 /**
  * The real backdrop from the far grid: North Vancouver rising to the North Shore range (Grouse, Seymour, Cypress),
- * Burnaby Mountain, the suburbs and the strait, coloured by height and slope with a summer and a winter snowline.
- * The city rectangle is lowered under the city mesh. Mount Baker stays a stylised cone on the south-east horizon.
+ * Burnaby Mountain, the suburbs and the strait, coloured by height and slope with a summer and a winter snowline;
+ * past the line's end the far city stands on it (FarCity). The city rectangle is lowered under the city mesh. Mount Baker stays a stylised cone on the south-east horizon.
  */
 function buildFar(mod: FarModule, stride: number): { geometry: BufferGeometry; summer: BufferAttribute; winter: BufferAttribute; heightAt: (x: number, z: number) => number } {
   const g0 = mod.DEM_FAR;
@@ -46,7 +50,10 @@ function buildFar(mod: FarModule, stride: number): { geometry: BufferGeometry; s
       const v = TERRAIN_V + (FAR_V - TERRAIN_V) * t * t * (3 - 2 * t);
       let y = m <= 0.3 ? SEA - 5 : Math.max(0.3, m * v);
       const inside = x > RASTER.x0 + 4 && x < x1 - 4 && z > RASTER.z0 + 4 && z < z1 - 4;
-      if (inside) y = Math.min(y, sdfAt(x, z) < 0 ? SEA - 5 : y) - 3;
+      // well under the city's ground, which the rail trenches dig up to 8 below the DEM
+      if (inside) y = Math.min(y, sdfAt(x, z) < 0 ? SEA - 5 : y) - 12;
+      // the city ground is cut away at False Creek's shore, so nothing of this may show above the water there
+      if (x > SHORE_BOX.x0 - g.step && x < SHORE_BOX.x1 + g.step && z > SHORE_BOX.z0 - g.step && z < SHORE_BOX.z1 + g.step) y = SEA - 8;
       pos.set([x, y, z], k * 3);
     }
   }
@@ -65,6 +72,15 @@ function buildFar(mod: FarModule, stride: number): { geometry: BufferGeometry; s
   const summer = new Float32Array(n * 3);
   const winter = new Float32Array(n * 3);
   const c = new Color();
+  // the far city's ground: paved and gardened, greyer than the forest round it
+  const reach = farReach(stride > 1);
+  const urban = new Float32Array(n);
+  for (let k = 0; k < n; k++) {
+    const x = pos[k * 3];
+    const z = pos[k * 3 + 2];
+    if (metres[k] > 0.3 && farZone(x, z, reach)) urban[k] = 0.85 * farDensity(x, z, reach);
+  }
+  const URBAN = new Color(0.58, 0.59, 0.55);
   const paint = (out: Float32Array, k: number, snowLine: number) => {
     const m = metres[k];
     const slope = 1 - nrm.getY(k);
@@ -77,6 +93,7 @@ function buildFar(mod: FarModule, stride: number): { geometry: BufferGeometry; s
       c.lerp(new Color(0.46, 0.45, 0.43), rock);
       c.lerp(new Color(0.93, 0.95, 0.98), snow);
     }
+    if (urban[k] > 0) c.lerp(URBAN, urban[k]);
     out.set([c.r, c.g, c.b], k * 3);
   };
   for (let k = 0; k < n; k++) {
@@ -147,24 +164,6 @@ function buildGondola(heightAt: (x: number, z: number) => number): { group: Grou
   return { group, cabins, path };
 }
 
-/** The First Narrows from the real coastline: where the shore crossing nearest x −218 runs out of water. */
-function narrows(): { x: number; zS: number; zN: number } {
-  const x = -218;
-  let zS = -300;
-  let zN = -360;
-  let inWater = false;
-  for (let z = -230; z > -450; z -= 2) {
-    const wet = sdfAt(x, z) < 0;
-    if (wet && !inWater) zS = z + 2;
-    if (!wet && inWater) {
-      zN = z;
-      break;
-    }
-    inWater = wet;
-  }
-  return { x, zS, zN };
-}
-
 export function Mountains() {
   const world = useWorld();
   const cabinM = useMemo(() => new Matrix4(), []);
@@ -211,74 +210,31 @@ export function Mountains() {
     // beyond the fog's reach, so its haze is painted into the colours instead
     const baker = new Mesh(bakerGeo, new MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true, fog: false }));
     baker.position.set(2600, BH / 2 - 25, 2600);
-    // Lions Gate: two towers, a deck across the First Narrows, four main cables; concrete and cables as two meshes
-    const nw = narrows();
-    const len = nw.zS - nw.zN + 40;
-    const mid = (nw.zS + nw.zN) / 2;
-    const span = Math.max(40, (nw.zS - nw.zN) * 0.55);
-    const bridge = new Mesh(
-      merged([
-        { geo: new BoxGeometry(6, 1.6, len), position: [0, 26, mid] },
-        { geo: new BoxGeometry(5, 58, 5), position: [0, 29, mid - span / 2] },
-        { geo: new BoxGeometry(5, 58, 5), position: [0, 29, mid + span / 2] },
-      ]),
-      new MeshStandardMaterial({ color: 0x5f8a6f, roughness: 0.6 }),
-    );
-    bridge.position.set(nw.x, 0, 0);
-    // the main cables hang in catenaries (main span and side spans); the necklace lights sit on the same curves
-    const curves: Vector3[][] = [];
-    const sag = (z0: number, z1: number, y0: number, y1: number, dip: number) => {
-      for (const xo of [-2.4, 2.4]) {
-        const c: Vector3[] = [];
-        for (let k = 0; k <= 22; k++) {
-          const u = k / 22;
-          c.push(new Vector3(xo, y0 + (y1 - y0) * u - Math.sin(u * Math.PI) * dip, z0 + (z1 - z0) * u));
-        }
-        curves.push(c);
-      }
-    };
-    sag(mid - span / 2, mid + span / 2, 58, 58, 24);
-    sag(mid - len / 2, mid - span / 2, 27, 58, 4);
-    sag(mid + span / 2, mid + len / 2, 58, 27, 4);
-    const up = new Vector3(0, 1, 0);
-    const cables = new Mesh(
-      merged(
-        curves.flatMap((c) =>
-          c.slice(0, -1).map((a, k) => {
-            const d = c[k + 1].clone().sub(a);
-            const L = d.length();
-            const e = new Euler().setFromQuaternion(new Quaternion().setFromUnitVectors(up, d.normalize()));
-            return { geo: new CylinderGeometry(0.3, 0.3, L, 6), position: a.clone().add(c[k + 1]).multiplyScalar(0.5).toArray() as [number, number, number], rotation: [e.x, e.y, e.z] as [number, number, number] };
-          }),
-        ),
-      ),
-      world.mats.mast,
-    );
-    cables.position.set(nw.x, 0, 0);
-    const necklace = curves.flat().map((v) => new Vector3(v.x + nw.x, v.y + 0.45, v.z));
-    const neck = new InstancedMesh(new SphereGeometry(0.35, 6, 4), new MeshBasicMaterial({ color: 0xffffff, toneMapped: false }), necklace.length);
+    // the Lions Gate Bridge (lionsGate.ts); its necklace of lights takes the event's pattern
+    const lionsGate = buildLionsGate(world.lowEnd, world.mats.mast);
+    const nw = narrowsLine();
+    const mid = lionsGate.centre.z;
+    const neck = new InstancedMesh(new SphereGeometry(0.35, 6, 4), new MeshBasicMaterial({ color: 0xffffff, toneMapped: false }), lionsGate.necklace.length);
     const m4 = new Matrix4();
-    necklace.forEach((p, i) => {
+    lionsGate.necklace.forEach((p, i) => {
       m4.makeTranslation(p.x, p.y, p.z);
       neck.setMatrixAt(i, m4);
       neck.setColorAt(i, new Color(0xffffff));
     });
-    registerPattern(world.events, neck, "ring", necklace, new Vector3(nw.x, 0, mid));
+    registerPattern(world.events, neck, "ring", lionsGate.necklace, lionsGate.centre);
     // tidal turbines in the First Narrows: buoys with a light and a wake ring
+    // (each kind of part merged across the six, one draw apiece)
     const turbines = new Group();
-    for (let k = 0; k < 6; k++) {
-      const x = nw.x - 30 + (k % 3) * 30;
-      const z = mid - 14 + Math.floor(k / 3) * 28;
-      const buoy = new Mesh(new CylinderGeometry(1.2, 1.6, 2.4, 10), new MeshStandardMaterial({ color: 0xf2c94c, roughness: 0.5 }));
-      buoy.position.set(x, SEA + 0.6, z);
-      const lamp = new Mesh(new SphereGeometry(0.4, 8, 6), world.events.glowB);
-      lamp.position.set(x, SEA + 2.2, z);
-      const wake = new Mesh(new TorusGeometry(3, 0.12, 4, 24), new MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, roughness: 0.4 }));
-      wake.rotation.x = Math.PI / 2;
-      wake.position.set(x, SEA + 0.05, z);
-      turbines.add(buoy, lamp, wake);
-    }
-    return { baker, bridge, cables, neck, turbines };
+    const at = Array.from({ length: 6 }, (_, k): [number, number] => [nw.x - 30 + (k % 3) * 30, mid - 14 + Math.floor(k / 3) * 28]);
+    turbines.add(
+      new Mesh(merged(at.map(([x, z]) => ({ geo: new CylinderGeometry(1.2, 1.6, 2.4, 10), position: [x, SEA + 0.6, z] }))), new MeshStandardMaterial({ color: 0xf2c94c, roughness: 0.5 })),
+      new Mesh(merged(at.map(([x, z]) => ({ geo: new SphereGeometry(0.4, 8, 6), position: [x, SEA + 2.2, z] }))), world.events.glowB),
+      new Mesh(
+        merged(at.map(([x, z]) => ({ geo: new TorusGeometry(3, 0.12, 4, 24), position: [x, SEA + 0.05, z], rotation: [Math.PI / 2, 0, 0] }))),
+        new MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, roughness: 0.4 }),
+      ),
+    );
+    return { baker, lionsGate, neck, turbines };
   }, [world]);
 
   useEffect(() => {
@@ -295,7 +251,8 @@ export function Mountains() {
 
   useEffect(
     () => () => {
-      for (const m of [built.baker, built.bridge, built.cables, built.neck]) m.geometry.dispose();
+      for (const m of [built.baker, built.neck]) m.geometry.dispose();
+      built.lionsGate.dispose();
     },
     [built],
   );
@@ -319,11 +276,12 @@ export function Mountains() {
     <>
       {farMesh ? <primitive object={farMesh} /> : null}
       <primitive object={built.baker} />
-      <primitive object={built.bridge} />
-      <primitive object={built.cables} />
+      <primitive object={built.lionsGate.group} />
       <primitive object={built.neck} />
       <primitive object={built.turbines} />
       {gondola ? <primitive object={gondola.group} /> : null}
+      {far ? <FarCity heightAt={far.heightAt} /> : null}
+      {far ? <Extension heightAt={far.heightAt} /> : null}
     </>
   );
 }

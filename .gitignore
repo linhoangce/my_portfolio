@@ -40,3 +40,6 @@ next-env.d.ts
 
 # terrain tile cache (scripts/terrain/bake.mjs)
 /scripts/terrain/.cache/
+
+# OpenStreetMap / Vancouver Open Data response cache (scripts/osm)
+/scripts/osm/.cache/

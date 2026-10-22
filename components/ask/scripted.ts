@@ -88,14 +88,14 @@ export function scripted(q: string): ScriptedReply {
     );
   if (has("contact", "email", "reach", "hire", "linkedin", "resume"))
     return reply("Email is fastest: linhoang.ce@gmail.com, replies within a day. GitHub, LinkedIn and the one-page resume are at the last stop, Contact.", 9);
-  if (has("experience", "work", "job", "intern", "qa", "interpreter", "manager"))
+  if (has("experience", "work", "job", "qa", "incognito", "founder", "manager"))
     return reply(
-      "Linh is a Software QA Engineer intern now (Playwright, Java, Jenkins; Kafka and MQTT on multi-VM Linux), after ten years in leadership roles and medical interpreting. Taking you to Experience.",
+      "Linh co-founded Awdon in 2026, an AI-native workspace for software agencies, after working as a Software QA Engineer at Incognito Software Systems (owned Jenkins and the CI/CD pipeline, built Java test frameworks on Playwright and JUnit, ran RHEL/CentOS test environments). Taking you to Experience.",
       2,
     );
   if (has("skill", "stack", "about", "who", "background", "bcit"))
     return reply(
-      "Linh is a 2026 BCIT Computer Systems Technology graduate who likes systems with deterministic cores, LLMs at the edges and a human approving what goes out. Skills span PyTorch, FastAPI, Node, Postgres, TypeScript and React. Taking you to About.",
+      "Linh is a co-founder of Awdon and a 2026 BCIT Computer Systems Technology graduate who likes systems with deterministic cores, LLMs at the edges and a human approving what goes out. Favourite tools: Python, TypeScript, scikit-learn, PyTorch and Claude Code. Taking you to About.",
       1,
     );
   return reply("That is not something this line covers. For anything beyond the projects, skills and experience shown here, email linhoang.ce@gmail.com.", null);

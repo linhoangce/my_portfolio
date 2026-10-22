@@ -5,7 +5,7 @@ import { useRef } from "react";
 import { type PerspectiveCamera, Vector3 } from "three";
 
 import { roofAt } from "./camSafe";
-import { CAM } from "./constants";
+import { CAM, HEAD } from "./constants";
 import { awayYaw, fitDistance, MONUMENT_BY_KEY, monumentFocus } from "./monuments";
 import { SHOT_S } from "./scene/director";
 import { shotFor } from "./scene/shots";
@@ -102,7 +102,9 @@ export function CameraRig() {
       sim.orbit.idle = 0;
     }
 
-    trainFrameAt(sim.s, sim.travelDir, laneAt(sim, sim.s), fA);
+    // the lead car: the chase and the cab ride with it
+    const headS = sim.s + sim.travelDir * HEAD;
+    trainFrameAt(headS, sim.travelDir, laneAt(sim, headS), fA);
     const head = fA.p;
     const relative = mode === "chase" || mode === "station" || mode === "cab";
     if (mode === "free" && sim.freeCam) {
@@ -144,10 +146,12 @@ export function CameraRig() {
       // chase: the base offset as angles relative to the train, plus the visitor's orbit (yaw unbounded) and zoom
       const dir = sim.travelDir;
       const c = phone ? CAM.chasePhone : CAM.chase;
-      // pull back and well up as the train gets going: on the move the view looks down the line over the city ahead
+      // pull back and well up as the train gets going: on the move the view looks down on the line over a broad sweep
+      // of the city round it
       const going = Math.min(1, Math.abs(sim.v) / 15);
-      const back = c.back + going * 16 * (phone ? 1.2 : 1) + Math.abs(sim.v) * 0.12;
-      const up = c.up + going * 12;
+      const pull = env.lowEnd ? CAM.pullLite : CAM.pull;
+      const back = c.back + going * pull.back * (phone ? 1.1 : 1) + Math.abs(sim.v) * 0.15;
+      const up = c.up + going * pull.up;
       // ride on the right of the train unless a landmark is there and the left is clear, then swing over
       const blocked = (side: number) => {
         tmp.copy(head).addScaledVector(fA.r, c.right * 1.6 * side * dir).addScaledVector(fA.t, -back * dir * 0.8);

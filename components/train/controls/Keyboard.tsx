@@ -81,6 +81,7 @@ export function Keyboard() {
       } else if (k === "t") {
         router.push("/text");
       } else if (k === "l") {
+        st.setLook({});
         setTheme(resolvedTheme === "light" ? "dark" : "light");
       }
     };

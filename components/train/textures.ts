@@ -23,49 +23,27 @@ const texture = (cv: HTMLCanvasElement, repeat = false, anisotropy = 4): CanvasT
 };
 
 /**
- * One 512 px tile = 44 units: arterials (4 lanes) on the tile edges, a local street (2 lanes) across the middle and a
- * back lane down it, with sidewalks over varied lot colours.
+ * One 512 px tile = 44 units of the city's ground between its buildings: yards and gardens in varied greens and
+ * greys, a few paved courts, and a back lane down the middle (Vancouver's blocks have them). The streets are their own
+ * meshes (Roads.tsx).
  */
 export function groundTexture(night: boolean, rng: Rng): CanvasTexture {
   const [c, g] = canvas(512, 512);
-  g.fillStyle = night ? "#141a26" : "#a9a69e";
+  g.fillStyle = night ? "#141a26" : "#9fa596";
   g.fillRect(0, 0, 512, 512);
-  const lots = night ? ["#111722", "#161c29", "#121a24", "#13192a"] : ["#b3b0a8", "#9ea39a", "#b9b1a4", "#8fa58a", "#a39f97", "#b0a999"];
-  for (let i = 0; i < 90; i++) {
+  const lots = night ? ["#111722", "#161c29", "#121a24", "#13192a"] : ["#a7ad9c", "#8fa58a", "#9aa891", "#b3b0a8", "#86a07f", "#a39f97", "#93ab8c"];
+  for (let i = 0; i < 110; i++) {
     g.fillStyle = rng.pick(lots);
     const x = rng.next() * 512;
     const y = rng.next() * 512;
     g.fillRect(x, y, 20 + rng.next() * 60, 16 + rng.next() * 50);
   }
-  // the arterial sits on the tile edge, so it is drawn at both 0 and 512 to wrap; the east–west local street crosses
-  // the middle, and the north–south one is a back lane (Vancouver's long blocks, not squares)
-  const street = (o: number, half: number, vertical: boolean) => {
-    const rect = (a: number, w: number, fill: string) => {
-      g.fillStyle = fill;
-      if (vertical) g.fillRect(a, 0, w, 512);
-      else g.fillRect(0, a, 512, w);
-    };
-    rect(o - half - 10, 2 * half + 20, night ? "#2f3747" : "#cfccc4"); // sidewalks
-    rect(o - half, 2 * half, night ? "#1f2532" : "#5d6168"); // asphalt
-    g.fillStyle = night ? "#3a4152" : "#d8d2b0";
-    for (let y = 0; y < 512; y += 28) {
-      if (vertical) g.fillRect(o - 1, y, 2, 14);
-      else g.fillRect(y, o - 1, 14, 2);
-    } // centre line
-    if (half > 20) {
-      g.fillStyle = night ? "#2a3140" : "#8a8e95";
-      for (const d of [-half + 14, half - 14]) {
-        if (vertical) g.fillRect(o + d, 0, 1, 512);
-        else g.fillRect(0, o + d, 512, 1);
-      }
-    } // lane lines
-  };
-  for (const o of [0, 512]) {
-    street(o, 30, true);
-    street(o, 30, false);
+  // a little grass texture over everything
+  for (let i = 0; i < 1400; i++) {
+    g.fillStyle = night ? "rgba(255,255,255,0.02)" : `rgba(${i % 2 ? "255,255,255" : "20,40,10"},0.06)`;
+    g.fillRect(rng.next() * 512, rng.next() * 512, 3, 3);
   }
-  street(256, 18, false);
-  g.fillStyle = night ? "#1b202b" : "#7b7d80";
+  g.fillStyle = night ? "#1b202b" : "#8d8f86";
   g.fillRect(256 - 6, 0, 12, 512); // the lane
   const t = texture(c, true, 8);
   t.repeat.set(65, 55);

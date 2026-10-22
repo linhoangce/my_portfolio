@@ -8,7 +8,6 @@ import {
   BufferAttribute,
   BufferGeometry,
   CanvasTexture,
-  CatmullRomCurve3,
   Color,
   ConeGeometry,
   Euler,
@@ -18,19 +17,20 @@ import {
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
+  PlaneGeometry,
   Points,
   PointsMaterial,
   Quaternion,
   SphereGeometry,
-  Sprite,
-  SpriteMaterial,
   SRGBColorSpace,
   Vector3,
 } from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
 import { SEA } from "./constants";
+import { drape } from "./drape";
 import { merged, type Part } from "./merge";
-import { streetX, streetZ } from "./cityModel";
+import { roads } from "./roadNetwork";
 import { STREAM } from "./sites";
 import { dotTexture } from "./textures";
 import { DRONE_LIGHT_POINTS, quadcopter, quadcopterLights } from "./vessels";
@@ -39,30 +39,6 @@ import { groundAt, inWater, sdfAt, surfaceAt } from "./terrain";
 import { LEN, frameAt, makeFrame, UP } from "./track";
 import { skipInMirror } from "./waterMirror";
 import { useWorld } from "./world";
-
-/** A ribbon draped on the drawn ground along a polyline, `half` wide either side of a line offset by `side`. */
-function drape(pts: Vector3[], half: number, lift: number, stride: number, side = 0, n = 220): BufferGeometry {
-  const path = new CatmullRomCurve3(pts, false, "centripetal");
-  const pos: number[] = [];
-  const idx: number[] = [];
-  for (let i = 0; i <= n; i++) {
-    const p = path.getPointAt(i / n);
-    const t = path.getTangentAt(i / n);
-    const rx = -t.z;
-    const rz = t.x;
-    for (const s of [-1, 1]) {
-      const x = p.x + rx * (side + s * half);
-      const z = p.z + rz * (side + s * half);
-      pos.push(x, surfaceAt(x, z, stride) + lift, z);
-    }
-    if (i < n) idx.push(i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 1, i * 2 + 3, i * 2 + 2);
-  }
-  const g = new BufferGeometry();
-  g.setAttribute("position", new BufferAttribute(new Float32Array(pos), 3));
-  g.setIndex(idx);
-  g.computeVertexNormals();
-  return g;
-}
 
 function cloudTexture(): CanvasTexture {
   const c = document.createElement("canvas");
@@ -112,29 +88,40 @@ export function Nature() {
     const spanned = new Set<string>();
     const decks: Part[] = [];
     const rails: Part[] = [];
+    // a deck wherever a drawn street crosses the creek: across the road's width, along it over the banks
+    const { edges } = roads();
     for (let k = 0; k < STREAM.length - 1; k++) {
       const [ax, az] = STREAM[k];
       const [bx, bz] = STREAM[k + 1];
-      const steps = Math.ceil(Math.hypot(bx - ax, bz - az));
-      for (let q = 0; q <= steps; q++) {
-        const x = ax + ((bx - ax) * q) / steps;
-        const z = az + ((bz - az) * q) / steps;
-        const i = Math.round((x - streetX(0)) / 22);
-        const j = Math.round((z - streetZ(0)) / 22);
-        for (const [alongX, key, d] of [
-          [false, `x${i}`, Math.abs(x - streetX(i))],
-          [true, `z${j}`, Math.abs(z - streetZ(j))],
-        ] as const) {
-          if (d > 0.6 || spanned.has(key) || inWater(x, z)) continue;
+      edges.forEach((e, ei) => {
+        const n = e.pts.length / 2;
+        for (let i = 0; i + 1 < n; i++) {
+          if (!e.shown[i]) continue;
+          const cx = e.pts[i * 2];
+          const cz = e.pts[i * 2 + 1];
+          const dx = e.pts[i * 2 + 2] - cx;
+          const dz = e.pts[i * 2 + 3] - cz;
+          const sx = bx - ax;
+          const sz = bz - az;
+          const den = dx * sz - dz * sx;
+          if (Math.abs(den) < 1e-9) continue;
+          const t = ((ax - cx) * sz - (az - cz) * sx) / den;
+          const u = ((ax - cx) * dz - (az - cz) * dx) / den;
+          if (t < 0 || t > 1 || u < 0 || u > 1) continue;
+          const key = `${ei}:${i}`;
+          const px = cx + dx * t;
+          const pz = cz + dz * t;
+          if (spanned.has(key) || inWater(px, pz)) continue;
           spanned.add(key);
-          const px = alongX ? x : streetX(i);
-          const pz = alongX ? streetZ(j) : z;
-          const bank = Math.max(...[-6, 6].map((o) => surfaceAt(alongX ? px + o : px, alongX ? pz : pz + o, stride)));
-          const w = 9;
-          decks.push({ geo: new BoxGeometry(alongX ? w : 6.5, 0.5, alongX ? 6.5 : w), position: [px, bank + 0.05, pz] });
-          for (const side of [-3.1, 3.1]) rails.push({ geo: new BoxGeometry(alongX ? w : 0.15, 0.7, alongX ? 0.15 : w), position: [alongX ? px : px + side, bank + 0.65, alongX ? pz + side : pz] });
+          const L = Math.hypot(dx, dz) || 1;
+          const ux = dx / L;
+          const uz = dz / L;
+          const bank = Math.max(...[-6, 6].map((o) => surfaceAt(px + ux * o, pz + uz * o, stride)));
+          const ry = Math.atan2(ux, uz);
+          decks.push({ geo: new BoxGeometry(e.half * 2 + 0.6, 0.5, 9).rotateY(ry), position: [px, bank + 0.05, pz] });
+          for (const side of [-1, 1]) rails.push({ geo: new BoxGeometry(0.15, 0.7, 9).rotateY(ry), position: [px + uz * side * (e.half + 0.2), bank + 0.65, pz - ux * side * (e.half + 0.2)] });
         }
-      }
+      });
     }
     if (decks.length) {
       const deckMesh = new Mesh(merged(decks), bridgeMat);
@@ -232,15 +219,13 @@ export function Nature() {
     seals.frustumCulled = false;
     group.add(seals);
     // low cloud on the North Shore
-    const cloudMat = new SpriteMaterial({ map: cloudTexture(), transparent: true, depthWrite: false, opacity: 0.4, color: 0xffffff });
-    const clouds: Sprite[] = [];
-    for (let k = 0; k < (lowEnd ? 5 : 9); k++) {
-      const s = new Sprite(cloudMat);
-      s.position.set(-700 + k * 190 + Math.random() * 80, 120 + Math.random() * 90, -620 - Math.random() * 320);
-      s.scale.set(220 + Math.random() * 120, 110, 1);
-      clouds.push(s);
-      group.add(s);
-    }
+    // (upright sheets facing the city, all in one mesh: from anywhere south of them they read as the sprites did)
+    const cloudMat = new MeshBasicMaterial({ map: cloudTexture(), transparent: true, depthWrite: false, opacity: 0.4, color: 0xffffff });
+    const sheets = Array.from({ length: lowEnd ? 5 : 9 }, (_, k) =>
+      new PlaneGeometry(220 + Math.random() * 120, 110).translate(-700 + k * 190 + Math.random() * 80, 120 + Math.random() * 90, -620 - Math.random() * 320),
+    );
+    group.add(new Mesh(mergeGeometries(sheets, false), cloudMat));
+    for (const g of sheets) g.dispose();
     group.add(birds, drones, droneLights, droneDots);
     return { group, birds, birdData, drones, droneLights, droneData, droneMat, droneDots, dotCols, dotMat, orcas, orcaHome, seals, sealAt, cloudMat };
   }, [world, lowEnd]);

@@ -2,7 +2,9 @@
 
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo } from "react";
-import { Mesh } from "three";
+import { Mesh, type Object3D } from "three";
+
+import { skipInMirror } from "../waterMirror";
 
 import { useTrain } from "../store";
 import { useWorld } from "../world";
@@ -20,6 +22,12 @@ export function Sets() {
     setRegistry.sets = s;
     return s;
   }, [world]);
+
+  useEffect(() => {
+    const low: Object3D[] = [];
+    for (const s of sets) s.group.traverse((o) => o.userData.lowInMirror && low.push(o));
+    return skipInMirror(...low);
+  }, [sets]);
 
   useEffect(
     () => () => {

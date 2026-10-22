@@ -22,7 +22,7 @@ import {
 } from "three";
 
 import { getTreeData } from "./cityData";
-import { streetX, streetZ } from "./cityModel";
+import { junction, roads, WALK } from "./roadNetwork";
 import { eventColour, tickEventLights } from "./eventLights";
 import { EVENT_META } from "./lookTypes";
 import { inLandmark, inPark, LANDMARKS } from "./sites";
@@ -64,12 +64,25 @@ export function Events() {
   const lowEnd = world.lowEnd;
 
   const extras = useMemo(() => {
-    // lanterns strung across Chinatown's streets and the gate
+    // lanterns strung along Chinatown's streets and the gate
     const lanternPts: Vector3[] = [];
-    for (let j = 1; j <= 4; j++) {
-      const z = streetZ(j);
-      if (z < 58 || z > 100) continue;
-      for (let x = 30; x < 104; x += 3.4) lanternPts.push(new Vector3(x, groundAt(x, z) + 6.2 + Math.sin(x * 0.9) * 0.3, z));
+    const { nodes, edges } = roads();
+    for (const e of edges) {
+      const n = e.pts.length / 2;
+      for (let i = 0; i + 1 < n; i++) {
+        if (!e.shown[i]) continue;
+        const ax = e.pts[i * 2];
+        const az = e.pts[i * 2 + 1];
+        const bx = e.pts[i * 2 + 2];
+        const bz = e.pts[i * 2 + 3];
+        const L = Math.hypot(bx - ax, bz - az);
+        for (let s = 1.7; s < L; s += 3.4) {
+          const x = ax + ((bx - ax) * s) / L;
+          const z = az + ((bz - az) * s) / L;
+          if (x < 30 || x > 104 || z < 58 || z > 100) continue;
+          lanternPts.push(new Vector3(x, groundAt(x, z) + 6.2 + Math.sin(s * 0.9) * 0.3, z));
+        }
+      }
     }
     const gate = LANDMARKS.find((l) => l.key === "gate");
     if (gate) for (let k = -3; k <= 3; k++) lanternPts.push(new Vector3(gate.px + k * 1.2, groundAt(gate.px, gate.pz) + 5.2, gate.pz + 1.1));
@@ -81,39 +94,43 @@ export function Events() {
       lanterns.setMatrixAt(i, m4);
     });
     lanterns.visible = false;
-    // rainbow crosswalks: the street intersection nearest Davie & Bute, and one by Main Street
+    // rainbow crosswalks: on every road into the junction nearest Davie & Bute, and the one nearest Main Street's
     const rainbow: Mesh[] = [];
     const onStreet = (x: number, z: number) => !inPark(x, z) && !inWater(x, z) && !inLandmark(x, z, 2);
-    const crossing = (tx: number, tz: number): [number, number] => {
-      let best: [number, number] = [streetX(Math.round((tx - streetX(0)) / 22)), streetZ(Math.round((tz - streetZ(0)) / 22))];
+    const crossing = (tx: number, tz: number): number => {
+      let best = -1;
       let bd = 1e9;
-      for (let i = -24; i <= 24; i++) {
-        for (let j = -6; j <= 16; j++) {
-          const x = streetX(i);
-          const z = streetZ(j);
-          const d = Math.hypot(x - tx, z - tz);
-          if (d < bd && [[0, -6], [0, 6], [-6, 0], [6, 0]].every(([dx, dz]) => onStreet(x + dx, z + dz))) {
-            bd = d;
-            best = [x, z];
-          }
+      nodes.forEach((nd, i) => {
+        if (nd.deg < 3 || !onStreet(nd.x, nd.z)) return;
+        const d = Math.hypot(nd.x - tx, nd.z - tz);
+        if (d < bd && junction(i)) {
+          bd = d;
+          best = i;
         }
-      }
+      });
       return best;
     };
-    for (const [cx, cz] of [crossing(-171, 59), crossing(100, 150)]) {
-      for (const [dx, dz, along] of [
-        [0, -6, "x"],
-        [0, 6, "x"],
-        [-6, 0, "z"],
-        [6, 0, "z"],
-      ] as const) {
-        EVENT_META.pride.colours.forEach((c, k) => {
-          const w = 0.72;
-          const off = (k - 2.5) * w;
-          const x = cx + dx + (along === "x" ? off : 0);
-          const z = cz + dz + (along === "z" ? off : 0);
-          const m = new Mesh(new PlaneGeometry(along === "x" ? w : 6, along === "x" ? 6 : w), new MeshStandardMaterial({ color: c, roughness: 0.6, emissive: c, emissiveIntensity: 0.15 }));
-          m.rotation.x = -Math.PI / 2;
+    for (const ni of [crossing(-171, 59), crossing(100, 150)]) {
+      const j = ni >= 0 ? junction(ni) : null;
+      if (!j) continue;
+      for (const [k, setback] of j.setback) {
+        const e = edges[k];
+        const atA = e.a === ni;
+        const n = e.pts.length / 2;
+        const [x0, z0, x1, z1] = atA ? [e.pts[0], e.pts[1], e.pts[2], e.pts[3]] : [e.pts[n * 2 - 2], e.pts[n * 2 - 1], e.pts[n * 2 - 4], e.pts[n * 2 - 3]];
+        const L = Math.hypot(x1 - x0, z1 - z0) || 1;
+        const ux = (x1 - x0) / L;
+        const uz = (z1 - z0) / L;
+        const across = 2 * (e.half - WALK[e.cls]);
+        // six bands along the road, each spanning it, over the zebra the road paints there
+        EVENT_META.pride.colours.forEach((c, b) => {
+          const w = 0.36;
+          const d = setback + 0.25 + w * (b + 0.5);
+          const x = j.x + ux * d;
+          const z = j.z + uz * d;
+          const m = new Mesh(new PlaneGeometry(across, w), new MeshStandardMaterial({ color: c, roughness: 0.6, emissive: c, emissiveIntensity: 0.15 }));
+          // laid flat, then turned so the band's length runs across the road (along its normal (-u.z, u.x))
+          m.rotation.set(-Math.PI / 2, Math.atan2(-ux, -uz), 0, "YXZ");
           m.position.set(x, surfaceAt(x, z, lowEnd ? 2 : 1) + 0.12, z);
           m.visible = false;
           rainbow.push(m);

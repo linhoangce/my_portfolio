@@ -8,8 +8,8 @@ import { Color } from "three";
 import { setTreeTargets, tickTrees } from "./trees/treeMaterial";
 
 import type { Season, Theme, Weather } from "./lookTypes";
-import type { World } from "./world";
-import { mirrorState } from "./waterMirror";
+import type { MountainHaze, World } from "./world";
+import { mirrorState, seaUniforms } from "./waterMirror";
 
 type ThemeDef = {
   bg: number;
@@ -83,7 +83,7 @@ export const THEMES: Record<Theme, ThemeDef> = {
     windows: 0.0,
     ground: "day",
     water: 0x4f86b5,
-    mountain: 0xc4cec0,
+    mountain: 0xc8ccd2,
     concrete: 0xb3b2ab,
     platform: 0xa9aeb6,
     trainWin: 0.0,
@@ -99,27 +99,48 @@ export const THEMES: Record<Theme, ThemeDef> = {
   },
 };
 
-type WeatherSide = { top: number; hor: number; fog: number; fogD: number; sun: number; hemi: number; disc: boolean };
+/**
+ * haze: the colour the far mountains fade to (hazeHi for their snow) and how fast, per unit of distance; sea: the
+ * water's own colour; cloud: the share of the sky the clouds cover, with their lit and shaded colours. The fog is
+ * the horizon's colour, so the far city and the open sea dissolve into the sky's own haze.
+ */
+type WeatherSide = {
+  top: number;
+  hor: number;
+  fog: number;
+  fogD: number;
+  sun: number;
+  hemi: number;
+  disc: boolean;
+  haze: number;
+  hazeHi: number;
+  hazeK: number;
+  sea: number;
+  cloud: number;
+  cloudCol: number;
+  cloudShade: number;
+};
 type WeatherDef = { day: WeatherSide; night: WeatherSide; wet: number };
 export const WEATHER: Record<Weather, WeatherDef> = {
   clear: {
-    day: { top: 0x4f8ad0, hor: 0xcfe0f2, fog: 0xcfdcea, fogD: 0.00048, sun: 1.1, hemi: 1.0, disc: true },
-    night: { top: 0x05070f, hor: 0x151d33, fog: 0x070a12, fogD: 0.0016, sun: 1.0, hemi: 1.0, disc: true },
+    // a clear day: the North Shore deep blue behind the city
+    day: { top: 0x2f6cc4, hor: 0xb3cbe4, fog: 0xb3cbe4, fogD: 0.00048, sun: 1.1, hemi: 1.0, disc: true, haze: 0x2a4a76, hazeHi: 0xdde8f5, hazeK: 0.0013, sea: 0x1d5585, cloud: 0.3, cloudCol: 0xffffff, cloudShade: 0xb6c3d4 },
+    night: { top: 0x04060e, hor: 0x141b30, fog: 0x0b1020, fogD: 0.0016, sun: 1.0, hemi: 1.0, disc: true, haze: 0x0d182c, hazeHi: 0x55647e, hazeK: 0.0012, sea: 0x061224, cloud: 0.22, cloudCol: 0x2a3246, cloudShade: 0x0e121c },
     wet: 0,
   },
   overcast: {
-    day: { top: 0xa9b5c3, hor: 0xdfe4ea, fog: 0xcfd7df, fogD: 0.0013, sun: 0.5, hemi: 1.2, disc: false },
-    night: { top: 0x0b0e16, hor: 0x1a2030, fog: 0x0c1019, fogD: 0.0022, sun: 0.6, hemi: 1.0, disc: false },
+    day: { top: 0x8e9cae, hor: 0xd2d9e1, fog: 0xd2d9e1, fogD: 0.0013, sun: 0.5, hemi: 1.2, disc: false, haze: 0x566a82, hazeHi: 0xe2e7ee, hazeK: 0.0015, sea: 0x35556c, cloud: 0.92, cloudCol: 0xe4e8ed, cloudShade: 0xa3adba },
+    night: { top: 0x0b0e16, hor: 0x1a2030, fog: 0x141a28, fogD: 0.0022, sun: 0.6, hemi: 1.0, disc: false, haze: 0x101726, hazeHi: 0x485367, hazeK: 0.0014, sea: 0x08131f, cloud: 0.92, cloudCol: 0x262c3a, cloudShade: 0x0f131b },
     wet: 0.3,
   },
   rain: {
-    day: { top: 0x8f9aa8, hor: 0xc9d0d8, fog: 0xbfc7d0, fogD: 0.0024, sun: 0.3, hemi: 1.05, disc: false },
-    night: { top: 0x080b12, hor: 0x161c2a, fog: 0x0a0e17, fogD: 0.0028, sun: 0.5, hemi: 0.95, disc: false },
+    day: { top: 0x7c8796, hor: 0xbcc4ce, fog: 0xbcc4ce, fogD: 0.0024, sun: 0.3, hemi: 1.05, disc: false, haze: 0x67788c, hazeHi: 0xd9dfe6, hazeK: 0.0019, sea: 0x2e4858, cloud: 0.98, cloudCol: 0xc2c9d1, cloudShade: 0x7e8894 },
+    night: { top: 0x080b12, hor: 0x161c2a, fog: 0x10151f, fogD: 0.0028, sun: 0.5, hemi: 0.95, disc: false, haze: 0x0d131d, hazeHi: 0x3c4555, hazeK: 0.0017, sea: 0x060e18, cloud: 0.98, cloudCol: 0x1e2430, cloudShade: 0x0b0e15 },
     wet: 1,
   },
   snow: {
-    day: { top: 0xc3cbd6, hor: 0xeef1f5, fog: 0xe4e8ee, fogD: 0.0028, sun: 0.5, hemi: 1.2, disc: false },
-    night: { top: 0x0d1119, hor: 0x202838, fog: 0x10151f, fogD: 0.0032, sun: 0.6, hemi: 1.1, disc: false },
+    day: { top: 0xaab3c0, hor: 0xe2e6ec, fog: 0xe2e6ec, fogD: 0.0028, sun: 0.5, hemi: 1.2, disc: false, haze: 0x8794a8, hazeHi: 0xeef2f7, hazeK: 0.0019, sea: 0x3f5a6a, cloud: 0.95, cloudCol: 0xeef1f4, cloudShade: 0xb2bac4 },
+    night: { top: 0x0d1119, hor: 0x202838, fog: 0x181e2b, fogD: 0.0032, sun: 0.6, hemi: 1.1, disc: false, haze: 0x161d2a, hazeHi: 0x687388, hazeK: 0.0017, sea: 0x0a1420, cloud: 0.95, cloudCol: 0x2e3442, cloudShade: 0x12161f },
     wet: 0.5,
   },
 };
@@ -145,6 +166,15 @@ export type LookTargets = {
   groundEnv: number;
   water: Color;
   mountain: Color;
+  haze: Color;
+  hazeHi: Color;
+  hazeK: number;
+  sea: Color;
+  cloud: number;
+  cloudCol: Color;
+  cloudShade: Color;
+  /** The sun's (or the moon's) glitter on the sea and glow in the sky. */
+  glint: Color;
   concrete: Color;
   platform: Color;
   sails: Color;
@@ -193,6 +223,14 @@ export function lookTargets({ theme, season, weather }: LookInput): LookTargets 
     groundEnv: 0.45 * w.wet,
     water: Cc(t.water),
     mountain: Cc(t.mountain),
+    haze: Cc(wd.haze),
+    hazeHi: Cc(wd.hazeHi),
+    hazeK: wd.hazeK,
+    sea: Cc(wd.sea),
+    cloud: wd.cloud,
+    cloudCol: Cc(wd.cloudCol),
+    cloudShade: Cc(wd.cloudShade),
+    glint: Cc(light ? 0xfff2d8 : 0xbfccff).multiplyScalar(light ? wd.sun : 0.3 * wd.sun),
     concrete: Cc(t.concrete),
     platform: Cc(t.platform),
     sails: Cc(t.sails),
@@ -256,6 +294,12 @@ export function tickLook(world: World, dt: number, instant: boolean, dockedIdx: 
   world.scene.fog.density = c.fogD;
   sky.mat.uniforms.top.value.copy(c.top);
   sky.mat.uniforms.hor.value.copy(c.hor);
+  sky.mat.uniforms.cloud.value = c.cloud;
+  sky.mat.uniforms.cloudCol.value.copy(c.cloudCol);
+  sky.mat.uniforms.cloudShade.value.copy(c.cloudShade);
+  sky.mat.uniforms.sunCol.value.copy(c.glint);
+  seaUniforms.uSeaDeep.value.copy(c.sea);
+  seaUniforms.uSunCol.value.copy(c.glint);
   lights.hemi.color.copy(c.hemiSky);
   lights.hemi.groundColor.copy(c.hemiGround);
   lights.hemi.intensity = c.hemiI;
@@ -280,6 +324,12 @@ export function tickLook(world: World, dt: number, instant: boolean, dockedIdx: 
   // (the mirror takes over where it runs)
   mats.water.envMapIntensity = mirrorState.active ? 0 : 0.45 - 0.4 * c.windows;
   mats.mountain.color.copy(c.mountain);
+  const haze = mats.mountain.userData.haze as MountainHaze | undefined;
+  if (haze) {
+    haze.uHaze.value.copy(c.haze);
+    haze.uHazeHi.value.copy(c.hazeHi);
+    haze.uHazeK.value = c.hazeK;
+  }
   mats.concrete.color.copy(c.concrete);
   mats.plat.color.copy(c.platform);
   mats.landmark.color.copy(c.concrete);

@@ -29,6 +29,7 @@ import {
   SphereGeometry,
   type SpotLight,
   type Texture,
+  Vector2,
   Vector3,
   Vector4,
   type WebGLRenderer,
@@ -45,9 +46,23 @@ import type { LookTargets } from "./lookModel";
 import { groundTexture, hedgeTexture, interiorTextures, personTexture, sleeperTexture, streetLightTexture } from "./textures";
 import { paintTreeAtlas } from "./trees/atlas";
 import { createTreeShading, type TreeShading } from "./trees/treeMaterial";
-import { GRID, PEOPLE_VARIANTS, SEA } from "./constants";
+import { PEOPLE_VARIANTS, SEA } from "./constants";
+import { lakeLevel } from "./terrain";
 
-export type SkyUniforms = { top: IUniform<Color>; hor: IUniform<Color> };
+/**
+ * The sky dome's inputs: zenith and horizon colours, the sun's direction and colour (for its glow), and the clouds
+ * (how much of the sky they cover, their lit and shaded colours, and the time they drift by).
+ */
+export type SkyUniforms = {
+  top: IUniform<Color>;
+  hor: IUniform<Color>;
+  sun: IUniform<Vector3>;
+  sunCol: IUniform<Color>;
+  cloud: IUniform<number>;
+  cloudCol: IUniform<Color>;
+  cloudShade: IUniform<Color>;
+  time: IUniform<number>;
+};
 
 export type World = {
   lowEnd: boolean;
@@ -132,6 +147,35 @@ export function useWorld(): World {
   return w;
 }
 
+/** The far terrain's haze, eased by the look: the colour it fades to, the colour snow fades to, and how fast. */
+export type MountainHaze = { uHaze: IUniform<Color>; uHazeHi: IUniform<Color>; uHazeK: IUniform<number>; uHazeFrom: IUniform<number> };
+
+/**
+ * The far terrain: vertex-coloured and flat-shaded, and fading with distance into the air between, as the North Shore
+ * does from the city: the forested slopes to a deep blue, the snow to a pale blue-white, the nearer hills hardly at
+ * all. The fade is on the lit colour, before the fog, so the far ridges lose their shading as real ones do.
+ */
+function mountainMaterial(): MeshStandardMaterial {
+  const mat = new MeshStandardMaterial({ color: 0xffffff, roughness: 1, flatShading: true, vertexColors: true });
+  const haze: MountainHaze = { uHaze: { value: new Color(0x2d4e78) }, uHazeHi: { value: new Color(0xe2ebf6) }, uHazeK: { value: 0.0012 }, uHazeFrom: { value: 260 } };
+  mat.userData.haze = haze;
+  mat.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, haze);
+    sh.fragmentShader = sh.fragmentShader
+      .replace("#include <common>", "#include <common>\nuniform vec3 uHaze;\nuniform vec3 uHazeHi;\nuniform float uHazeK;\nuniform float uHazeFrom;")
+      .replace("#include <color_fragment>", "#include <color_fragment>\nfloat hazeAlb = dot( diffuseColor.rgb, vec3( 0.2126, 0.7152, 0.0722 ) );")
+      .replace(
+        "#include <opaque_fragment>",
+        [
+          "float hazeK = 1.0 - exp( -max( 0.0, length( vViewPosition ) - uHazeFrom ) * uHazeK );",
+          "outgoingLight = mix( outgoingLight, mix( uHaze, uHazeHi, smoothstep( 0.45, 0.8, hazeAlb ) ), hazeK * 0.88 );",
+          "#include <opaque_fragment>",
+        ].join("\n"),
+      );
+  };
+  return mat;
+}
+
 export function createWorld(gl: WebGLRenderer, scene: Scene, lowEnd: boolean): World {
   const rng = new Rng(20261018);
   const pmrem = new PMREMGenerator(gl);
@@ -151,23 +195,36 @@ export function createWorld(gl: WebGLRenderer, scene: Scene, lowEnd: boolean): W
   ground.emissiveMap = streetLightTexture();
   ground.emissive.set(0xffffff);
   ground.emissiveIntensity = 0;
-  // the street tile and its lights show only on city blocks and the streets that border them (the zoning texture,
-  // one texel per block, set by the Ground); elsewhere plain ground (grass by day, near-black by night), whose colour
-  // applyLook sets with the map. The block test repeats getZoning's `shown`.
+  // the yards-and-gardens tile shows only on the city's land (the land-use raster, set by the Ground); elsewhere plain
+  // ground (grass by day, near-black by night), whose colour applyLook sets with the map
   const groundPlain = { value: new Color(0x10161f) };
   const groundZone = { value: new DataTexture(new Uint8Array([0]), 1, 1, RedFormat) as Texture };
   const groundZoneBox = { value: new Vector4(0, 0, 1, 1) };
+  // the east basin's water mask (Ground sets it): the ground is cut away exactly at the drawn shore
+  const groundBasin = { value: new DataTexture(new Uint8Array([0]), 1, 1, RedFormat) as Texture };
+  const groundBasinBox = { value: new Vector4(0, 0, 0, 0) };
+  // a rectangle the ground leaves open (the Canada Line's hall at Waterfront): centre x, z, half length, half width,
+  // and the direction of its length
+  const groundHole = { value: new Vector4(0, 0, 0, 0) };
+  const groundHoleDir = { value: new Vector2(1, 0) };
+  ground.userData.hole = groundHole;
+  ground.userData.holeDir = groundHoleDir;
   ground.userData.plain = groundPlain;
   ground.userData.zone = groundZone;
   ground.userData.zoneBox = groundZoneBox;
-  const f1 = (n: number) => n.toFixed(2);
+  ground.userData.basin = groundBasin;
+  ground.userData.basinBox = groundBasinBox;
   ground.onBeforeCompile = (shader) => {
     shader.uniforms.uPlain = groundPlain;
     shader.uniforms.uZone = groundZone;
     shader.uniforms.uZoneBox = groundZoneBox;
+    shader.uniforms.uBasin = groundBasin;
+    shader.uniforms.uBasinBox = groundBasinBox;
+    shader.uniforms.uHole = groundHole;
+    shader.uniforms.uHoleDir = groundHoleDir;
     shader.vertexShader = shader.vertexShader
-      .replace("#include <common>", "#include <common>\nvarying vec2 vGroundXZ;")
-      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvGroundXZ = position.xz;");
+      .replace("#include <common>", "#include <common>\nattribute float aShore;\nvarying vec2 vGroundXZ;\nvarying float vShore;")
+      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvGroundXZ = position.xz;\nvShore = aShore;");
     shader.fragmentShader = shader.fragmentShader
       .replace(
         "#include <common>",
@@ -176,35 +233,39 @@ export function createWorld(gl: WebGLRenderer, scene: Scene, lowEnd: boolean): W
           "uniform vec3 uPlain;",
           "uniform sampler2D uZone;",
           "uniform vec4 uZoneBox;",
+          "uniform sampler2D uBasin;",
+          "uniform vec4 uBasinBox;",
+          "uniform vec4 uHole;",
+          "uniform vec2 uHoleDir;",
           "varying vec2 vGroundXZ;",
-          "float zoneAt( vec2 c ) {",
-          "  vec2 t = c - uZoneBox.xy;",
-          "  if ( t.x < 0.0 || t.y < 0.0 || t.x >= uZoneBox.z || t.y >= uZoneBox.w ) return 0.0;",
-          "  return texture2D( uZone, ( t + 0.5 ) / uZoneBox.zw ).r;",
-          "}",
-          "float streetShown( vec2 p, float pad ) {",
-          `  vec2 c = vec2( ( p.x - ${f1(GRID.x0)} ) / ${f1(GRID.cw)}, ( p.y - ${f1(GRID.z0)} ) / ${f1(GRID.ch)} );`,
-          "  vec2 ci = floor( c );",
-          `  vec2 f = ( c - ci ) * vec2( ${f1(GRID.cw)}, ${f1(GRID.ch)} );`,
-          "  bool odd = mod( ci.y, 2.0 ) > 0.5;",
-          `  float lo = ( odd ? ${f1(GRID.artHalf)} : ${f1(GRID.locHalf)} ) + pad;`,
-          `  float hi = ( odd ? ${f1(GRID.locHalf)} : ${f1(GRID.artHalf)} ) + pad;`,
-          `  float nx = f.x < ${f1(GRID.artHalf)} + pad ? -1.0 : ( f.x > ${f1(GRID.cw - GRID.artHalf)} - pad ? 1.0 : 0.0 );`,
-          `  float nz = f.y < lo ? -1.0 : ( f.y > ${f1(GRID.ch)} - hi ? 1.0 : 0.0 );`,
-          "  float s = zoneAt( ci );",
-          "  if ( nx != 0.0 ) s = max( s, zoneAt( ci + vec2( nx, 0.0 ) ) );",
-          "  if ( nz != 0.0 ) s = max( s, zoneAt( ci + vec2( 0.0, nz ) ) );",
-          "  if ( nx != 0.0 && nz != 0.0 ) s = max( s, zoneAt( ci + vec2( nx, nz ) ) );",
-          "  return s;",
+          // distance to the shore: streets stop short of the water, leaving the shore to the seawall and the grass
+          "varying float vShore;",
+          // the city's land (the land-use raster over the terrain box, set by the Ground), softened at its edges
+          "float cityLand( vec2 p ) {",
+          "  vec2 t = ( p - uZoneBox.xy ) / uZoneBox.zw;",
+          "  if ( t.x < 0.0 || t.y < 0.0 || t.x > 1.0 || t.y > 1.0 ) return 0.0;",
+          "  return smoothstep( 0.2, 0.8, texture2D( uZone, t ).r );",
           "}",
         ].join("\n"),
       )
       .replace(
         "#include <map_fragment>",
-        "#ifdef USE_MAP\n  vec4 sampledDiffuseColor = texture2D( map, vMapUv );\n  diffuseColor *= mix( vec4( uPlain, 1.0 ), sampledDiffuseColor, streetShown( vGroundXZ, 0.0 ) );\n#endif",
+        "#ifdef USE_MAP\n  vec4 sampledDiffuseColor = texture2D( map, vMapUv );\n  diffuseColor *= mix( vec4( uPlain, 1.0 ), sampledDiffuseColor, cityLand( vGroundXZ ) * smoothstep( 3.0, 7.0, vShore ) );\n#endif",
       )
-      // the lamps' pools spill a little past the kerb
-      .replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\ntotalEmissiveRadiance *= streetShown( vGroundXZ, 3.2 );");
+      // the street lamps' pools are the roads' own (Roads.tsx): the ground itself gives no light
+      .replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\ntotalEmissiveRadiance *= 0.0;")
+      .replace(
+        "#include <clipping_planes_fragment>",
+        [
+          "#include <clipping_planes_fragment>",
+          "{",
+          "  vec2 bt = ( vGroundXZ - uBasinBox.xy ) / max( uBasinBox.zw, vec2( 1e-3 ) );",
+          "  if ( bt.x > 0.0 && bt.y > 0.0 && bt.x < 1.0 && bt.y < 1.0 && texture2D( uBasin, bt ).r > 0.5 ) discard;",
+          "  vec2 hd = vGroundXZ - uHole.xy;",
+          "  if ( uHole.z > 0.0 && abs( dot( hd, uHoleDir ) ) < uHole.z && abs( dot( hd, vec2( -uHoleDir.y, uHoleDir.x ) ) ) < uHole.w ) discard;",
+          "}",
+        ].join("\n"),
+      );
   };
 
   const mats: World["mats"] = {
@@ -221,7 +282,7 @@ export function createWorld(gl: WebGLRenderer, scene: Scene, lowEnd: boolean): W
     sail: new MeshStandardMaterial({ color: 0xffffff, roughness: 0.5, side: 2 }),
     dome: new MeshStandardMaterial({ color: 0xffffff, roughness: 0.55 }),
     silver: new MeshStandardMaterial({ color: 0xb9c2cc, metalness: 0.7, roughness: 0.35, envMap: envTex, envMapIntensity: 0.5, flatShading: true }),
-    mountain: new MeshStandardMaterial({ color: 0xffffff, roughness: 1, flatShading: true, vertexColors: true }),
+    mountain: mountainMaterial(),
     plat: new MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }),
     canopy: new MeshStandardMaterial({ color: 0xe6e9ee, roughness: 0.5, metalness: 0.2, side: 2 }),
     post: new MeshStandardMaterial({ color: 0x8e95a3, roughness: 0.5, metalness: 0.6 }),
@@ -234,7 +295,8 @@ export function createWorld(gl: WebGLRenderer, scene: Scene, lowEnd: boolean): W
     sleepers: new MeshStandardMaterial({ map: sleeperTexture(), roughness: 0.9, side: 2 }),
     bannerA: new MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, side: 2 }),
     bannerB: new MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, side: 2 }),
-    pane: new MeshStandardMaterial({ color: 0xd6e6f0, metalness: 0.1, roughness: 0.05, transparent: true, opacity: 0.26, depthWrite: false, side: 2, envMap: envTex, envMapIntensity: 1 }),
+    // thin panes need no back-faces-first pass: one draw each, not two
+    pane: new MeshStandardMaterial({ color: 0xd6e6f0, metalness: 0.1, roughness: 0.05, transparent: true, opacity: 0.26, depthWrite: false, side: 2, forceSinglePass: true, envMap: envTex, envMapIntensity: 1 }),
     timber: new MeshStandardMaterial({ color: 0xb98a5a, roughness: 0.7 }),
     roofGreen: new MeshStandardMaterial({ color: 0x5b8a45, roughness: 1 }),
     guideLed: new MeshStandardMaterial({ color: 0x1b1530, emissive: 0xa78bfa, emissiveIntensity: 0.6 }),
@@ -258,8 +320,6 @@ export function createWorld(gl: WebGLRenderer, scene: Scene, lowEnd: boolean): W
     carTrim: new MeshStandardMaterial({ color: 0x1a1f26, roughness: 0.35, metalness: 0.2, envMap: envTex, envMapIntensity: 0.6 }),
     people: Array.from({ length: PEOPLE_VARIANTS }, (_, v) => new MeshStandardMaterial({ map: personTexture(v + 1), alphaTest: 0.5, side: 2, roughness: 1 })),
   };
-  // the sea mirrors the city (Mirror renders the reflection on desktop)
-  applyMirror(mats.water, SEA);
 
   // lights
   const hemi = new HemisphereLight(0xffffff, 0x000000, 1);
@@ -272,15 +332,58 @@ export function createWorld(gl: WebGLRenderer, scene: Scene, lowEnd: boolean): W
   const stationLight = new PointLight(0xffdcb0, 70, 44, 2);
 
   // sky dome, sun / moon disc, stars
+  // the sky: deepening from a hazy horizon to the zenith, a glow round the sun, and clouds drifting on a plane over
+  // the city (so they crowd toward the horizon), lit on top and shaded beneath; written out in the display's colour
+  // space like everything else
+  const sunDir = new Vector3(0, 1, 0);
+  const skyUniforms: SkyUniforms = {
+    top: { value: new Color() },
+    hor: { value: new Color() },
+    sun: { value: sunDir },
+    sunCol: { value: new Color() },
+    cloud: { value: 0.3 },
+    cloudCol: { value: new Color(0xffffff) },
+    cloudShade: { value: new Color(0xb8c4d4) },
+    time: { value: 0 },
+  };
   const skyMat = new ShaderMaterial({
     side: BackSide,
     depthWrite: false,
-    uniforms: { top: { value: new Color() }, hor: { value: new Color() } },
+    uniforms: skyUniforms,
     vertexShader:
       "varying vec3 vW; void main(){ vW = (modelMatrix * vec4(position,1.0)).xyz - cameraPosition; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }",
-    fragmentShader:
-      "uniform vec3 top; uniform vec3 hor; varying vec3 vW; void main(){ float h = normalize(vW).y; float m = smoothstep(-0.02, 0.45, h); gl_FragColor = vec4(mix(hor, top, m), 1.0); }",
+    fragmentShader: [
+      "uniform vec3 top; uniform vec3 hor; uniform vec3 sun; uniform vec3 sunCol;",
+      "uniform float cloud; uniform vec3 cloudCol; uniform vec3 cloudShade; uniform float time;",
+      "varying vec3 vW;",
+      "float h21( vec2 p ) { return fract( sin( dot( p, vec2( 127.1, 311.7 ) ) ) * 43758.5453 ); }",
+      "float vn( vec2 p ) { vec2 i = floor( p ), f = fract( p ); f = f * f * ( 3.0 - 2.0 * f );",
+      "  return mix( mix( h21( i ), h21( i + vec2( 1.0, 0.0 ) ), f.x ), mix( h21( i + vec2( 0.0, 1.0 ) ), h21( i + vec2( 1.0, 1.0 ) ), f.x ), f.y ); }",
+      "float fbm( vec2 p ) { float s = 0.0, a = 0.5; for ( int i = 0; i < 5; i++ ) { s += a * vn( p ); p = p * 2.03 + vec2( 17.1, 9.2 ); a *= 0.5; } return s; }",
+      "void main() {",
+      "  vec3 d = normalize( vW );",
+      "  float h = d.y;",
+      "  vec3 c = mix( hor, top, pow( smoothstep( -0.02, 0.6, h ), 0.7 ) );",
+      "  float sd = max( dot( d, normalize( sun ) ), 0.0 );",
+      "  c += sunCol * ( pow( sd, 10.0 ) * 0.18 + pow( sd, 300.0 ) * 0.5 );",
+      "  if ( h > 0.0 && cloud > 0.01 ) {",
+      "    vec2 p = d.xz / max( h, 0.05 ) * 0.9 + vec2( time * 0.006, time * 0.0025 );",
+      "    float n = fbm( p );",
+      "    float thr = 0.72 - cloud * 0.42;",
+      "    float cov = smoothstep( thr, thr + 0.16, n ) * smoothstep( 0.0, 0.08, h );",
+      "    float lit = smoothstep( 0.25, 0.85, fbm( p * 1.9 + vec2( 3.1, 7.7 ) ) );",
+      "    vec3 cc = mix( cloudShade, cloudCol, lit ) + sunCol * pow( sd, 6.0 ) * 0.25;",
+      // clouds near the horizon are seen through the haze
+      "    cc = mix( cc, hor, smoothstep( 0.25, 0.0, h ) * 0.6 );",
+      "    c = mix( c, cc, cov );",
+      "  }",
+      "  gl_FragColor = vec4( c, 1.0 );",
+      "  #include <colorspace_fragment>",
+      "}",
+    ].join("\n"),
   }) as ShaderMaterial & { uniforms: SkyUniforms };
+  // the sea mirrors the city (Mirror renders the reflection on desktop) and the sky
+  applyMirror(mats.water, SEA, lakeLevel(), skyUniforms, sunDir);
   skyMat.toneMapped = false;
   const skyMesh = new Mesh(new SphereGeometry(2600, 32, 16), skyMat);
   skyMesh.frustumCulled = false;
@@ -307,9 +410,9 @@ export function createWorld(gl: WebGLRenderer, scene: Scene, lowEnd: boolean): W
   const rainVel = new Float32Array(RAIN_N);
   const snowPos = new Float32Array(SNOW_N * 3);
   for (let i = 0; i < RAIN_N; i++) {
-    rainPos[i * 6] = (rng.next() - 0.5) * 120;
-    rainPos[i * 6 + 1] = rng.next() * 60;
-    rainPos[i * 6 + 2] = (rng.next() - 0.5) * 120;
+    rainPos[i * 6] = (rng.next() - 0.5) * 70;
+    rainPos[i * 6 + 1] = rng.next() * 50 - 20;
+    rainPos[i * 6 + 2] = (rng.next() - 0.5) * 70;
     rainVel[i] = 55 + rng.next() * 25;
   }
   for (let i = 0; i < SNOW_N; i++) {
@@ -341,9 +444,9 @@ export function createWorld(gl: WebGLRenderer, scene: Scene, lowEnd: boolean): W
     precip: { rain, rainPos, rainVel, RAIN_N, snow, snowPos, SNOW_N },
     refs: { mountain: null, mountainCols: null, bloom: null },
     trees: createTreeShading(paintTreeAtlas(), lowEnd),
-    buildings: createBuildingMaterials(paintFacadeArrays(lowEnd), envTex),
+    buildings: createBuildingMaterials(paintFacadeArrays(lowEnd), envTex, skyMat.uniforms),
     events: createEventLights(),
     look: { cur: null, tgt: null, lastSeason: null },
-    sunDir: new Vector3(0, 1, 0),
+    sunDir,
   };
 }

@@ -24,6 +24,8 @@ export type TreeShading = {
     uEver: { value: number[] };
   };
   target: { cov: number[]; a: Color[]; b: Color[]; snow: number };
+  /** Other tree materials (the conifers built in three dimensions) that dim with the forest at night. */
+  extra: MeshStandardMaterial[];
 };
 
 export function createTreeShading(atlas: Texture, lowEnd: boolean): TreeShading {
@@ -87,7 +89,7 @@ export function createTreeShading(atlas: Texture, lowEnd: boolean): TreeShading 
         diffuseColor.a = max(leafA, tx.a);`,
       );
   };
-  const shading: TreeShading = { mat, uniforms, target: { cov: SPECIES.map(() => 1), a: SPECIES.map(() => new Color()), b: SPECIES.map(() => new Color()), snow: 0 } };
+  const shading: TreeShading = { mat, uniforms, target: { cov: SPECIES.map(() => 1), a: SPECIES.map(() => new Color()), b: SPECIES.map(() => new Color()), snow: 0 }, extra: [] };
   return shading;
 }
 
@@ -113,4 +115,5 @@ export function tickTrees(t: TreeShading, dt: number, instant: boolean, tone: Co
   });
   u.uSnow.value += (t.target.snow - u.uSnow.value) * (instant ? 1 : 1 - Math.exp(-dt));
   t.mat.color.copy(tone);
+  for (const m of t.extra) m.color.copy(tone);
 }

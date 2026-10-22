@@ -4,7 +4,7 @@
  * façade family, so a whole chunk stays two draw calls. Walls take their UVs from the family's bay and floor size,
  * measured from the street (yRef), so floors line up across tiers.
  */
-import { BoxGeometry, type BufferGeometry, Matrix4, Quaternion, ShapeUtils, Vector2, Vector3 } from "three";
+import { BoxGeometry, type BufferGeometry, CylinderGeometry, Matrix4, Quaternion, ShapeUtils, Vector2, Vector3 } from "three";
 
 import { FAMILY, type FamilyId } from "./facadeArray";
 import type { GeoBuilder, Tint, V3 } from "./meshBuilder";
@@ -33,6 +33,25 @@ export const fp = {
   hex: (r: number): Poly => Array.from({ length: 6 }, (_, k) => [Math.cos((k / 6) * Math.PI * 2 + 0.52) * r, Math.sin((k / 6) * Math.PI * 2 + 0.52) * r] as [number, number]),
   tri: (w: number, d: number): Poly => [[-w / 2, d / 2], [w / 2, d / 2], [w / 2, -d / 2]],
   L: (w: number, d: number, f: number): Poly => [[-w / 2, -d / 2], [-w / 2 + w * f, -d / 2], [-w / 2 + w * f, d / 2 - d * f], [w / 2, d / 2 - d * f], [w / 2, d / 2], [-w / 2, d / 2]],
+  /** All four corners cut by c. */
+  octagon: (w: number, d: number, c: number): Poly => [[-w / 2 + c, -d / 2], [w / 2 - c, -d / 2], [w / 2, -d / 2 + c], [w / 2, d / 2 - c], [w / 2 - c, d / 2], [-w / 2 + c, d / 2], [-w / 2, d / 2 - c], [-w / 2, -d / 2 + c]],
+  /** All four corners recessed by n (a square notch out of each). */
+  notch: (w: number, d: number, n: number): Poly => [
+    [-w / 2 + n, -d / 2], [w / 2 - n, -d / 2], [w / 2 - n, -d / 2 + n], [w / 2, -d / 2 + n], [w / 2, d / 2 - n], [w / 2 - n, d / 2 - n], [w / 2 - n, d / 2],
+    [-w / 2 + n, d / 2], [-w / 2 + n, d / 2 - n], [-w / 2, d / 2 - n], [-w / 2, -d / 2 + n], [-w / 2 + n, -d / 2 + n],
+  ],
+  /** Two lobes along x with a waist between (a peanut), n points round. */
+  lobes: (w: number, d: number, n = 24): Poly =>
+    Array.from({ length: n }, (_, k) => {
+      const a = (k / n) * Math.PI * 2;
+      return [Math.cos(a) * (w / 2), Math.sin(a) * (d / 2) * (0.74 + 0.26 * Math.abs(Math.cos(a)))] as [number, number];
+    }),
+  /** A plus: arms f of the width and depth. */
+  cross: (w: number, d: number, f: number): Poly => {
+    const a = (w * f) / 2;
+    const b = (d * f) / 2;
+    return [[-a, -d / 2], [a, -d / 2], [a, -b], [w / 2, -b], [w / 2, b], [a, b], [a, d / 2], [-a, d / 2], [-a, b], [-w / 2, b], [-w / 2, -b], [-a, -b]];
+  },
 };
 
 /** Clockwise in (x, z) so the wall quads face outward (see `walls`). */
@@ -108,6 +127,46 @@ export function cap(sink: Sink, fam: FamilyId, ring: V3[], tint: Tint = WHITE): 
     if ((Bp[2] - A[2]) * (Cp[0] - A[0]) - (Bp[0] - A[0]) * (Cp[2] - A[2]) < 0) [Bp, Cp] = [Cp, Bp];
     B.tri(A, Bp, Cp, [A[0] / 6, A[2] / 6], [Bp[0] / 6, Bp[2] / 6], [Cp[0] / 6, Cp[2] / 6], L, tint, [0, 1, 0]);
   }
+}
+
+/**
+ * A sloped crown over a top ring at height y: the walls rise from y to a plane that climbs `rise` across the ring
+ * along (dx, dz), and the sloped roof closes it, both in `fam` (a glass family for a glass crown).
+ */
+export function slopedTop(sink: Sink, fam: FamilyId, ring: V3[], dx: number, dz: number, rise: number, tint: Tint, yRef: number): void {
+  const B = builderFor(sink, fam);
+  const F = FAMILY[fam];
+  const proj = ring.map(([x, , z]) => x * dx + z * dz);
+  const lo = Math.min(...proj);
+  const span = Math.max(...proj) - lo || 1;
+  const top: V3[] = ring.map(([x, y, z], i) => [x, y + (rise * (proj[i] - lo)) / span, z]);
+  let u = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const j = (i + 1) % ring.length;
+    const du = Math.hypot(ring[j][0] - ring[i][0], ring[j][2] - ring[i][2]) / (2 * F.bay);
+    const v = (y: number) => (y - yRef) / (2 * F.floor);
+    B.quad(ring[i], ring[j], top[j], top[i], [u, v(ring[i][1])], [u + du, v(ring[j][1])], [u + du, v(top[j][1])], [u, v(top[i][1])], F.layer, tint);
+    u += du;
+  }
+  const tris = ShapeUtils.triangulateShape(top.map(([x, , z]) => new Vector2(x, z)), []);
+  for (const [a, b, c] of tris) {
+    const A = top[a];
+    let Bp = top[b];
+    let Cp = top[c];
+    if ((Bp[2] - A[2]) * (Cp[0] - A[0]) - (Bp[0] - A[0]) * (Cp[2] - A[2]) < 0) [Bp, Cp] = [Cp, Bp];
+    B.tri(A, Bp, Cp, [A[0] / (2 * F.bay), A[2] / (2 * F.floor)], [Bp[0] / (2 * F.bay), Bp[2] / (2 * F.floor)], [Cp[0] / (2 * F.bay), Cp[2] / (2 * F.floor)], F.layer, tint);
+  }
+}
+
+/** A slim strut (a six-sided rod) from a to b, radius r. */
+export function strut(sink: Sink, fam: FamilyId | Special, a: V3, b: V3, r: number, tint: Tint = WHITE): void {
+  const d = new Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+  const L = d.length();
+  q.setFromUnitVectors(UPV, d.normalize());
+  m4.compose(p.set((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2), q, sc.set(r, L, r));
+  const rod = tpl("rod6", () => new CylinderGeometry(1, 1, 1, 6, 1, true));
+  if (special(fam)) sink[fam].addGeo(rod, m4, 0, tint, 1, true);
+  else builderFor(sink, fam).addGeo(rod, m4, FAMILY[fam].layer, tint, 1, true);
 }
 
 /** A triangle wound so its face normal points away from `centre`. */

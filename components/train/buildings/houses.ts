@@ -1,15 +1,16 @@
 /**
  * Houses as instanced templates, so whole neighbourhoods cost a handful of draw calls: the Victorian/Edwardian (steep
  * gable, bay window, porch), the Craftsman (low gable to the street, porch on columns), the Vancouver Special (boxy two
- * storeys, low hip, front balcony) and a plain far-away version. Each instance carries its own wall and roof tint.
+ * storeys, low hip, front balcony), today's modern infill (a flat-roofed box with a deck and big windows), the
+ * steep-gabled duplex, and a plain far-away version. Each instance carries its own wall and roof tint.
  */
 import type { BufferGeometry } from "three";
 
 import { GeoBuilder } from "./meshBuilder";
 import { box, fp, gable, hip, type Sink, walls, WHITE } from "./parts";
 
-export type HouseKind = "victorian" | "craftsman" | "special" | "simple";
-export const HOUSE_KINDS: HouseKind[] = ["victorian", "craftsman", "special", "simple"];
+export type HouseKind = "victorian" | "craftsman" | "special" | "modern" | "duplex" | "simple";
+export const HOUSE_KINDS: HouseKind[] = ["victorian", "craftsman", "special", "modern", "duplex", "simple"];
 
 export type HouseInst = { kind: HouseKind; x: number; y: number; z: number; ry: number; sx: number; sz: number; wall: [number, number, number]; roof: [number, number, number] };
 
@@ -34,6 +35,20 @@ export function houseTemplate(kind: HouseKind): BufferGeometry {
     walls(sink, "stucco", fp.rect(7, 8), 0, 0, -0.6, 4.2, { yRef: 0, vOff: 0.5 });
     hip(sink, "shingle", 0, 0, 7, 8, 4.2, 1.0, WHITE, 0, 0.5);
     box(sink, "concrete", 0, 2.0, -4.5, 5, 0.15, 1.2);
+  } else if (kind === "modern") {
+    // a flat-roofed box in metal or siding, its upper floor stepped back over a deck, a glazed corner
+    walls(sink, "metal", fp.rect(7, 8), 0, 0, -0.6, 2.1, { yRef: 0 });
+    walls(sink, "glass", fp.rect(2.4, 1.2), 2.0, -4.6, 0, 2.0, { yRef: 0 });
+    walls(sink, "wood", fp.rect(7, 5.6), 0, 1.2, 2.1, 4.3, { yRef: 0 });
+    box(sink, "roof", 0, 4.3, 1.2, 7.3, 0.25, 5.9);
+    box(sink, "roof", 0, 2.1, 0, 7.2, 0.18, 8.2);
+    box(sink, "concrete", 0, 2.28, -3.95, 7.0, 0.55, 0.06);
+  } else if (kind === "duplex") {
+    // two narrow homes under one steep gable, no eaves, two doors and a split porch
+    walls(sink, "wood", fp.rect(6.4, 9), 0, 0, -0.6, 4.6, { yRef: 0 });
+    gable(sink, "wood", "shingle", 0, 0, 6.4, 9, 0, 4.6, 3.4, WHITE, WHITE, 0, 0.05);
+    for (const x of [-1.6, 1.6]) box(sink, "concrete", x, 0.45, -4.9, 2.4, 0.18, 1.2);
+    box(sink, "concrete", 0, 0.45, -4.9, 0.15, 2.2, 1.2);
   } else {
     walls(sink, "wood", fp.rect(6, 7), 0, 0, -0.6, 3.2, { yRef: 0 });
     hip(sink, "shingle", 0, 0, 6, 7, 3.2, 1.6, WHITE, 0, 0.35);

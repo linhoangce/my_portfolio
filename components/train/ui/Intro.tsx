@@ -19,14 +19,6 @@ export function Intro() {
           {person.name}
         </h1>
         <p>{intro.lead}</p>
-        <div className="keys">
-          {intro.keys.map(([k, what]) => (
-            <div key={k} className="contents">
-              <kbd>{k}</kbd>
-              <span>{what}</span>
-            </div>
-          ))}
-        </div>
         <div className="actions">
           <button className="btn-primary" type="button" onClick={() => driveTo(1)} disabled={introDone}>
             Depart

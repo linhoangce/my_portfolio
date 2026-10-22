@@ -1,28 +1,55 @@
 /**
- * The 2100 city builder. Heroes first (their footprints reserved), then every lot inside the blocks between the
- * painted streets: a neighbourhood era mix, an archetype re-rolled when a neighbour already has it, heights capped
- * relative to the deck near the guideway (no footprint within 17 units, low podiums within 30, full height by 72),
- * buildings standing on the lowest ground under them. Heritage lots in house districts become instanced houses facing
- * their street. Floating hex districts sit on False Creek. Geometry merges into 256-unit chunks, a solid and a glass
- * mesh each, so frustum and shadow culling work. Pure apart from three.js geometry.
+ * The 2100 city builder. Heroes first (their footprints reserved), then lots along every real street's frontage
+ * (roads.ts), turned square to it and as deep as the block allows: what stands on each follows the City's zoning
+ * (houses on the single-family streets, apartments, shopfronts on the commercial strips, old brick in the historic
+ * areas, warehouses on industrial land, towers only where the zoning takes them) within a neighbourhood era mix, an
+ * archetype re-rolled when a neighbour already has it, heights capped relative to the deck near the guideway (no
+ * footprint within 17 units, low podiums within 30, full height by 72), buildings standing on the lowest ground under
+ * them. Houses face their street. False Creek is left open water. Geometry merges into 256-unit chunks, a solid and a
+ * glass mesh each, so frustum and shadow culling work. Pure apart from three.js geometry.
  */
-import { CylinderGeometry, type BufferGeometry, SphereGeometry } from "three";
+import { nearBusStop } from "../buses";
+import { inHarbourfront } from "../harbourfront";
+import { nearWce } from "../wce";
+import type { BufferGeometry } from "three";
 
-import { arterialX, arterialZ, BI0, BI1, BJ1, type Rng, streetX, streetZ } from "../cityModel";
-import { SEA } from "../constants";
+import type { Rng } from "../cityModel";
+import { railNear } from "../rail";
+import { landClass, nearestRoadDir, pointAt, roadDist, roads } from "../roadNetwork";
+import { onFeature } from "../commonsLayout";
 import { inSetZone } from "../sets/zones";
-import { inLandmark, inPark, streamDist } from "../sites";
-import { groundAt, inWater, RASTER, sdfAt } from "../terrain";
+import { inLandmark, inPark, nearBridge, seawallDist, streamDist } from "../sites";
+import { groundAt, inWater, RASTER } from "../terrain";
 import { PATH_SAMPLES, trackNearest } from "../track";
 import type { SpeciesId } from "../trees/species";
 import { BUILD, type Ctx, PAL } from "./archetypes";
-import { ARCH_BY_ERA, type ArchId, hood, type Hood, TOWERISH, ZONES } from "./eras";
+import { ARCH_BY_ERA, ARCH_DENSE, ARCH_LOWRISE, type ArchId, hood, type Hood, HOUSE_MIX, TOWERISH, ZONES } from "./eras";
 import { HEROES } from "./heroes";
 import { type HouseInst, type HouseKind } from "./houses";
 import { GeoBuilder } from "./meshBuilder";
-import { cap, fp, type Sink, solid, tpl, walls } from "./parts";
+import type { Sink } from "./parts";
 
-export type Lot = { x: number; z: number; w: number; d: number; h: number; top: number };
+/**
+ * A built lot: its centre and its extent on the axes (w, d: the box the city's quick tests use), height and top; the
+ * footprint itself is fw × fd turned by ry to face its street. `arch` names what stands on it, for the debug probes.
+ */
+export type Lot = { x: number; z: number; w: number; d: number; h: number; top: number; arch?: ArchId; ry?: number; fw?: number; fd?: number };
+/** A lot being laid out: centre, frontage width, depth into the block, and its turn (local +z points into the block). */
+type Plot = { x: number; z: number; w: number; d: number; ry: number };
+/** What a frontage holds, by land use: house, apartments, shopfronts, a tower, industry, historic brick. */
+type LotKind = "house" | "apt" | "shop" | "tower" | "ind" | "hist";
+/** Frontage width range and depth for each kind of lot. */
+const LOT: Record<LotKind, [number, number, number]> = {
+  house: [7, 8.5, 10],
+  apt: [10, 14, 12],
+  shop: [9, 12, 11],
+  tower: [12, 17, 15],
+  ind: [13, 19, 15],
+  hist: [8, 11, 10],
+};
+const DENSE_LOT: [number, number, number] = [9, 14, 12];
+const lotKind = (lu: number, name: Hood, dense: boolean, houses: boolean): LotKind =>
+  lu === 1 || lu === 2 ? "house" : lu === 3 ? "apt" : lu === 4 ? "shop" : lu === 5 ? (dense || name === "joyce" || name === "commercial" ? "tower" : "apt") : lu === 6 ? "hist" : lu === 7 ? "ind" : houses ? "house" : dense ? "tower" : "apt";
 export type TerraceTree = { x: number; y: number; z: number; s: number; sp: SpeciesId };
 export type CityGeometry = {
   chunks: { key: string; solid: BufferGeometry; glass: BufferGeometry }[];
@@ -42,7 +69,13 @@ export type CityGeometry = {
 export const CORRIDOR = 30;
 /** No building footprint within this distance of the guideway. */
 export const CLEAR = 17;
-const J_MIN = -20; // blocks north of the inlet: North Vancouver and Lonsdale
+/**
+ * In the towers' districts the city closes in round the line, as it does round the real one: footprints from this
+ * close, podiums kept under the deck out to DENSE_PODIUM, then full height by DENSE_FULL.
+ */
+const DENSE_CLEAR = 10;
+const DENSE_PODIUM = 16;
+const DENSE_FULL = 40;
 
 const sstep = (a: number, b: number, x: number) => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -150,11 +183,17 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
     h.build(sinkAt(h.x, h.z), h.x, h.z, yb, yt, rng, addTerrace);
     lots.push({ x: h.x, z: h.z, w: h.r * 2, d: h.r * 2, h: h.h, top: yt + h.h + 3 });
   }
-  const inHero = (x: number, z: number) => HEROES.some((h) => (x - h.x) ** 2 + (z - h.z) ** 2 < (h.r + 2.5) ** 2);
+  const inHero = (x: number, z: number) => HEROES.some((h) => (x - h.x) ** 2 + (z - h.z) ** 2 < (h.r + 1) ** 2);
   mark("heroes");
 
   // the lots, block by block
   const last = new Map<string, string>();
+  /** The districts of towers, whose blocks are packed and whose smaller lots may carry slender towers. */
+  const DENSE = new Set<Hood>(["downtown", "westend", "yaletown", "mainst"]);
+  /** Downtown's highest ground for towers, round Burrard and Georgia. */
+  const CORE = { x: -55, z: 25 };
+  /** Archetypes that keep under a low height limit by themselves. */
+  const LOW_OK = new Set<ArchId>(["midrise", "colourPanels", "heritageBrick", "warehouse", "chinatownBlock"]);
   let buildMs = 0;
   const archMs: Record<string, number> = {};
   const pickArch = (zone: NonNullable<(typeof ZONES)[Hood]>, name: Hood, big: boolean, cell: string, near: string[]): { era: 0 | 1 | 2; arch: ArchId } => {
@@ -164,18 +203,19 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
       const r = rng.next();
       era = r < zone.era[0] ? 0 : r < zone.era[0] + zone.era[1] ? 1 : 2;
       if (zone.houses && era === 0) arch = "house";
+      else if (!zone.houses && rng.next() < (HOUSE_MIX[name] ?? 0)) arch = "house";
       else if (name === "chinatown" && era === 0) arch = rng.next() < 0.8 ? "chinatownBlock" : "heritageBrick";
       else if (name === "gastown" && era === 0) arch = rng.next() < 0.55 ? "heritageBrick" : "warehouse";
       else if (name === "yaletown" && era === 0) arch = rng.next() < 0.7 ? "warehouse" : "heritageBrick";
       else {
-        const list = ARCH_BY_ERA[era].filter(([a]) => big || !TOWERISH.has(a));
+        const list = (era > 0 && zone.houses ? ARCH_LOWRISE[era as 1 | 2] : era > 0 && DENSE.has(name) ? ARCH_DENSE[era as 1 | 2] : ARCH_BY_ERA[era]).filter(([a]) => big || !TOWERISH.has(a));
         const total = list.reduce((t, [, wt]) => t + wt, 0);
         let roll = rng.next() * total;
         arch = list.find(([, wt]) => (roll -= wt) < 0)?.[0] ?? "townhouses";
       }
       const key = `${arch}${era}`;
-      // never the same as the lot to the left, above or on either upper diagonal
-      if (arch === "house" || near.every((n) => last.get(n) !== key)) {
+      // never the same as the lot to the left, above or on either upper diagonal (the downtown tower varies itself)
+      if (arch === "house" || arch === "dtTower" || near.every((n) => last.get(n) !== key)) {
         last.set(cell, key);
         break;
       }
@@ -183,75 +223,259 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
     return { era, arch };
   };
 
-  for (let i = BI0; i < BI1; i++) {
-    for (let j = J_MIN; j < BJ1; j++) {
-      const ax = streetX(i) + (arterialX(i) ? 4.1 : 3);
-      const bx = streetX(i + 1) - (arterialX(i + 1) ? 4.1 : 3);
-      const az = streetZ(j) + (arterialZ(j) ? 4.1 : 3);
-      const bz = streetZ(j + 1) - (arterialZ(j + 1) ? 4.1 : 3);
-      const cx = (ax + bx) / 2;
-      const cz = (az + bz) / 2;
-      if (cx < RASTER.x0 + 10 || cz < RASTER.z0 + 10) continue;
-      const name = hood(cx, cz);
+  /**
+   * What the zoning allows on a lot (landuseData.ts): on the single-family and duplex streets houses among townhouses
+   * and low blocks (the multiplexes Vancouver allowed from 2023, grown in by 2100), no towers; apartments; shopfronts
+   * on the commercial strips; old brick in the historic areas; warehouses on industrial land; towers only where the
+   * zoning takes them (comprehensive development, downtown).
+   */
+  const pickOf = <T,>(list: T[]) => list[Math.floor(rng.next() * list.length)];
+  const byLand = (arch: ArchId, era: 0 | 1 | 2, lu: number, name: Hood): ArchId => {
+    if (lu === 1 || lu === 2) return TOWERISH.has(arch) ? pickOf<ArchId>(["townhouses", "colourPanels", "timberTerraces", "midrise"]) : arch;
+    if (lu === 3) return arch === "house" || TOWERISH.has(arch) ? pickOf<ArchId>(["midrise", "courtyard", "colourPanels", "timberTerraces", "townhouses"]) : arch;
+    if (lu === 4) return arch === "house" || TOWERISH.has(arch) ? (era === 0 ? "heritageBrick" : pickOf<ArchId>(["midrise", "colourPanels", "officeMullion"])) : arch;
+    if (lu === 6) return era === 0 ? (name === "chinatown" ? "chinatownBlock" : "heritageBrick") : arch === "house" || TOWERISH.has(arch) ? "midrise" : arch;
+    if (lu === 7) return era === 2 ? pickOf<ArchId>(["metalLoft", "warehouse"]) : "warehouse";
+    if (lu === 5) return arch === "house" ? "midrise" : arch;
+    return arch;
+  };
+  /** Height limits by land use: duplex streets, apartments, commercial strips, historic areas, industry. */
+  const CAP: Record<number, number> = { 1: 9, 2: 10, 3: 15, 4: 17, 6: 12, 7: 11 };
+  // round Main Street–Science World the flats' apartments, shops and works have given way to towers, as the real
+  // ones have: their land builds as the towers' land
+  const towerLand = (name: Hood, lu: number) => (name === "mainst" && (lu === 0 || lu === 3 || lu === 4 || lu === 7) ? 5 : lu);
+  const toT = (hex: number): [number, number, number] => [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255];
+
+  const buildLot = (l: Plot, name: Hood, zone: NonNullable<(typeof ZONES)[Hood]>, lu: number, dense: boolean) => {
+    const { x, z, w, d, ry } = l;
+    const pts = samplePts(l);
+    const gs = pts.map(([px, pz]) => groundAt(px, pz));
+    const yb = Math.min(...gs) - 0.6;
+    const yt = Math.max(...gs);
+    if (yt - yb > 0.42 * Math.max(w, d) + 0.6) return;
+    const dist = Math.min(...pts.map(([px, pz]) => cor.dist(px, pz)));
+    // the turned footprint's extent on the axes, for the city's box tests
+    const aw = Math.abs(w * Math.cos(ry)) + Math.abs(d * Math.sin(ry));
+    const ad = Math.abs(w * Math.sin(ry)) + Math.abs(d * Math.cos(ry));
+    const ci = Math.round(x / 9);
+    const cj = Math.round(z / 9);
+    const picked = pickArch(zone, name, dense ? Math.min(w, d) > 6.5 : w > 11 && d > 11, `${ci},${cj}`, [`${ci - 1},${cj}`, `${ci},${cj - 1}`, `${ci - 1},${cj - 1}`, `${ci + 1},${cj - 1}`]);
+    const era = picked.era;
+    const arch = byLand(picked.arch, era, lu, name);
+    if (arch === "house") {
+      // the far suburbs are thinned
+      if (dist > 320 && rng.next() < (lowEnd ? 0.6 : 0.35)) return;
+      // detailed templates near the line, the plain one beyond; old and new side by side; each faces its street
+      const far = dist > (lowEnd ? 90 : 150);
+      const roll = rng.next();
+      const kind: HouseKind = far ? "simple" : roll < 0.34 ? "victorian" : roll < 0.56 ? "craftsman" : roll < 0.72 ? "special" : roll < 0.88 ? "modern" : "duplex";
+      const palette = kind === "modern" ? [0x3a3d42, 0xf2f0ea, 0x6b7a6f, 0x2e3034, 0xb8bcc2, 0x9a5634] : kind === "duplex" ? [0x2f3b4c, 0x4a4d52, 0xe9e4da, 0x7f9a6a, 0x8f3b3b, 0xd9c08a] : PAL.wood;
+      const wall = palette[Math.floor(rng.next() * palette.length)];
+      const roof = [0x4a4f58, 0x5a4a42, 0x3e4651, 0x6b5a4a, 0x7a3b32, 0x445a4a][Math.floor(rng.next() * 6)];
+      houses.push({ kind, x, y: yt, z, ry, sx: Math.min(1.1, Math.max(0.7, w / 7)), sz: Math.min(1.1, Math.max(0.7, d / 9)), wall: toT(wall), roof: toT(roof) });
+      lots.push({ x, z, w: aw, d: ad, h: 6, top: yt + 7, ry, fw: w, fd: d });
+      return;
+    }
+    // most lots short of the zone's limit, a few standing out above it; the towers' districts the other way round, and
+    // downtown rising to a crown round its core; no tower more than six times as tall as its lot is wide (nine in the
+    // towers' districts, whose real blocks are small)
+    let H = zone.h[era][0] + Math.pow(rng.next(), dense ? 0.85 : 1.7) * (zone.h[era][1] - zone.h[era][0]);
+    if (TOWERISH.has(arch) && rng.next() < 0.07) H *= 1.3;
+    if (name === "downtown") H *= 0.75 + 0.5 * (1 - Math.min(1, Math.hypot(x - CORE.x, z - CORE.z) / 140));
+    H = Math.min(H, (dense ? 9 : 6) * Math.min(w, d), CAP[lu] ?? Infinity);
+    // near the guideway: tops stay a few units above the deck, opening up to full height by 72
+    const deckTop = cor.deck(x, z) + 4 - yt;
+    const allow = dense
+      ? dist < DENSE_PODIUM
+        ? Math.max(3, Math.min(10, deckTop - 7))
+        : Math.max(5.5, deckTop) + 400 * sstep(DENSE_PODIUM, DENSE_FULL, dist)
+      : dist < CORRIDOR
+        ? Math.max(3, Math.min(5.5, deckTop))
+        : Math.max(5.5, deckTop) + 400 * sstep(CORRIDOR, 72, dist);
+    let chosen = arch;
+    if (H > allow) {
+      H = allow;
+      // what stays low by the guideway: the shop-front block, painted panels, a low timber terrace, old brick
+      if (H < 9 && !LOW_OK.has(arch)) {
+        const low: Exclude<ArchId, "house">[] = era === 2 ? ["midrise", "colourPanels", "timberTerraces"] : era === 1 ? ["midrise", "colourPanels"] : name === "chinatown" ? ["chinatownBlock"] : ["heritageBrick", "warehouse"];
+        chosen = low[Math.floor(rng.next() * low.length)];
+      }
+    }
+    if (H < 3) return;
+    // built square to the axes round the lot's centre, then turned to face its street with its terrace trees
+    const sink = sinkAt(x, z);
+    const builders = [sink.solid, sink.glass, sink.crownA, sink.crownB, sink.dome, sink.neon];
+    const starts = builders.map((b) => b.vertices);
+    const t0 = terrace.length;
+    const ctx: Ctx = { rng, sink, x, z, w, d, yb, yt, H, hood: name, terrace: addTerrace };
+    const tb = now();
+    BUILD[chosen as Exclude<ArchId, "house">](ctx);
+    builders.forEach((b, i) => b.rotateFrom(starts[i], x, z, ry));
+    const c = Math.cos(ry);
+    const s = Math.sin(ry);
+    for (let i = t0; i < terrace.length; i++) {
+      const tr = terrace[i];
+      const dx = tr.x - x;
+      const dz = tr.z - z;
+      tr.x = x + dx * c + dz * s;
+      tr.z = z - dx * s + dz * c;
+    }
+    const dtb = now() - tb;
+    archMs[chosen] = (archMs[chosen] ?? 0) + dtb;
+    buildMs += dtb;
+    lots.push({ x, z, w: aw, d: ad, h: H + (yt - yb), top: yt + H + 3, arch: chosen, ry, fw: w, fd: d });
+  };
+
+  // the points a lot is tested at: corners, mid-sides and centre of its turned footprint
+  const samplePts = (l: Plot): [number, number][] => {
+    const out: [number, number][] = [];
+    const c = Math.cos(l.ry);
+    const s = Math.sin(l.ry);
+    for (const [a, b] of [
+      [-0.5, -0.5],
+      [0.5, -0.5],
+      [-0.5, 0.5],
+      [0.5, 0.5],
+      [0, 0],
+      [0, -0.5],
+      [0, 0.5],
+      [-0.5, 0],
+      [0.5, 0],
+    ]) {
+      const lx = a * l.w;
+      const lz = b * l.d;
+      out.push([l.x + lx * c + lz * s, l.z - lx * s + lz * c]);
+    }
+    return out;
+  };
+  /** Clear of water, parks, landmarks, heroes, the guideway, the creek, the sets, the other rail and every road; the bridges and the seawall walk, narrower than a lot, against its whole footprint. */
+  const parcelClear = (l: Plot, clear: number) =>
+    !samplePts(l).some(
+      ([px, pz]) =>
+        inWater(px, pz) || inPark(px, pz) || inLandmark(px, pz, 2) || inHarbourfront(px, pz, 1.5) || nearBusStop(px, pz, 0.8) || nearWce(px, pz, 0.5) || inHero(px, pz) || cor.dist(px, pz) < clear || streamDist(px, pz) < 9 || inSetZone(px, pz, 2) || railNear(px, pz, 8) || roadDist(px, pz) < 0.35 || onFeature(px, pz, 1),
+    ) &&
+    !nearBridge(l.x, l.z, 2 + Math.hypot(l.w, l.d) / 2) &&
+    seawallDist(l.x, l.z) >= Math.min(l.w, l.d) / 2 + 0.8;
+
+  // what has been built, on a 2-unit grid, so no two lots overlap
+  const OCC = 2;
+  const ox0 = RASTER.x0;
+  const oz0 = RASTER.z0;
+  const onx = Math.ceil((RASTER.nx * RASTER.step) / OCC);
+  const onz = Math.ceil((RASTER.nz * RASTER.step) / OCC);
+  const occ = new Uint8Array(onx * onz);
+  const cellsOf = (l: Plot, grow: number, f: (k: number) => boolean | void): boolean => {
+    const c = Math.cos(l.ry);
+    const s = Math.sin(l.ry);
+    const r = Math.hypot(l.w, l.d) / 2 + grow;
+    const i0 = Math.max(0, Math.floor((l.x - r - ox0) / OCC));
+    const i1 = Math.min(onx - 1, Math.floor((l.x + r - ox0) / OCC));
+    const j0 = Math.max(0, Math.floor((l.z - r - oz0) / OCC));
+    const j1 = Math.min(onz - 1, Math.floor((l.z + r - oz0) / OCC));
+    for (let j = j0; j <= j1; j++) {
+      for (let i = i0; i <= i1; i++) {
+        const dx = ox0 + (i + 0.5) * OCC - l.x;
+        const dz = oz0 + (j + 0.5) * OCC - l.z;
+        // into the lot's own axes
+        const a = dx * c - dz * s;
+        const b = dx * s + dz * c;
+        if (Math.abs(a) <= l.w / 2 + grow && Math.abs(b) <= l.d / 2 + grow && f(j * onx + i)) return true;
+      }
+    }
+    return false;
+  };
+  const free = (l: Plot) => !cellsOf(l, -0.4, (k) => occ[k] === 1);
+  const take = (l: Plot) => cellsOf(l, 0.3, (k) => void (occ[k] = 1));
+
+  // the heroes' footprints are taken first
+  for (const h of HEROES) take({ x: h.x, z: h.z, w: h.r * 2, d: h.r * 2, ry: 0 });
+
+  // lots along every street's frontage, the arterials' first (their shops and towers take the corners), each turned
+  // square to its street and as deep as the block allows
+  const { edges, nodes } = roads();
+  const order = edges.map((_, k) => k).sort((a, b) => edges[a].cls - edges[b].cls || edges[b].len - edges[a].len);
+  for (const k of order) {
+    const e = edges[k];
+    // short of each junction by the width of the road crossing there
+    const endPad = (n: number) => (nodes[n].deg >= 3 ? Math.max(...nodes[n].edges.map((o) => edges[o].half)) + 1.2 : 0.6);
+    const s0 = endPad(e.a);
+    const s1 = e.len - endPad(e.b);
+    for (const side of [1, -1]) {
+      let s = s0;
+      while (s < s1 - 4) {
+        const [mx, mz] = pointAt(e, s + 3);
+        const name = hood(mx, mz);
+        const zone = ZONES[name];
+        const lu = towerLand(name, landClass(mx, mz));
+        const dense = DENSE.has(name);
+        const kind = lotKind(lu, name, dense, zone?.houses ?? false);
+        // the towers' districts have the smallest real blocks: their lots are smaller, their towers slimmer
+        const [w0, w1, depth] = dense && kind === "tower" ? DENSE_LOT : LOT[kind];
+        const w = Math.min(w0 + rng.next() * (w1 - w0), s1 - s);
+        if (!zone || w < 5) {
+          s += 6;
+          continue;
+        }
+        // the frontage's direction at its middle, and the way into the block
+        const [ax, az] = pointAt(e, s);
+        const [bx, bz] = pointAt(e, s + w);
+        const L = Math.hypot(bx - ax, bz - az) || 1;
+        const tx = (bx - ax) / L;
+        const tz = (bz - az) / L;
+        // the left of a → b is (tz, -tx); side 1 builds there
+        const nx = side * tz;
+        const nz = side * -tx;
+        const back = e.half + (dense ? 0.3 : 0.7);
+        let placed: Plot | null = null;
+        for (const f of [1, 0.8, 0.62, 0.48]) {
+          const d = depth * f;
+          const cx = (ax + bx) / 2 + nx * (back + d / 2);
+          const cz = (az + bz) / 2 + nz * (back + d / 2);
+          // local +z points into the block, local +x along the frontage
+          const l: Plot = { x: cx, z: cz, w: L - (dense ? 0.3 : 0.8), d: d - 0.4, ry: Math.atan2(nx, nz) };
+          if (l.w < 4.5 || l.d < 4.5) break;
+          if (cx < RASTER.x0 + 10 || cz < RASTER.z0 + 10) break;
+          if (free(l) && parcelClear(l, dense ? DENSE_CLEAR : CLEAR)) {
+            placed = l;
+            break;
+          }
+        }
+        s += w;
+        if (!placed || !zone) continue;
+        take(placed);
+        // the low-end budget thins the city away from the line
+        if (lowEnd && kind !== "tower" && cor.dist(placed.x, placed.z) > 120 && rng.next() < 0.3) continue;
+        if (rng.next() > zone.build) continue;
+        buildLot(placed, name, zone, lu, dense);
+      }
+    }
+  }
+  // then the blocks' insides (a big block, an industrial yard): wherever a lot still fits clear of every road and
+  // every other lot, turned square to the nearest road
+  for (let gz = RASTER.z0 + 14; gz < RASTER.z0 + (RASTER.nz - 1) * RASTER.step - 14; gz += 8) {
+    for (let gx = RASTER.x0 + 14; gx < RASTER.x0 + (RASTER.nx - 1) * RASTER.step - 14; gx += 8) {
+      const oi = Math.floor((gx - ox0) / OCC);
+      const oj = Math.floor((gz - oz0) / OCC);
+      if (occ[oj * onx + oi] || roadDist(gx, gz) < 3.5) continue;
+      const name = hood(gx, gz);
       const zone = ZONES[name];
       if (!zone) continue;
-      const big = zone.split === 1;
-      const cols = big ? (rng.next() < 0.5 ? 1 : 2) : 2;
-      const rows = big ? (rng.next() < 0.5 ? 1 : 2) : zone.split === 3 ? 3 : 2;
-      const lw = (bx - ax) / cols;
-      const ld = (bz - az) / rows;
-      for (let c = 0; c < cols; c++) {
-        for (let r = 0; r < rows; r++) {
-          const x = ax + lw * (c + 0.5);
-          const z = az + ld * (r + 0.5);
-          const w = lw - 1.2;
-          const d = ld - 1.2;
-          if (lowEnd && !big && rng.next() < 0.3) continue;
-          const pts = [[x - w / 2, z - d / 2], [x + w / 2, z - d / 2], [x - w / 2, z + d / 2], [x + w / 2, z + d / 2], [x, z], [x, z - d / 2], [x, z + d / 2], [x - w / 2, z], [x + w / 2, z]];
-          if (pts.some(([px, pz]) => inWater(px, pz) || inPark(px, pz) || inLandmark(px, pz, 2) || inHero(px, pz) || cor.dist(px, pz) < CLEAR || streamDist(px, pz) < 9 || inSetZone(px, pz, 2))) continue;
-          if (rng.next() > zone.build) continue;
-          const { yb, yt } = ground(x, z, w, d);
-          if (yt - yb > 0.42 * Math.max(w, d) + 0.6) continue;
-          const dist = Math.min(...pts.map(([px, pz]) => cor.dist(px, pz)));
-          const cell = `${i * 3 + c},${j * 3 + r}`;
-          const ci = i * 3 + c;
-          const cj = j * 3 + r;
-          const { era, arch } = pickArch(zone, name, big && w > 13 && d > 13, cell, [`${ci - 1},${cj}`, `${ci},${cj - 1}`, `${ci - 1},${cj - 1}`, `${ci + 1},${cj - 1}`]);
-          if (arch === "house") {
-            // detailed templates near the line, the plain one beyond; the far suburbs are thinned
-            const far = dist > (lowEnd ? 90 : 150);
-            const roll = rng.next();
-            const kind: HouseKind = far ? "simple" : roll < 0.45 ? "victorian" : roll < 0.75 ? "craftsman" : "special";
-            if (dist > 320 && rng.next() < (lowEnd ? 0.6 : 0.35)) continue;
-            // face the nearer street: north/south edge for the end rows, east/west otherwise
-            const ry = r === 0 ? 0 : r === rows - 1 ? Math.PI : c === 0 ? -Math.PI / 2 : Math.PI / 2;
-            const wall = PAL.wood[Math.floor(rng.next() * PAL.wood.length)];
-            const roof = [0x4a4f58, 0x5a4a42, 0x3e4651, 0x6b5a4a, 0x7a3b32, 0x445a4a][Math.floor(rng.next() * 6)];
-            const toT = (hex: number): [number, number, number] => [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255];
-            const sx = Math.min(1.1, Math.max(0.7, (ry === 0 || ry === Math.PI ? w : d) / 7));
-            const sz = Math.min(1.1, Math.max(0.7, (ry === 0 || ry === Math.PI ? d : w) / 9));
-            houses.push({ kind, x, y: yt, z, ry, sx, sz, wall: toT(wall), roof: toT(roof) });
-            lots.push({ x, z, w, d, h: 6, top: yt + 7 });
-            continue;
-          }
-          let H = zone.h[era][0] + Math.pow(rng.next(), 1.4) * (zone.h[era][1] - zone.h[era][0]);
-          // near the guideway: tops stay a few units above the deck, opening up to full height by 72
-          const deckTop = cor.deck(x, z) + 4 - yt;
-          const allow = dist < CORRIDOR ? Math.max(3, Math.min(5.5, deckTop)) : Math.max(5.5, deckTop) + 400 * sstep(CORRIDOR, 72, dist);
-          let chosen = arch;
-          if (H > allow) {
-            H = allow;
-            if (H < 9) chosen = era === 2 ? "timberTerraces" : era === 1 ? "colourPanels" : name === "chinatown" ? "chinatownBlock" : "heritageBrick";
-          }
-          if (H < 3) continue;
-          const ctx: Ctx = { rng, sink: sinkAt(x, z), x, z, w, d, yb, yt, H, hood: name, terrace: addTerrace };
-          const tb = now();
-          BUILD[chosen as Exclude<ArchId, "house">](ctx);
-          const dtb = now() - tb;
-          archMs[chosen] = (archMs[chosen] ?? 0) + dtb;
-          buildMs += dtb;
-          lots.push({ x, z, w, d, h: H + (yt - yb), top: yt + H + 3 });
-        }
+      const lu = towerLand(name, landClass(gx, gz));
+      const dense = DENSE.has(name);
+      const kind = lotKind(lu, name, dense, zone.houses ?? false);
+      const [, w1, depth] = dense && kind === "tower" ? DENSE_LOT : LOT[kind];
+      const dir = nearestRoadDir(gx, gz, 40);
+      // local +x along the nearest road, +z away from it (or square to the axes, with none near)
+      const ry = dir ? Math.atan2(-dir[1], dir[0]) : 0;
+      for (const f of [1, 0.75, 0.55]) {
+        const l: Plot = { x: gx, z: gz, w: w1 * f, d: depth * f, ry };
+        if (l.w < 4.5 || l.d < 4.5) break;
+        if (!free(l) || !parcelClear(l, dense ? DENSE_CLEAR : CLEAR)) continue;
+        take(l);
+        if (lowEnd && kind !== "tower" && cor.dist(gx, gz) > 120 && rng.next() < 0.3) break;
+        if (rng.next() > zone.build) break;
+        buildLot(l, name, zone, lu, dense);
+        break;
       }
     }
   }
@@ -259,41 +483,6 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
   mark("lots");
   phases.lotGeometry = Math.round(buildMs);
   for (const [k, v] of Object.entries(archMs)) if (v > 20) phases[`arch:${k}`] = Math.round(v);
-  // floating hex districts on False Creek: pods clear of the shore and the guideway, joined by footbridges
-  const pods: [number, number, number][] = [];
-  for (let k = 0; k < 400 && pods.length < 4; k++) {
-    const x = -240 + rng.next() * 320;
-    const z = 140 + rng.next() * 80;
-    const r = 8 + rng.next() * 4;
-    if (sdfAt(x, z) > -(r + 3) || cor.dist(x, z) < CLEAR + r || pods.some(([px, pz, pr]) => Math.hypot(px - x, pz - z) < pr + r + 6)) continue;
-    pods.push([x, z, r]);
-  }
-  for (const [px, pz, pr] of pods) {
-    const s = sinkAt(px, pz);
-    const ring = walls(s, "concrete", fp.hex(pr), px, pz, SEA - 0.8, SEA + 0.9, { tint: [0.84, 0.82, 0.78] });
-    cap(s, "garden", ring);
-    for (let k = 0; k < 4; k++) {
-      const a = k * 1.57 + rng.next();
-      const bx = px + Math.cos(a) * pr * 0.45;
-      const bz = pz + Math.sin(a) * pr * 0.45;
-      const bw = 3 + rng.next() * 2;
-      const h = 2.5 + rng.next() * 4.5;
-      const rr = walls(s, k % 2 ? "timber" : "glass", fp.rounded(bw, bw, 1, 2), bx, bz, SEA + 0.9, SEA + 0.9 + h);
-      cap(s, "garden", rr);
-      addTerrace(bx, SEA + 0.9 + h, bz, 0.55, "cherry");
-    }
-    solid(s, "dome", tpl("podDome", () => new SphereGeometry(1, 14, 6, 0, Math.PI * 2, 0, Math.PI / 2)), px, SEA + 0.9, pz, pr * 0.3, pr * 0.25, pr * 0.3);
-    lots.push({ x: px, z: pz, w: pr * 2, d: pr * 2, h: 8, top: SEA + 9 });
-  }
-  for (let k = 0; k < pods.length - 1; k++) {
-    const [ax2, az2] = pods[k];
-    const [bx2, bz2] = pods[k + 1];
-    const L = Math.hypot(bx2 - ax2, bz2 - az2);
-    if (L > 60) continue;
-    solid(sinkAt(ax2, az2), "concrete", tpl("bridgeBeam", () => new CylinderGeometry(0.5, 0.5, 1, 6).rotateZ(Math.PI / 2)), (ax2 + bx2) / 2, SEA + 0.85, (az2 + bz2) / 2, L, 0.6, 2.6, [0.95, 0.95, 0.95], -Math.atan2(bz2 - az2, bx2 - ax2));
-  }
-
-  mark("pods");
   const out: CityGeometry = {
     chunks: [...chunks.entries()].map(([key, s]) => ({ key, solid: s.solid.build(), glass: s.glass.build() })),
     crownA: shared.crownA.build(),

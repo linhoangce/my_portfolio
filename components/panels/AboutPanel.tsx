@@ -6,18 +6,14 @@ export function AboutPanel({ code, as = "h2" }: { code?: string; as?: HeadingTag
     <PanelShell id="about" title={about.title} kicker={kickerFor(code, "About")} as={as}>
       <p className="lead">{about.bio}</p>
       <div className="skills">
-        {about.skillGroups.map((group) => (
-          <div key={group.name}>
-            <span className="kicker">{group.name}</span>
-            <ul className="tags" aria-label={group.name}>
-              {group.items.map((item) => (
-                <li key={item} className="chip">
-                  {item}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
+        <span className="kicker">Favourite tools</span>
+        <ul className="tags" aria-label="Favourite tools">
+          {about.tools.map((item) => (
+            <li key={item} className="chip">
+              {item}
+            </li>
+          ))}
+        </ul>
       </div>
       <p className="meta">{about.now}</p>
     </PanelShell>

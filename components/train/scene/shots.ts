@@ -11,7 +11,7 @@ import { blockedSamples, roofAt } from "../camSafe";
 import { monumentFocus } from "../monuments";
 import type { ShotSpec } from "../sets/build";
 import { setRegistry } from "../sets/registry";
-import { SET_SIDE, STATION_FRAMES } from "../sets/zones";
+import { SET_SHIFT, SET_SIDE, STATION_FRAMES } from "../sets/zones";
 import { BLOCKERS, LANDMARKS, type LandmarkKey } from "../sites";
 import { groundAt, sdfAt } from "../terrain";
 import { trackDist, UP } from "../track";
@@ -35,9 +35,10 @@ export function shotFor(i: number, lowEnd: boolean): ShotPlan {
 }
 
 /** World position of (along, lateral toward the set, up) at stop i. */
-function stationPoint(i: number, [a, l, u]: V3): Vector3 {
+function stationPoint(i: number, [a0, l, u]: V3): Vector3 {
   const fr = STATION_FRAMES[i];
   const s = SET_SIDE[i];
+  const a = a0 + SET_SHIFT[i];
   return new Vector3(fr.x + fr.tx * a + fr.rx * l * s, fr.y + u, fr.z + fr.tz * a + fr.rz * l * s);
 }
 
@@ -68,7 +69,8 @@ function scienceWorldShot(lowEnd: boolean): ShotPlan {
   const fr = STATION_FRAMES[4];
   const station = new Vector3(fr.x, fr.y + 2, fr.z);
   const col = setRegistry.sets?.[4]?.anchors[1]?.clone() ?? station.clone();
-  const mid = sw.clone().lerp(col, 0.4);
+  // centred near the sphere, so its deck and the water round it stay in frame with the column beyond
+  const mid = sw.clone().lerp(col, 0.25);
   mid.y = sw.y + 2;
   const v = col.clone().sub(sw).setY(0).normalize();
   // look from over False Creek if it can: the bay in the foreground, the sphere on its point and the column and the
@@ -88,7 +90,7 @@ function scienceWorldShot(lowEnd: boolean): ShotPlan {
     }
   }
   const targets = [sw.clone().addScaledVector(UP, 8), sw.clone().addScaledVector(UP, -6), col, station];
-  const guessTo = mid.clone().addScaledVector(dir, 95).addScaledVector(UP, 28);
+  const guessTo = mid.clone().addScaledVector(dir, 108).addScaledVector(UP, 30);
   const to = search(mid, guessTo, targets, lowEnd, "scienceWorld", 4);
   const from = pullBack(to, mid, lowEnd, 16);
   return { from: { pos: from, look: mid.clone().addScaledVector(UP, -1.5) }, to: { pos: to, look: mid.clone() }, focus: mid, dist: [30, 200], owns: "scienceWorld" };

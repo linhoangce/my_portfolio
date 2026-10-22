@@ -4,7 +4,7 @@ import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo } from "react";
 import { BoxGeometry, BufferAttribute, BufferGeometry, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, PlaneGeometry, SpotLight, Vector3 } from "three";
 
-import { CAR, CROSS_LEN, GAP, TRAIN_LEN, VMAX } from "./constants";
+import { CAR, CROSS_LEN, GAP, HEAD, TRAIN_CARS, TRAIN_LEN, VMAX } from "./constants";
 import { type Sim, useTrain } from "./store";
 import { makeFrame, trainFrameAt, UP } from "./track";
 import { carGeometry, SECTION_CY, sectionRing } from "./trainGeometry";
@@ -161,17 +161,18 @@ function placeTrain(list: CarObj[], sPos: number, lane: number | ((sc: number) =
   }
 }
 
-/** Our four-car set on the right-hand track and the oncoming set on the left, plus a blob shadow on low-end devices. */
+/** Our three-car set on the right-hand track and the oncoming set on the left, plus a blob shadow on low-end devices. */
 export function Train() {
   const world = useWorld();
   const built = useMemo(() => {
     const spots: SpotLight[] = [];
-    const mk = () => [0, 1, 2, 3].map((i) => ({ off: -i * (CAR + GAP), obj: buildCar(world, i === 0, i === 3, spots) }));
+    // laid out about the train's middle (sim.s), the lead car HEAD ahead of it
+    const mk = () => Array.from({ length: TRAIN_CARS }, (_, i) => ({ off: HEAD - i * (CAR + GAP), obj: buildCar(world, i === 0, i === TRAIN_CARS - 1, spots) }));
     const cars = mk();
     const cars2 = mk();
     const bellowsMat = new MeshStandardMaterial({ color: 0x2f343c, roughness: 0.85, metalness: 0.1, side: 2 });
-    const bellows = new Bellows(3, bellowsMat);
-    const bellows2 = new Bellows(3, bellowsMat);
+    const bellows = new Bellows(TRAIN_CARS - 1, bellowsMat);
+    const bellows2 = new Bellows(TRAIN_CARS - 1, bellowsMat);
     const blob = new Mesh(new PlaneGeometry(4, TRAIN_LEN + 2), new MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.3, depthWrite: false }));
     blob.rotation.x = -Math.PI / 2;
     blob.visible = world.lowEnd;
@@ -206,8 +207,7 @@ export function Train() {
     world.mats.trainLine.emissiveIntensity = (0.5 + edge * 2.5) * (0.45 + 0.55 * speed);
     world.mats.underGlow.opacity = Math.max(0, edge - 0.15) * 0.5;
     if (built.blob.visible) {
-      const mid = sim.s - (sim.travelDir * TRAIN_LEN) / 2;
-      trainFrameAt(mid, sim.travelDir, laneAt(sim, mid), fA);
+      trainFrameAt(sim.s, sim.travelDir, laneAt(sim, sim.s), fA);
       built.blob.position.copy(fA.p).addScaledVector(UP, 1.02);
       built.blob.lookAt(tmp.copy(built.blob.position).add(fA.t));
       built.blob.rotateX(-Math.PI / 2);

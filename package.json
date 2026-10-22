@@ -11,7 +11,9 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "bake:terrain": "node scripts/terrain/bake.mjs"
+    "bake:terrain": "node scripts/terrain/bake.mjs",
+    "bake:rail": "node scripts/rail/bake.mjs",
+    "bake:streets": "node scripts/streets/bake.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.9",

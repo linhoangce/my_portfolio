@@ -9,6 +9,7 @@ import { EVENT_IDS, EVENT_META, type EventId, SEASONS, WEATHERS } from "../lookT
 import { MONUMENTS } from "../monumentData";
 import { useTrain } from "../store";
 import { eventSwatch } from "./MonumentCard";
+import { MAP_SOURCES } from "../mapSources";
 
 const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
 
@@ -69,7 +70,7 @@ export function Menu() {
         <h3>Scene</h3>
         <label className="toggle">
           <input type="checkbox" checked={autoLook} onChange={toggleAuto} />
-          Cycle seasons, weather and events on their own
+          Cycle day and night, seasons, weather and events on their own
         </label>
         <div className="chips" role="group" aria-label="Season">
           {SEASONS.map((s) => (
@@ -109,6 +110,19 @@ export function Menu() {
             </button>
           ))}
         </div>
+      </section>
+      <section>
+        <h3>Map data</h3>
+        <ul className="map-sources">
+          {MAP_SOURCES.map((m) => (
+            <li key={m.label}>
+              <a href={m.href} target="_blank" rel="noreferrer noopener">
+                {m.label}
+              </a>
+              : {m.note}
+            </li>
+          ))}
+        </ul>
       </section>
       <button type="button" className="btn" onClick={() => setUi("help")}>
         <Keyboard className="h-4 w-4" aria-hidden="true" />

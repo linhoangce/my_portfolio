@@ -38,40 +38,121 @@ function bilinear(g: GridDef, get: (k: number) => number, x: number, z: number):
 /** Elevation in metres from the baked city grid (edge-clamped outside it). */
 export const demMetres = (x: number, z: number): number => bilinear(DEM_CITY, (k) => DEM[k] / DEM_CITY.scale - DEM_CITY.bias, x, z);
 /**
- * The east basin of False Creek, redrawn: from Cambie Bridge to Science World on its point, with the inlet where the
- * daylighted China Creek runs in beside Creekside Park. The bake left most of it as land, and the stadiums stand
- * larger than life (they are sized against the train), so inside the box the shore is this polygon alone and the
- * basin lies a little south of the real one; across the box's west edge it blends into the baked creek. World units.
+ * False Creek, redrawn (world units):
+ * - the east basin: open water from the seawall under BC Place across to Science World on its point at the head of
+ *   the basin, as it is today and will stay. The north shore follows BC Place's seawall (Rogers Arena stands back from
+ *   it, to the east), the inlet where the daylighted China Creek runs in lies between Rogers and Creekside Park, and
+ *   Science World's promenade deck stands out over the water on piles round its west and south sides. The bake left
+ *   most of the basin as land, and the stadiums stand larger than life (they are sized against the train), so inside
+ *   the box the shore is this polygon alone and the basin lies a little south of the real one;
+ * - the creek: as wide as the real one (the bake had narrowed it to a canal), from the basin past Yaletown and the
+ *   Fairview shore, round Granville Island and out through its mouth into English Bay. Outside the box it only adds
+ *   water to the bake.
  */
-const REDRAWN = { x0: -60, x1: 100, z0: 118, z1: 246, blend: 12 };
+const REDRAWN = { x0: -60, x1: 100, z0: 118, z1: 258, blend: 12 };
+/** Science World's place on its point: the shore runs under its deck, 15.5 units out from the sphere. */
+export const SW_POINT = { x: 72, z: 214, shore: 15.5 };
+/** Corner-cut (Chaikin) so the drawn shore curves like a seawall rather than meeting at angles. */
+function rounded(poly: [number, number][], keep: (p: [number, number]) => boolean): [number, number][] {
+  const out: [number, number][] = [];
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    if (keep(a)) out.push(a);
+    else out.push([a[0] * 0.75 + b[0] * 0.25, a[1] * 0.75 + b[1] * 0.25]);
+    if (!keep(b)) out.push([a[0] * 0.25 + b[0] * 0.75, a[1] * 0.25 + b[1] * 0.75]);
+  }
+  return out;
+}
+const swArc: [number, number][] = Array.from({ length: 11 }, (_, k): [number, number] => {
+  const a = ((262 - 19.2 * k) * Math.PI) / 180;
+  return [SW_POINT.x + Math.cos(a) * SW_POINT.shore, SW_POINT.z + Math.sin(a) * SW_POINT.shore];
+});
+const onSwArc = (p: [number, number]) => swArc.includes(p);
 const EXTRA_WATER: [number, number][][] = [
-  [
-    [-78, 176],
-    [-44, 182],
-    [-22, 193],
-    [-4, 202],
-    [26, 203],
-    [41, 197],
-    [41, 166],
-    [52, 166],
-    [52, 182],
-    [55, 210],
-    [70, 217],
-    [90, 216],
-    [92, 224],
-    [70, 232],
-    [40, 232],
-    [0, 230],
-    [-30, 223],
-    [-62, 213],
-    [-82, 202],
-  ],
+  rounded(
+    [
+      [-78, 176],
+      [-60, 178],
+      // BC Place's seawall, 55 units out from the stadium, just past its plaza
+      [-41.5, 177.6],
+      [-30.1, 182.6],
+      [-17.8, 184.9],
+      [-5.4, 184.3],
+      [6.6, 181],
+      [17.5, 175.1],
+      [26.9, 166.8],
+      // under Rogers Arena, the creek's mouth beside Creekside Park, and down past the entrance hall to Science World
+      [36, 162],
+      [48, 160.5],
+      [62, 161],
+      [66, 166],
+      [66, 176],
+      [64, 186],
+      ...swArc,
+      // round its south side under the deck, then the south shore under the Olympic Village
+      [80.5, 233.5],
+      [79, 240],
+      [70, 246],
+      [50, 250],
+      [20, 252],
+      [-10, 249],
+      [-40, 241],
+      [-70, 231],
+      [-84, 226],
+    ],
+    onSwArc,
+  ),
+  rounded(
+    [
+      // the north shore: Yaletown, David Lam and George Wainborn Parks, Beach Avenue
+      [-40, 190],
+      [-62, 181],
+      [-80, 174],
+      [-100, 166],
+      [-120, 158],
+      [-140, 150],
+      [-158, 141],
+      [-175, 129],
+      [-190, 117],
+      [-203, 105],
+      [-212, 93],
+      // out into English Bay and back in past Kits Point
+      [-228, 80],
+      [-250, 92],
+      [-256, 118],
+      [-246, 132],
+      [-232, 150],
+      [-216, 162],
+      // Granville Island's north shore, then the Fairview shore back to the basin
+      [-204, 168],
+      [-185, 168],
+      [-166, 170],
+      [-156, 176],
+      [-148, 190],
+      [-132, 203],
+      [-112, 213],
+      [-92, 221],
+      [-72, 227],
+      [-50, 233],
+      [-40, 234],
+    ],
+    () => false,
+  ),
 ];
+/** The drawn shores (water inside), for the seawall and the walk along it. */
+export const SHORES = EXTRA_WATER;
+/**
+ * Where the shore is cut sharp: the ground raster's 6-unit cells would ramp a seawall's drop out into the water, so
+ * over False Creek the ground is cut at the shore (Ground's mask), a wall closes the edge and the far terrain below is
+ * sunk out of sight.
+ */
+export const SHORE_BOX = { x0: -272, x1: REDRAWN.x1, z0: 70, z1: 262 };
 const EXTRA_BOX = EXTRA_WATER.map((p) => [Math.min(...p.map((q) => q[0])), Math.max(...p.map((q) => q[0])), Math.min(...p.map((q) => q[1])), Math.max(...p.map((q) => q[1]))]);
 
-/** Signed distance to a polygon's edge, negative inside. */
-function polySdf(poly: [number, number][], x: number, z: number): number {
-  let d = Infinity;
+/** Signed distance to a polygon's edge, negative inside (squared distances in the loop: this runs per ground sample). */
+export function polySdf(poly: [number, number][], x: number, z: number): number {
+  let d2 = Infinity;
   let inside = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
     const [ax, az] = poly[j];
@@ -79,9 +160,12 @@ function polySdf(poly: [number, number][], x: number, z: number): number {
     const ex = bx - ax;
     const ez = bz - az;
     const t = Math.min(1, Math.max(0, ((x - ax) * ex + (z - az) * ez) / (ex * ex + ez * ez)));
-    d = Math.min(d, Math.hypot(x - ax - ex * t, z - az - ez * t));
+    const dx = x - ax - ex * t;
+    const dz = z - az - ez * t;
+    d2 = Math.min(d2, dx * dx + dz * dz);
     if (az > z !== bz > z && x < ax + ((z - az) * (bx - ax)) / (bz - az)) inside = !inside;
   }
+  const d = Math.sqrt(d2);
   return inside ? -d : d;
 }
 
@@ -101,7 +185,8 @@ export const sdfAt = (x: number, z: number): number => {
   }
   return Math.min(s, drawn);
 };
-export const inWater = (x: number, z: number): boolean => sdfAt(x, z) < 0;
+/** In the sea, or in Trout Lake as drawn (its water reaches a little past the map's outline). */
+export const inWater = (x: number, z: number): boolean => sdfAt(x, z) < 0 || lakeR(x, z) < 1.05;
 /**
  * Water in the redrawn east basin. Pads stop at it (a seawall), where elsewhere the station pads keep the shore
  * they were built on round Waterfront, Burrard and Granville.

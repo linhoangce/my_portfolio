@@ -18,6 +18,7 @@ import { Intro } from "./ui/Intro";
 import { Help, Menu } from "./ui/Menu";
 import { MonumentCard } from "./ui/MonumentCard";
 import { Readout } from "./ui/Readout";
+import { MapCredit } from "./ui/MapCredit";
 import { SceneCaptions } from "./ui/SceneCaptions";
 import { SceneOverlay } from "./ui/SceneOverlay";
 import { TopBar } from "./ui/TopBar";
@@ -126,6 +127,7 @@ export function TrainGate() {
       <FilmFx />
       <TopBar />
       <Readout />
+      <MapCredit />
       <DriveButtons />
       <SceneCaptions />
       <SceneOverlay />

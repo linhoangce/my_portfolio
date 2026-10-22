@@ -3,7 +3,7 @@
  * runs on the same warped clock. The camera rig reads the phase and blends between its modes on its own.
  *
  * Arm: the visitor is heading for a stop and is within ~1.6 s of the brake curve (50 units, 20 when slow), or sits
- * docked there with the overlay not dismissed. Cut: 0.28 s dip to black, the camera snaps under it. Establish: the
+ * docked there, unless the visitor dismissed that stop's scene (Esc) and has not stopped anywhere else since. Cut: 0.28 s dip to black, the camera snaps under it. Establish: the
  * authored shot (a short push-in on the set) with the copy revealed in stages. Hold: orbit the set until the visitor
  * drives on. Exit: 1.2 s blend back to the chase; the stop just left cannot re-arm for 3 s, the next one can at once.
  */
@@ -33,11 +33,14 @@ export function stepFilm(st: TrainState, dt: number): void {
   }
 
   if (film.phase === "idle") {
+    // a stop the visitor dismissed stays dismissed (round the loop and back, or a scroll that settles there again) until
+    // the train stops at another one, or the visitor picks it (driveTo clears it)
+    if (st.dismissed !== null && st.dockedIdx !== null && st.dockedIdx !== st.dismissed) useTrain.setState({ dismissed: null });
     if (!st.introDone || st.monument || st.cab) return;
     for (let i = 0; i < sim.stationS.length; i++) {
       if (film.cooldown > 0 && i === film.idx) continue;
       const d = Math.abs(sim.stationS[i] - sim.s);
-      const arriving = sim.target === sim.stationS[i] && d <= (Math.abs(sim.v) < 8 ? 20 : 50);
+      const arriving = sim.target === sim.stationS[i] && d <= (Math.abs(sim.v) < 8 ? 20 : 50) && st.dismissed !== i;
       // from the train's own position: the store's docked index lags a frame behind a jump
       const sitting = d < DOCK_DIST && Math.abs(sim.v) < DOCK_V && st.dismissed !== i && sim.target === null && sim.throttle === 0;
       if (arriving || sitting) {

@@ -1,31 +1,41 @@
 /**
- * Deck heights along the alignment: the low-passed ground plus the deck height, never closer than CLEAR_DECK to the
- * ground beside the track, raise-only grade limiting, level platforms and the Grandview Cut where the deck rides low.
- * Pure: reads the coast-clamped DEM only, before any pad or carve exists.
+ * Deck heights along an alignment from its structure (OSM's viaduct, grade, cutting and tunnel runs): on a viaduct the
+ * low-passed ground plus the deck height, never closer than the clearance to the ground beside the track; at grade a
+ * ballast's depth over the smoothed ground; in a cutting or a covered trench below it. Raise-only grade limiting (a
+ * little steeper on the ramps between structures), level platforms and vertical curves. Pure: reads the coast-clamped
+ * DEM only, before any pad or carve exists.
  */
-import { CLEAR_DECK, CUT, DECK, GRADE_CAP, GRADE_CAP_RAMP, PLATFORM_FLAT } from "./constants";
+import { BALLAST, CLEAR_DECK, CUT_EXPO, DECK, GRADE_CAP, GRADE_CAP_RAMP, PLATFORM_FLAT } from "./constants";
+import type { RailClass } from "./railData";
 import { demAt } from "./terrain";
 
-const sstep = (a: number, b: number, x: number) => {
-  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
-  return t * t * (3 - 2 * t);
-};
+/**
+ * A line's structure heights: deck over the ground on a viaduct, ballast at grade, depth in a trench, clearance floor,
+ * and how far before and after a stretch at grade or in a cutting its viaduct starts to come down.
+ */
+export type Structure = { deck: number; ballast: number; cut: number; clear: number; taper: number };
+export const EXPO_STRUCTURE: Structure = { deck: DECK, ballast: BALLAST, cut: CUT_EXPO, clear: CLEAR_DECK, taper: 160 };
 
 export type Profile = {
   /** Deck height per control point. */
   y: number[];
   /** Cumulative horizontal distance per control point. */
   s: number[];
-  /** Grandview Cut weight per control point (0 outside, 1 in the trench). */
+  /** How far the track has come down per control point: 0 on a viaduct, 1 at grade, in a cutting or a trench. */
+  low: number[];
+  /** Of that, the trench's share (cutting or tunnel), where the ground is dug down to the track. */
   cut: number[];
-  /** Deck height above the original ground through the held part of the cut (reported by the debug handle). */
+  /** The structure each control point is in. */
+  mode: RailClass[];
+  /** Mean deck height above the original ground where the track runs low (reported by the debug handle). */
   cutOffset: number;
   /** Ground beside the track and the clearance floor per control point (for the debug handle). */
   ground: number[];
   lower: number[];
 };
 
-export function solveProfile(pts: [number, number][], stationIdx: number[], cutFrom: number, cutTo: number): Profile {
+/** `cls` holds one structure class per point. */
+export function solveProfile(pts: [number, number][], stationIdx: number[], cls: string, st: Structure = EXPO_STRUCTURE): Profile {
   const n = pts.length;
   const s = [0];
   for (let i = 1; i < n; i++) s.push(s[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
@@ -42,16 +52,43 @@ export function solveProfile(pts: [number, number][], stationIdx: number[], cutF
     const rz = tx / L;
     return Math.max(demAt(x, z), demAt(x + rx * 8, z + rz * 8), demAt(x - rx * 8, z - rz * 8));
   });
-  // in the cut the trench floor replaces the ground beside the track, so only the centreline counts there
+  // where the track runs low the ground is shaped to it, so only the centreline counts there
   const gc = pts.map(([x, z]) => demAt(x, z));
-  const cut = s.map((si) => (cutTo > cutFrom ? sstep(cutFrom, cutFrom + CUT.rampIn, si) * (1 - sstep(cutTo - CUT.rampOut, cutTo, si)) : 0));
-  const ramp = s.map((si) => cutTo > cutFrom && si > cutFrom - 10 && si < cutTo + 10);
+  const mode = [...cls] as RailClass[];
+  // each structure's share, eased over about ±40 units so the deck ramps between them
+  const share = (want: (c: RailClass) => boolean) => {
+    const sig = 20 / step;
+    const span = Math.ceil(sig * 2.5);
+    return s.map((_, i) => {
+      let acc = 0;
+      let w = 0;
+      for (let k = -span; k <= span; k++) {
+        const j = Math.min(n - 1, Math.max(0, i + k));
+        const ww = Math.exp(-(k * k) / (2 * sig * sig));
+        acc += (want(mode[j]) ? 1 : 0) * ww;
+        w += ww;
+      }
+      return acc / w;
+    });
+  };
+  const low = share((c) => c !== "V");
+  const cut = share((c) => c === "C" || c === "T");
+  // a viaduct settles toward the ground as it nears a stretch where the line comes down (as the real approach viaducts
+  // do), so the ramp between them stays within the grade cap: full height st.taper away, a low 3 units at the stretch
+  const near = s.map((si) => {
+    let m = 0;
+    for (let j = 0; j < n; j++) if (mode[j] !== "V") m = Math.max(m, 1 - Math.abs(s[j] - si) / st.taper);
+    return m * m * (3 - 2 * m);
+  });
+  const deck = near.map((v) => st.deck - (st.deck - 3) * v);
+  const clear = near.map((v) => st.clear - (st.clear - 1.5) * v);
+  const ramp = near.map((v) => v > 0.01);
 
-  // low-passed ground (σ ≈ 60 units) plus the deck height, and the clearance floor
-  const sig = 60 / step;
-  const span = Math.ceil(sig * 3);
-  const lowPass = (src: number[]) =>
-    src.map((_, i) => {
+  // low-passed ground (σ ≈ 60 units under a viaduct, 20 where the track comes down to it), and the clearance floor
+  const lowPassBy = (src: number[], sigma: number) => {
+    const sig = sigma / step;
+    const span = Math.ceil(sig * 3);
+    return src.map((_, i) => {
       let acc = 0;
       let w = 0;
       for (let k = -span; k <= span; k++) {
@@ -62,6 +99,8 @@ export function solveProfile(pts: [number, number][], stationIdx: number[], cutF
       }
       return acc / w;
     });
+  };
+  const lowPass = (src: number[]) => lowPassBy(src, 60);
   const envelope = (src: number[]) =>
     src.map((_, i) => {
       let m = -1e9;
@@ -70,16 +109,18 @@ export function solveProfile(pts: [number, number][], stationIdx: number[], cutF
       return m;
     });
   const lp = lowPass(g);
-  const lpc = lowPass(gc);
+  const lpc = lowPassBy(gc, 20);
   const env = envelope(g);
-  const envc = envelope(gc);
-  const lower = env.map((e, i) => (e + CLEAR_DECK) * (1 - cut[i]) + (envc[i] + 1.5) * cut[i]);
-  let y = lp.map((v, i) => Math.max((v + DECK) * (1 - cut[i]) + (lpc[i] + CUT.offset) * cut[i], lower[i]));
+  const lower = env.map((e, i) => (e + clear[i]) * (1 - low[i]) + (lpc[i] - st.cut - 1) * low[i]);
+  // the trench's floor sits st.cut under the ground; at grade the track rides a ballast's depth over it
+  let y = lp.map((v, i) => Math.max((v + deck[i]) * (1 - low[i]) + (lpc[i] + st.ballast) * (low[i] - cut[i]) + (lpc[i] - st.cut) * cut[i], lower[i]));
 
   const limit = () => {
     for (let i = 1; i < n; i++) y[i] = Math.max(y[i], y[i - 1] - (ramp[i] ? GRADE_CAP_RAMP : GRADE_CAP) * (s[i] - s[i - 1]));
     for (let i = n - 2; i >= 0; i--) y[i] = Math.max(y[i], y[i + 1] - (ramp[i] ? GRADE_CAP_RAMP : GRADE_CAP) * (s[i + 1] - s[i]));
   };
+  // a platform levels at its highest point: up on a viaduct it must clear the ground everywhere, and down at grade or
+  // in a cutting the station's pad shapes the ground to it
   const flatten = () => {
     for (const si of stationIdx) {
       let m = -1e9;
@@ -146,6 +187,6 @@ export function solveProfile(pts: [number, number][], stationIdx: number[], cutF
 
   let off = 0;
   let cnt = 0;
-  for (let i = 0; i < n; i++) if (cut[i] > 0.98) { off += y[i] - g[i]; cnt++; }
-  return { y, s, cut, cutOffset: cnt ? off / cnt : 0, ground: g, lower };
+  for (let i = 0; i < n; i++) if (low[i] > 0.98) { off += y[i] - gc[i]; cnt++; }
+  return { y, s, low, cut, mode, cutOffset: cnt ? off / cnt : 0, ground: g, lower };
 }
