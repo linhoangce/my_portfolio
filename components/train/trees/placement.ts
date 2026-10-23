@@ -13,6 +13,7 @@ import { railNear } from "../rail";
 import { junction, type Near, pointAt, roadDist, roadNear, roads, WALK } from "../roadNetwork";
 import { onFeature } from "../commonsLayout";
 import { inSetZone } from "../sets/zones";
+import { inYard } from "../railYard";
 import { inLandmark, inPark, inPoly, nearBridge, parkAt, parkPathDist, PARKS, PLANTED, streamDist } from "../sites";
 import { groundAt, inWater, sdfAt, slopeAt } from "../terrain";
 import { LEN, nearestStation, SAMPLES, samples, stationS, trackDist, trackNearest } from "../track";
@@ -302,5 +303,6 @@ export function placeTrees(rng: Rng, lowEnd: boolean, lots: LotBox[]): TreeInst[
   const keepNearW = Math.min(1, roomW / Math.max(1, nNearW));
   const keepFarW = Math.min(1, Math.max(0, roomW - nNearW * keepNearW) / Math.max(1, woods.length - nNearW));
   for (const w of woods) if (rng.next() < (w.far ? keepFarW : keepNearW)) add(w.x, w.z, w.id, w.s);
-  return out;
+  // none on the rail yard's fill (railYard.ts), taken out after, so every other tree stands where it did
+  return out.filter((t) => !inYard(t.x, t.z));
 }

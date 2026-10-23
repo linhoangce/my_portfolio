@@ -58,10 +58,6 @@ const m4 = new Matrix4();
 const q = new Quaternion();
 const one = new Vector3(1, 1, 1);
 const p = new Vector3();
-const sstep = (a: number, b: number, x: number) => {
-  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
-  return t * t * (3 - 2 * t);
-};
 const rect = (w: number, d: number, x = 0, z = 0): P2[] => [
   [x - w / 2, z - d / 2],
   [x + w / 2, z - d / 2],
@@ -153,47 +149,47 @@ const hotelTexture = () =>
   );
 
 /**
- * The sail roof as the fabric hangs: one membrane over the terminal, pulled up to a sharp point at the head of every
- * mast, its flanks falling concave (steep at the peak, flattening toward the foot) and creased where two peaks meet;
- * round the edge it is held by cables between anchor points, so the hem lifts in a scallop between each pair. The
- * grid runs through every mast, so each peak is a vertex and stays sharp.
+ * Canada Place's sails as the fabric hangs, after the real ones seen from the water: a row of sails down the roof,
+ * each a sweep of fabric curving down between two poles and pointing up at both ends, where a pole holds it. The poles
+ * stand along both long edges (x = ±halfW) at the z's in `poles` (ascending), each pulling the fabric up to its own
+ * height above `base` (`peaks`). Along an edge the fabric sags between two poles to `dip` of their height; across the
+ * roof it sags from the edges to `mid` of theirs; at the edges and ends it falls straight to the roof, so from the side
+ * each sail reads as a white sweep between two points. The grid runs through every pole, so each point stays sharp.
  */
-function sailRoof(halfW: number, halfL: number, base: number, masts: P2[], peaks: number[], R: number, step: number, zc = 0): BufferGeometry {
-  const anchors = 9;
-  const h = (x: number, z: number) => {
-    let top = 0;
-    for (let k = 0; k < masts.length; k++) {
-      const d = Math.hypot(x - masts[k][0], z - masts[k][1]) / R;
-      if (d < 1) top = Math.max(top, peaks[k] * (1 - d) ** 2.6);
-    }
-    // the hem: scallops between anchors along the sides and across the ends
-    const side = Math.abs(Math.sin((((z - zc + halfL) / (2 * halfL)) * anchors * Math.PI) % Math.PI));
-    const end = Math.abs(Math.sin((((x + halfW) / (2 * halfW)) * 3 * Math.PI) % Math.PI));
-    const lift = 1.9 * sstep(halfW - 3.4, halfW, Math.abs(x)) * side + 1.6 * sstep(halfL - 3.4, halfL, Math.abs(z - zc)) * end;
-    return base + top + lift;
+function sailRoof(halfW: number, poles: number[], peaks: number[], base: number, step: number, dip = 0.16, mid = 0.55): BufferGeometry {
+  const n = poles.length - 1;
+  const edge = (z: number): number => {
+    let k = 0;
+    while (k < n - 1 && z > poles[k + 1]) k++;
+    const u = Math.min(1, Math.max(0, (z - poles[k]) / (poles[k + 1] - poles[k])));
+    return (peaks[k] + (peaks[k + 1] - peaks[k]) * u) * (dip + (1 - dip) * (2 * u - 1) ** 2);
   };
+  const h = (x: number, z: number) => base + edge(z) * (mid + (1 - mid) * (x / halfW) ** 2);
   const xs: number[] = [];
   const zs: number[] = [];
   for (let x = -halfW; x <= halfW + 1e-6; x += step) xs.push(x);
-  for (let z = zc - halfL; z <= zc + halfL + 1e-6; z += step) zs.push(z);
-  for (const [mx, mz] of masts) {
-    if (!xs.some((x) => Math.abs(x - mx) < 1e-3)) xs.push(mx);
-    if (!zs.some((z) => Math.abs(z - mz) < 1e-3)) zs.push(mz);
-  }
-  xs.sort((a, b) => a - b);
-  zs.sort((a, b) => a - b);
-  const nx = xs.length - 1;
+  if (Math.abs(xs[xs.length - 1] - halfW) > 1e-3) xs.push(halfW);
+  for (let z = poles[0]; z <= poles[n] + 1e-6; z += step) zs.push(z);
+  for (const pz of poles) if (!zs.some((z) => Math.abs(z - pz) < 1e-3)) zs.push(pz);
+  zs.sort((a, c) => a - c);
   const pos: number[] = [];
   const idx: number[] = [];
-  zs.forEach((z, j) => {
-    xs.forEach((x, i) => {
-      pos.push(x, h(x, z), z);
-      if (i < nx && j < zs.length - 1) {
-        const a = j * (nx + 1) + i;
-        idx.push(a, a + nx + 1, a + 1, a + 1, a + nx + 1, a + nx + 2);
+  // a grid of points (cols × rows) laid by f, its quads into idx
+  const grid = (cols: number, rows: number, f: (i: number, j: number) => [number, number, number]) => {
+    const o = pos.length / 3;
+    for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) pos.push(...f(i, j));
+    for (let j = 0; j + 1 < rows; j++) {
+      for (let i = 0; i + 1 < cols; i++) {
+        const q = o + j * cols + i;
+        idx.push(q, q + cols, q + 1, q + 1, q + cols, q + cols + 1);
       }
-    });
-  });
+    }
+  };
+  // the fabric over the roof
+  grid(xs.length, zs.length, (i, j) => [xs[i], h(xs[i], zs[j]), zs[j]]);
+  // its falls to the roof: down both long edges (under each sweep) and across both ends
+  for (const x of [-halfW, halfW]) grid(zs.length, 2, (i, j) => [x, j ? h(x, zs[i]) : base, zs[i]]);
+  for (const z of [poles[0], poles[n]]) grid(xs.length, 2, (i, j) => [xs[i], j ? h(xs[i], z) : base, z]);
   const g = new BufferGeometry();
   g.setAttribute("position", new BufferAttribute(new Float32Array(pos), 3));
   g.setIndex(idx);
@@ -351,12 +347,24 @@ export function buildCanadaPlace(l: PlacedLandmark, world: World): Built {
   const hotelMat = cityToned(world, new MeshStandardMaterial({ map: ht.map, emissiveMap: ht.glow, emissive: 0xffffff, roughness: 0.6 }));
   const terminal = new Mesh(merge(glassWalls), terminalMat);
   const hotelMesh = new Mesh(walls(hotel, deck, hotelTop, { uPer: 4, vPer: 3.2 }), hotelMat);
-  // the sails: five in a row down the hall, a mast through each standing a little proud of its peak, the seaward ones
-  // the tallest; the masts step a little either side of the middle
-  const SAIL_Z = [22, 16, 10, 4, -2].map((sz) => Z(sz) + 0);
-  const SAIL_ROOF = { zc: Z(11.5), half: 15.5 };
-  const masts: P2[] = SAIL_Z.map((z, k): P2 => [(k % 2 ? -1 : 1) * 1.4, z]);
-  const peaks = masts.map(([, z]) => 9.6 + 2.4 * sstep(-26, 2, -shore * z));
+  // the sails: five in a row down the hall, each sweeping down between two poles and up to a point at both; six
+  // poles along each long edge, standing well proud of their points, stays from their heads out to the roof's edge.
+  // SAIL_Z: each sail's middle, from the shore end out (their floodlight colours run in this order)
+  const POLE_S = [26.5, 20.5, 14.5, 8.5, 2.5, -3.5];
+  const SAIL_Z = POLE_S.slice(1).map((sz, k) => Z((sz + POLE_S[k]) / 2));
+  const SAIL_W = 9;
+  const poleH = POLE_S.map((_, k) => (k === POLE_S.length - 1 ? 12.5 : 11.5));
+  const masts: P2[] = POLE_S.flatMap((sz): P2[] => [
+    [-SAIL_W, Z(sz)],
+    [SAIL_W, Z(sz)],
+  ]);
+  const peaks = POLE_S.flatMap((_, k) => [poleH[k], poleH[k]]);
+  // the roof terrace either side of the sails: planters of shrubs along its edge
+  for (let sz = -1; sz <= 25; sz += 4.4) {
+    for (const x of [-11, 11]) {
+      solid.push(paint(new BoxGeometry(1.0, 0.55, 2.6).translate(x, deck + HALL.h + 0.7, Z(sz)), 0xb5603a), paint(new IcosahedronGeometry(0.75, 0).scale(1, 0.8, 1.4).translate(x, deck + HALL.h + 1.3, Z(sz)), 0x4f7a3e));
+    }
+  }
   const upper = deck + HALL.h + 0.4;
   const sailMat = new MeshStandardMaterial({ color: 0xfbfbf9, roughness: 0.6, side: DoubleSide, emissive: 0xfff1d8, emissiveIntensity: 0 });
   // after dark each sail is floodlit in its own colour: blue, green, white, orange and red, or the event's; the fabric's
@@ -396,26 +404,39 @@ export function buildCanadaPlace(l: PlacedLandmark, world: World): Built {
         ].join("\n"),
       );
   };
-  const roof = new Mesh(sailRoof(13, SAIL_ROOF.half, upper, masts, peaks, 7.4, lowEnd ? 0.9 : 0.5, SAIL_ROOF.zc), sailMat);
+  // (the poles in ascending z, whichever end the shore is)
+  const order = POLE_S.map((_, k) => k).sort((a, b) => Z(POLE_S[a]) - Z(POLE_S[b]));
+  const roof = new Mesh(sailRoof(SAIL_W, order.map((k) => Z(POLE_S[k])), order.map((k) => poleH[k]), upper, lowEnd ? 0.9 : 0.5), sailMat);
   roof.castShadow = !lowEnd;
-  const mastGeo: BufferGeometry[] = masts.map(([x, z], k) => paint(new CylinderGeometry(0.14, 0.24, peaks[k] + 2.4, 8).translate(x, upper + (peaks[k] + 2.4) / 2, z), 0xf3f4f6));
+  const MAST_UP = 3.4;
+  const mastGeo: BufferGeometry[] = masts.map(([x, z], k) => paint(new CylinderGeometry(0.12, 0.24, peaks[k] + MAST_UP, 8).translate(x, upper + (peaks[k] + MAST_UP) / 2, z), 0xf3f4f6));
+  // the stays: from each pole's head out and down to the roof's edge, fore and aft
+  const stay = (a: Vector3, b: Vector3) => {
+    const len = a.distanceTo(b);
+    const g = new CylinderGeometry(0.035, 0.035, len, 4).translate(0, len / 2, 0);
+    g.applyQuaternion(new Quaternion().setFromUnitVectors(UPV, b.clone().sub(a).normalize())).translate(a.x, a.y, a.z);
+    return paint(g, 0xd9dcdf);
+  };
+  masts.forEach(([x, z], k) => {
+    const head = new Vector3(x, upper + peaks[k] + MAST_UP - 0.3, z);
+    for (const dz of [-2.4, 2.4]) mastGeo.push(stay(head, new Vector3(x + Math.sign(x) * 2.6, upper - 0.2, z + dz)));
+  });
   // uplights along the sails' feet, in the event's colours (one mesh for each of the two colours)
   for (const odd of [0, 1]) {
-    const ups = [...SAIL_Z.entries()].filter(([i]) => i % 2 === odd).map(([, z]) => new BoxGeometry(0.4, 0.2, 2.4).translate(odd ? 10.5 : -10.5, upper + 0.15, z));
+    const ups = [...SAIL_Z.entries()].filter(([i]) => i % 2 === odd).map(([, z]) => new BoxGeometry(0.4, 0.2, 2.4).translate(odd ? SAIL_W + 0.6 : -SAIL_W - 0.6, upper + 0.15, z));
     if (ups.length) g.add(new Mesh(merge(ups), odd ? events.glowB : events.glow));
   }
   const solidMesh = new Mesh(merge([...solid, ...mastGeo]), cityToned(world, new MeshStandardMaterial({ vertexColors: true, roughness: 0.7 })));
   solidMesh.receiveShadow = true;
-  // a cruise ship berthed on each side, bows to the sea, toward the pier's end so their sterns keep off the bank at
-  // the pier's root (the bows reach a little past the end): both in the same two meshes
+  // the cruise ship berthed on the east side, on the open inlet (the west side faces Coal Harbour's island and Stanley
+  // Park: no room to come and go), bow to the sea, toward the pier's end so its stern keeps off the bank at the
+  // pier's root (the bow reaches a little past the end)
   const BERTH = -shore * 16;
   const shipX = 15.5 + 4.4 + 0.4;
   const ship = cruiseShip(lowEnd);
-  const berth = (geo: BufferGeometry, sx: number) => geo.clone().rotateY(shore > 0 ? Math.PI : 0).translate(sx * shipX, water + 0.05, BERTH);
-  const shipSolidGeo = merge([berth(ship.solid, 1), berth(ship.solid, -1)]);
-  const shipCabinGeo = merge([berth(ship.cabins, 1), berth(ship.cabins, -1)]);
-  ship.solid.dispose();
-  ship.cabins.dispose();
+  const berth = (geo: BufferGeometry) => geo.rotateY(shore > 0 ? Math.PI : 0).translate(shipX, water + 0.05, BERTH);
+  const shipSolidGeo = berth(ship.solid);
+  const shipCabinGeo = berth(ship.cabins);
   const shipSolid = new Mesh(shipSolidGeo, cityToned(world, new MeshStandardMaterial({ vertexColors: true, roughness: 0.5, envMap: envTex, envMapIntensity: 0.4 })));
   const ct = cabinTexture();
   const shipCabins = new Mesh(shipCabinGeo, cityToned(world, new MeshStandardMaterial({ map: ct.map, emissiveMap: ct.glow, emissive: 0xffffff, roughness: 0.4, envMap: envTex, envMapIntensity: 0.5 }), 1.2));
@@ -433,12 +454,10 @@ export function buildCanadaPlace(l: PlacedLandmark, world: World): Built {
       const [x, wz] = toWorld(-15.5, z);
       return { x, z: wz, y: l.padY + deck, h: 5, w: 16, col: warm, gain: 0.45 };
     }),
-    ...[-1, 1].flatMap((sx) =>
-      [-24, -8, 8, 24].map((z) => {
-        const [x, wz] = toWorld(sx * shipX, z + BERTH);
-        return { x, z: wz, y: l.padY + water, h: 16, w: 14, col: warm, gain: 0.5 };
-      }),
-    ),
+    ...[-24, -8, 8, 24].map((z) => {
+      const [x, wz] = toWorld(shipX, z + BERTH);
+      return { x, z: wz, y: l.padY + water, h: 16, w: 14, col: warm, gain: 0.5 };
+    }),
   ]);
   events.followers.push((level, ev) => {
     const n = nightOf(level);

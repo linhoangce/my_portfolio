@@ -6,6 +6,7 @@ import { BoxGeometry, BufferGeometry, CatmullRomCurve3, Color, CylinderGeometry,
 
 import { BALLAST, CAR, GAP, LANE, TRENCH } from "./constants";
 import { mirror, ribbon } from "./Guideway";
+import { bedProfile, clearHeights, resample } from "./bedLift";
 import { merged, type Part } from "./merge";
 import { tunnelPortal } from "./portal";
 import { BROADWAY_LINE, BROADWAY_PORTAL, FREIGHT_LINES, inRailCut, type Line, MILL_LINE, profileAt } from "./rail";
@@ -33,13 +34,21 @@ function framesOf(line: Line, s0: number, s1: number, step: number): Frame[] {
   return out;
 }
 
-/** Frames along a polyline laid on the ground (the freight tracks), `lift` over it. */
-function groundFrames(pts: readonly (readonly [number, number])[], lift: number): Frame[] {
+/** The freight track's bed's half-width. */
+const FREIGHT_HALF = 1.9;
+
+/**
+ * Frames along a polyline laid on the ground (the freight tracks), every 2.5 units, `lift` over a bed that clears the
+ * ground as drawn across it (bedLift.ts).
+ */
+function groundFrames(line: readonly (readonly [number, number])[], lift: number, lowEnd: boolean): Frame[] {
+  const pts = resample(line, 2.5);
+  const ys = clearHeights(pts, FREIGHT_HALF, lift, lowEnd);
   return pts.map(([x, z], i) => {
     const a = pts[Math.max(0, i - 1)];
     const b = pts[Math.min(pts.length - 1, i + 1)];
     const f = makeFrame();
-    f.p.set(x, groundAt(x, z) + lift, z);
+    f.p.set(x, ys[i], z);
     f.t.set(b[0] - a[0], 0, b[1] - a[1]).normalize();
     f.r.crossVectors(f.t, UP).normalize();
     return f;
@@ -387,7 +396,9 @@ export function Millennium() {
       const last = MILL_LINE.stationS[MILL_LINE.stationS.length - 1];
       const fr = framesOf(MILL_LINE, Math.min(MILL_LINE.len - 20, last + 30), MILL_LINE.len, 3);
       const gy = groundAt(fr[0].p.x, fr[0].p.z);
-      const h = tunnelPortal(fr, { mouthW: 10, mouthH: 6.5, below: 2.4, half: 26, crest: 10, drop: fr[0].p.y - gy + 2, trees: lowEnd ? 16 : 34, shrubs: false });
+      // the dark lining runs nearly the hill's length: the trains wait inside it
+      const depth = fr[0].p.distanceTo(fr[fr.length - 1].p) - 2;
+      const h = tunnelPortal(fr, { mouthW: 10, mouthH: 6.5, below: 2.4, half: 26, crest: 10, drop: fr[0].p.y - gy + 2, trees: lowEnd ? 16 : 34, shrubs: false, depth });
       return merged([
         ...h.berm.map((g) => ({ geo: paint(g, 0x3f6b35) })),
         ...h.wall.map((g) => ({ geo: paint(g, 0xc9c4ba) })),
@@ -400,8 +411,9 @@ export function Millennium() {
     // ------------------------------------------------------------------ freight in the cut
     const ballast: BufferGeometry[] = [];
     for (const fl of FREIGHT_LINES) {
-      const fr = groundFrames(fl.pts, 0.12);
-      ballast.push(ribbon([[1.9, 0], [-1.9, 0]], fr, false));
+      const fr = groundFrames(fl.pts, 0.12, lowEnd);
+      // the bed, its shoulders falling into the ground either side
+      ballast.push(ribbon(bedProfile(FREIGHT_HALF, 2), fr, false));
       sleepers.push(ribbon([[1.3, 0.06], [-1.3, 0.06]], fr, false, 0.65));
       for (const side of [-1, 1]) {
         const pts = fr.map((g) => g.p.clone().addScaledVector(g.r, side * 0.72).addScaledVector(UP, 0.14));
@@ -490,8 +502,11 @@ export function Millennium() {
     [built],
   );
 
-  // two trains shuttle the line, stopping at every station, each on the right-hand track for its direction of travel
-  const stops = MILL_LINE.stationS;
+  // two trains run the line from tunnel to tunnel, stopping at every station, each on the right-hand track for its
+  // direction of travel: out of the Broadway Subway's portal (the line runs on west under Broadway), through VCC–Clark
+  // and east to Holdom, into the tunnel under the hill past it, and back. Along the route, u < 0 is the Broadway
+  // line's s = -u (from VCC–Clark west), u ≥ 0 the line's s = u. At each end a train waits out of sight.
+  const stops = [-(BROADWAY_PORTAL + 34), ...MILL_LINE.stationS, MILL_LINE.len - 10];
   const legs = stops.slice(1).map((s, i) => s - stops[i]);
   const V = 22;
   const DWELL = 6;
@@ -525,12 +540,19 @@ export function Millennium() {
   const fs = new Vector3(1, 1, 1);
   const Z = new Vector3(0, 0, 1);
   const cn = FREIGHT_LINES[0];
-  const cnFrames = useMemo(() => (cn ? groundFrames(cn.pts, 0.2) : []), [cn]);
+  const cnFrames = useMemo(() => (cn ? groundFrames(cn.pts, 0.2, lowEnd) : []), [cn, lowEnd]);
   const cnStep = cnFrames.length > 1 ? cnFrames[0].p.distanceTo(cnFrames[cnFrames.length - 1].p) / (cnFrames.length - 1) : 1;
   const onLine = (x: number, out: Frame) => {
-    const u = Math.min(1, Math.max(0, x / MILL_LINE.len));
-    MILL_LINE.curve.getPointAt(u, out.p);
-    MILL_LINE.curve.getTangentAt(u, out.t).normalize();
+    if (x < 0) {
+      // west of VCC–Clark, on the Broadway line, heading the way u grows (back toward VCC–Clark)
+      const v = Math.min(1, -x / BROADWAY_LINE.len);
+      BROADWAY_LINE.curve.getPointAt(v, out.p);
+      BROADWAY_LINE.curve.getTangentAt(v, out.t).normalize().negate();
+    } else {
+      const u = Math.min(1, x / MILL_LINE.len);
+      MILL_LINE.curve.getPointAt(u, out.p);
+      MILL_LINE.curve.getTangentAt(u, out.t).normalize();
+    }
     out.r.crossVectors(out.t, UP).normalize();
     return out;
   };

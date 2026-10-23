@@ -6,12 +6,16 @@ import { BoxGeometry, type BufferGeometry, CanvasTexture, CatmullRomCurve3, Inst
 
 import { ribbon } from "./Guideway";
 import { merged, type Part } from "./merge";
+import { lit, shopGlow } from "./pavilion";
 import { tunnelPortal } from "./portal";
+import { guideAt, YARD_TRACKS, yardPoint } from "./railYard";
+import { buildYard, yardTop } from "./railYardKit";
 import { SEABUS_SIGN } from "./SeaBus";
 import { paint } from "./shapes";
-import { groundAt, sdfAt } from "./terrain";
+import { sdfAt } from "./terrain";
 import { type Frame, UP } from "./track";
-import { WCE_HALF, WCE_LEN, WCE_PLATFORM, WCE_PTS, WCE_S } from "./wce";
+import { WCE_HALF, WCE_LEN, WCE_PLATFORM, WCE_PTS, WCE_S, wceBed, wceBedAt } from "./wce";
+import { bedProfile } from "./bedLift";
 import { useWorld } from "./world";
 
 const PURPLE = 0x5b2a86;
@@ -25,15 +29,16 @@ const N_COACH = 4;
 /** The tunnel portal's length over the line's east end (the waiting train fits inside). */
 const PORTAL_LEN = 50;
 
-/** Frames along the drawn line every `step`, a little above the ground. */
-function frames(step: number): Frame[] {
+/** Frames along the drawn line every `step`, on its bed (clear of the ground as drawn: wce.ts wceBed). */
+function frames(step: number, lowEnd: boolean): Frame[] {
+  const bed = wceBed(lowEnd);
   const out: Frame[] = [];
   for (let i = 0; i < WCE_PTS.length; i += step) {
     const [x, z] = WCE_PTS[i];
     const [ax, az] = WCE_PTS[Math.max(0, i - 1)];
     const [bx, bz] = WCE_PTS[Math.min(WCE_PTS.length - 1, i + 1)];
     const t = new Vector3(bx - ax, 0, bz - az).normalize();
-    out.push({ p: new Vector3(x, groundAt(x, z) + 0.15, z), t, r: new Vector3().crossVectors(t, UP).normalize() });
+    out.push({ p: new Vector3(x, bed[i], z), t, r: new Vector3().crossVectors(t, UP).normalize() });
   }
   return out;
 }
@@ -86,9 +91,12 @@ export function WestCoastExpress() {
   const { mats, lowEnd } = world;
   const built = useMemo(() => {
     if (WCE_PTS.length < 4) return null;
-    const fr = frames(lowEnd ? 2 : 1);
-    const bed = ribbon([[WCE_HALF, 0], [-WCE_HALF, 0]], fr, false);
-    const sleepers = merged(TRACKS.map((l) => ({ geo: ribbon([[l + 1.3, 0.06], [l - 1.3, 0.06]], fr, false, 0.65) })));
+    const fr = frames(lowEnd ? 2 : 1, lowEnd);
+    // the bed, its shoulders falling into the ground either side
+    const bed = ribbon(bedProfile(WCE_HALF), fr, false);
+    // the rail yard on the fill north of the line (railYard.ts), in these same meshes
+    const yard = buildYard(lowEnd);
+    const sleepers = merged([...TRACKS.map((l) => ({ geo: ribbon([[l + 1.3, 0.06], [l - 1.3, 0.06]], fr, false, 0.65) })), ...yard.sleepers.map((geo) => ({ geo }))]);
     const rails = merged(
       TRACKS.flatMap((l) =>
         [-0.72, 0.72].map((side) => ({
@@ -162,9 +170,20 @@ export function WestCoastExpress() {
     }
     const sign = new Mesh(merged(plates.map((geo) => ({ geo }))), new MeshBasicMaterial({ map: tex, toneMapped: false }));
     const vehicleMat = new MeshStandardMaterial({ vertexColors: true, roughness: 0.45, metalness: 0.2 });
-    // the running train's locomotive and coaches first, then the train laid up on the far track
-    const coaches = new InstancedMesh(coachGeo(), vehicleMat, N_COACH * 2);
-    const loco = new InstancedMesh(locoGeo(), vehicleMat, 2);
+    // the running train's locomotive and coaches first, then the train laid up on the far track, then the yard's sets
+    const sets = 2 + yard.wceHeads.length;
+    const coaches = new InstancedMesh(coachGeo(), vehicleMat, N_COACH * sets);
+    const loco = new InstancedMesh(locoGeo(), vehicleMat, sets);
+    yard.wceHeads.forEach((h, j) => {
+      const m = new Matrix4();
+      const stand = (s: number) => {
+        const p = guideAt(s);
+        const [x, z] = yardPoint(s, YARD_TRACKS[0]);
+        return m.compose(new Vector3(x, yardTop(s) + 0.3, z), new Quaternion().setFromAxisAngle(UP, Math.atan2(-p.tz, p.tx)), new Vector3(1, 1, 1));
+      };
+      loco.setMatrixAt(2 + j, stand(h - LOCO / 2));
+      for (let k = 0; k < N_COACH; k++) coaches.setMatrixAt((2 + j) * N_COACH + k, stand(h - LOCO - 0.4 - COACH / 2 - k * (COACH + 0.4)));
+    });
     coaches.frustumCulled = false;
     loco.frustumCulled = false;
     // the terminus: a buffer stop on each track (red and white beam on two posts, a red lamp), a concrete end block
@@ -172,20 +191,22 @@ export function WestCoastExpress() {
     {
       const f = fr[0];
       const ry = Math.atan2(f.t.x, f.t.z);
-      const put = (w: number, h: number, d: number, lat: number, y: number, along: number, hex: number) => {
+      const put = (w: number, h: number, d: number, lat: number, y: number, along: number, hex: number, glow = 0) => {
         const c = f.p.clone().addScaledVector(f.r, lat).addScaledVector(f.t, along);
-        ends.push({ geo: paint(new BoxGeometry(w, h, d).rotateY(ry), hex), position: [c.x, c.y + y, c.z] });
+        const g = paint(new BoxGeometry(w, h, d).rotateY(ry), hex);
+        ends.push({ geo: glow ? lit(g, glow) : g, position: [c.x, c.y + y, c.z] });
       };
       put(WCE_HALF * 2 + 0.4, 0.9, 1.4, 0, 0.45, -1.6, 0xb9b4aa);
       for (const l of TRACKS) {
         for (const side of [-0.72, 0.72]) put(0.16, 1.3, 0.16, l + side, 0.65, 0.2, 0x3a3f46);
         for (let k = 0; k < 4; k++) put(0.55, 0.36, 0.3, l - 0.825 + k * 0.55, 1.05, 0.2, k % 2 ? 0xeef0f2 : 0xc0392b);
-        put(0.22, 0.22, 0.22, l, 1.42, 0.2, 0xe5302a);
+        put(0.22, 0.22, 0.22, l, 1.42, 0.2, 0xe5302a, 1);
       }
     }
     // the tunnel portal over the line's last stretch, out east past the port: the train waits inside it
     const mouthAt = fr.findIndex((_, i) => WCE_S[i * (lowEnd ? 2 : 1)] >= WCE_LEN - PORTAL_LEN);
-    const portal = tunnelPortal(fr.slice(Math.max(0, mouthAt)), { mouthW: WCE_HALF * 2 + 1, mouthH: 6, below: 0.6, half: WCE_HALF + 4, crest: 9, drop: 3, trees: lowEnd ? 10 : 18, shrubs: true });
+    // the dark lining runs nearly the berm's length: the train waits inside it
+    const portal = tunnelPortal(fr.slice(Math.max(0, mouthAt)), { mouthW: WCE_HALF * 2 + 1, mouthH: 6, below: 0.6, half: WCE_HALF + 4, crest: 9, drop: 3, trees: lowEnd ? 10 : 18, shrubs: true, depth: PORTAL_LEN - 3 });
     ends.push(
       ...portal.berm.map((g) => ({ geo: paint(g, 0x5f7d45) })),
       ...portal.wall.map((g) => ({ geo: paint(g, 0xbdb8ad) })),
@@ -200,10 +221,12 @@ export function WestCoastExpress() {
       ...(canopy.length ? [{ geo: paint(merged(canopy), 0x8e95a3) }] : []),
       ...trim.map((g) => ({ geo: paint(g, PURPLE) })),
       ...ends,
+      ...yard.painted.map((geo) => ({ geo })),
     ]);
-    const fixedMat = new MeshStandardMaterial({ vertexColors: true, roughness: 0.85, side: 2 });
+    // the yard's lamps and the buffer stops' lamps glow after dark
+    const fixedMat = shopGlow(new MeshStandardMaterial({ vertexColors: true, roughness: 0.85, side: 2 }), world);
     return { fixed, fixedMat, sleepers, sign, coaches, loco, vehicleMat, tex };
-  }, [lowEnd]);
+  }, [lowEnd, world]);
 
   useEffect(
     () => () => {
@@ -233,7 +256,7 @@ export function WestCoastExpress() {
     const v = new Vector3();
     const place = (s: number, lane: number): Matrix4 => {
       at(Math.max(0, Math.min(WCE_LEN, s)), p);
-      const y = groundAt(p.x, p.z) + 0.3;
+      const y = wceBedAt(Math.max(0, Math.min(WCE_LEN, s)), lowEnd) + 0.15;
       v.set(p.x - p.tz * lane, y, p.z + p.tx * lane);
       q.setFromAxisAngle(UP, Math.atan2(-p.tz, p.tx));
       return m4.compose(v, q, new Vector3(1, 1, 1));

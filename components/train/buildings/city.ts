@@ -26,6 +26,7 @@ import { ART, MURAL0 } from "../cultureArt";
 import { type MuralKind, muralsOf } from "../muralArt";
 import { BUILD, type Ctx, PAL } from "./archetypes";
 import { cap, fp, walls } from "./parts";
+import { inYard } from "../railYard";
 import { inSenakw, PAVILION, podiumLevels, PODIUMS, towerBase, towerPoly, TOWERS } from "./senakw";
 import { ARCH_BY_ERA, ARCH_DENSE, ARCH_LOWRISE, type ArchId, hood, type Hood, HOUSE_MIX, TOWERISH, ZONES } from "./eras";
 import { HEROES } from "./heroes";
@@ -340,7 +341,7 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
     const yb = Math.min(...pts.map(([px, pz]) => footAt(px, pz))) - 0.6;
     const yt = Math.max(...pts.map(([px, pz]) => floorAt(px, pz)));
     const dist = Math.min(...pts.map(([px, pz]) => cor.dist(px, pz)));
-    const onSite = pts.some(([px, pz]) => inSenakw(px, pz));
+    const onSite = pts.some(([px, pz]) => inSenakw(px, pz) || inYard(px, pz));
     // the turned footprint's extent on the axes, for the city's box tests
     const aw = Math.abs(w * Math.cos(ry)) + Math.abs(d * Math.sin(ry));
     const ad = Math.abs(w * Math.sin(ry)) + Math.abs(d * Math.cos(ry));

@@ -4,6 +4,7 @@
  * Waterfront out past the port (under the Expo's viaduct there, which leaves out any column on it). Pure; the roads,
  * lots and trees keep off it.
  */
+import { clearHeights } from "./bedLift";
 import { WCE } from "./railData";
 import { sdfAt } from "./terrain";
 
@@ -82,5 +83,21 @@ export function wceDist(x: number, z: number): number {
   }
   return best;
 }
+/** The bed's top at each of the line's points, clear of the ground as drawn across it (bedLift.ts), by device. */
+const beds = new Map<boolean, number[]>();
+export function wceBed(lowEnd: boolean): number[] {
+  let b = beds.get(lowEnd);
+  if (!b) beds.set(lowEnd, (b = clearHeights(WCE_PTS, WCE_HALF, 0.15, lowEnd)));
+  return b;
+}
+/** The bed's top at distance s along the line. */
+export function wceBedAt(s: number, lowEnd: boolean): number {
+  const b = wceBed(lowEnd);
+  let i = 1;
+  while (i < WCE_S.length - 1 && WCE_S[i] < s) i++;
+  const u = Math.min(1, Math.max(0, (s - WCE_S[i - 1]) / (WCE_S[i] - WCE_S[i - 1] || 1)));
+  return b[i - 1] + (b[i] - b[i - 1]) * u;
+}
+
 /** On the line's bed or its platform, with a pad. */
 export const nearWce = (x: number, z: number, pad = 0): boolean => wceDist(x, z) < WCE_HALF + 4 + pad;

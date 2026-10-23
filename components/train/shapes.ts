@@ -39,22 +39,22 @@ const centroid = (ring: P2[]): P2 => {
  */
 export function walls(ring: P2[], y0: number, y1: number, opts: { uPer?: number; vPer?: number; vFrom?: number; smooth?: boolean } = {}): BufferGeometry {
   const { uPer = 1, vPer = 1, vFrom = y0, smooth = false } = opts;
-  const [cx, cz] = centroid(ring);
   const n = ring.length;
+  // which way the ring runs (its signed area): the outside is to the right of a counter-clockwise ring's edges, so
+  // every face, concave ones too (a crescent's inner curve), faces out
+  let area = 0;
+  for (let i = 0; i < n; i++) {
+    const [ax, az] = ring[i];
+    const [bx, bz] = ring[(i + 1) % n];
+    area += ax * bz - bx * az;
+  }
+  const sgn = area >= 0 ? 1 : -1;
   const en: P2[] = [];
   for (let i = 0; i < n; i++) {
     const [ax, az] = ring[i];
     const [bx, bz] = ring[(i + 1) % n];
-    let nx = bz - az;
-    let nz = -(bx - ax);
-    const L = Math.hypot(nx, nz) || 1;
-    nx /= L;
-    nz /= L;
-    if (nx * ((ax + bx) / 2 - cx) + nz * ((az + bz) / 2 - cz) < 0) {
-      nx = -nx;
-      nz = -nz;
-    }
-    en.push([nx, nz]);
+    const L = Math.hypot(bx - ax, bz - az) || 1;
+    en.push([(sgn * (bz - az)) / L, (-sgn * (bx - ax)) / L]);
   }
   const vn = (i: number): P2 => {
     const a = en[(i - 1 + n) % n];

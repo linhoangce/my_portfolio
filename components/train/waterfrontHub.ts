@@ -6,6 +6,7 @@
  * builder, the tree planter and the boats. Pure.
  */
 import { SEA } from "./constants";
+import { YARD_BOX } from "./railYard";
 import { LANDMARKS } from "./sites";
 import type { SpeciesId } from "./trees/species";
 
@@ -68,4 +69,6 @@ export const NO_SAIL: [number, number, number, number][] = [
   [HUB_AT.x + HUB_DECK_BOX.x0 - 6, HUB_AT.x + HUB_DECK_BOX.x1 + 6, HUB_AT.z + HUB_DECK_BOX.z0 - 6, HUB_AT.z + HUB_DECK_BOX.z1 + 6],
   [HUB_AT.x + HUB_GALLERY.x - 14, HUB_AT.x + HUB_GALLERY.x + 14, HUB_AT.z + HUB_GALLERY.z1 - 8, HUB_AT.z + HUB_GALLERY.z0],
 ];
+// the rail yard's fill along the waterfront (railYard.ts)
+NO_SAIL.push([YARD_BOX[0] - 6, YARD_BOX[1] + 6, YARD_BOX[2] - 8, YARD_BOX[3]]);
 export const inNoSail = (x: number, z: number): boolean => NO_SAIL.some(([a, b, c, d]) => x > a && x < b && z > c && z < d);
