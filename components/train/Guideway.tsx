@@ -104,6 +104,26 @@ export const LED_STRIP: [number, number][] = [
 /** Where the platforms sit the parapets and planters give way to the station's own edge. */
 const atStation = (s: number) => stationS.some((ss) => Math.abs(s - ss) < PLATFORM_LEN / 2 + 1);
 
+/** The Y piers stand one every PIER_STEP along the line, the first half a step in. */
+export const PIER_STEP = 24;
+export const PIER_COUNT = Math.floor(LEN / PIER_STEP);
+/** The column's radius at its foot and its head. */
+export const PIER_R: [number, number] = [1.25, 0.85];
+/**
+ * Pier i: its frame (into f), the ground under it, the top of its column and the fork's arms (at topY), and whether it
+ * stands at all: over the Grandview Cut the span carries on to the banks (no pier stands on the Millennium's floor),
+ * and over a street to its far side.
+ */
+export function pierAt(i: number, f: Frame): { gy: number; topY: number; colTop: number; fork: boolean; show: boolean } {
+  frameAt(i * PIER_STEP + PIER_STEP / 2, f);
+  const gy = groundAt(f.p.x, f.p.z);
+  const topY = f.p.y - 1.9 - 3.4;
+  // where the deck rides too low for the fork (the cut), a plain column under the soffit, or nothing
+  const fork = topY - gy > 0.6;
+  const show = f.p.y - 1.9 - gy > 1 && !inRailCut(f.p.x, f.p.z, 1) && !isRoad(f.p.x, f.p.z, 1) && !nearWce(f.p.x, f.p.z, -2);
+  return { gy, topY, colTop: fork ? topY : f.p.y - 1.9, fork, show };
+}
+
 /**
  * The 2100 guideway: a slim white U-girder with a rounded soffit, a planter box with a trimmed hedge along both outer
  * edges, a violet LED line under each, a dark track slab with sleepers under each pair of rails, the central walkway,
@@ -433,25 +453,19 @@ export function Guideway() {
     const z = new Vector3();
     const p = new Vector3();
     const sc = new Vector3();
-    // tapered Y piers every 24 units: a column to just below the soffit, two arms out to its curve
-    const count = Math.floor(LEN / 24);
-    const col = new InstancedMesh(new CylinderGeometry(0.85, 1.25, 1, lowEnd ? 10 : 14).translate(0, 0.5, 0), mats.girder, count);
+    // tapered Y piers: a column to just below the soffit, two arms out to its curve
+    const count = PIER_COUNT;
+    const col = new InstancedMesh(new CylinderGeometry(PIER_R[1], PIER_R[0], 1, lowEnd ? 10 : 14).translate(0, 0.5, 0), mats.girder, count);
     const arm = new InstancedMesh(new BoxGeometry(0.9, 4.4, 1.5), mats.girder, count * 2);
     const tilt = new Quaternion();
     for (let i = 0; i < count; i++) {
-      frameAt(i * 24 + 12, f);
+      const pier = pierAt(i, f);
       z.copy(f.r).cross(UP);
       basis.makeBasis(f.r, UP, z);
       q.setFromRotationMatrix(basis);
-      const gy = groundAt(f.p.x, f.p.z);
-      const topY = f.p.y - 1.9 - 3.4;
-      const h = topY - gy;
-      // over the Grandview Cut the span carries on to the banks (no pier stands on the Millennium's floor), and over a
-      // street to its far side
-      const show = f.p.y - 1.9 - gy > 1 && !inRailCut(f.p.x, f.p.z, 1) && !isRoad(f.p.x, f.p.z, 1) && !nearWce(f.p.x, f.p.z, -2) ? 1 : 0;
-      // where the deck rides too low for the fork (the cut), a plain column under the soffit, or nothing
-      const fork = h > 0.6 ? 1 : 0;
-      const colTop = fork ? topY : f.p.y - 1.9;
+      const { gy, topY, colTop } = pier;
+      const show = pier.show ? 1 : 0;
+      const fork = pier.fork ? 1 : 0;
       m4.compose(p.set(f.p.x, gy - 0.3, f.p.z), q, sc.set(show, Math.max(0.01, colTop - gy + 0.3), show));
       col.setMatrixAt(i, m4);
       for (const side of [-1, 1]) {

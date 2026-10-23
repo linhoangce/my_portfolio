@@ -7,9 +7,11 @@ import { BoxGeometry, BufferGeometry, CatmullRomCurve3, Color, CylinderGeometry,
 import { BALLAST, CAR, GAP, LANE, TRENCH } from "./constants";
 import { mirror, ribbon } from "./Guideway";
 import { merged, type Part } from "./merge";
+import { tunnelPortal } from "./portal";
 import { BROADWAY_LINE, BROADWAY_PORTAL, FREIGHT_LINES, inRailCut, type Line, MILL_LINE, profileAt } from "./rail";
 import { isRoad, roadDist } from "./roadNetwork";
 import { BROADWAY_STATIONS } from "./railData";
+import { paint } from "./shapes";
 import { STATION_FRAMES } from "./sets/zones";
 import { rib, vault } from "./Stations";
 import { type Frame, groundAt, makeFrame, UP } from "./track";
@@ -320,29 +322,26 @@ export function Millennium() {
     });
 
     // ------------------------------------------------------------------ the Broadway Subway: portal and pavilions
+    // the line's trench runs on to the portal, so the hill there is cut away: the portal stands in a planted berm over
+    // the tunnel's first stretch, which meets the hill rising behind it (its parts join the cut's planted ledges)
+    const bermParts: BufferGeometry[] = [];
     {
-      const fr = framesOf(BROADWAY_LINE, portal - 1, portal, 1)[1];
-      const tH = fr.t.clone().setY(0).normalize();
-      const ry = Math.atan2(tH.x, tH.z);
-      const gy = groundAt(fr.p.x, fr.p.z);
-      const foot = fr.p.y - 2.2;
-      const topY = gy + 1.4;
-      const c = fr.p.clone().addScaledVector(tH, 0.8);
-      const piece = (list: Part[], w: number, h: number, d: number, lat: number, y: number) => {
-        const q2 = c.clone().addScaledVector(fr.r, lat);
-        list.push({ geo: new BoxGeometry(w, h, d).rotateY(ry), position: at(q2.x, y, q2.z) });
-      };
-      // a concrete head wall round a dark mouth, its lintel lit in the line's yellow
-      for (const side of [-1, 1]) piece(white, 6, topY - foot, 1.4, side * 10, (topY + foot) / 2);
-      piece(white, 14, topY - (fr.p.y + 6), 1.4, 0, (topY + fr.p.y + 6) / 2);
-      piece(yellow, 13, 0.18, 0.2, 0, fr.p.y + 6 - 0.1);
-      const m = fr.p.clone().addScaledVector(tH, 2.2);
-      dark.push({ geo: new BoxGeometry(14, 8.2, 0.3).rotateY(ry), position: at(m.x, fr.p.y + 1.9, m.z) });
+      const fr = framesOf(BROADWAY_LINE, portal + 1, Math.min(BROADWAY_LINE.len, portal + 17), 2);
+      // the ground climbs inside the mouth: its dark back stands near, where the ground is still low
+      const mouth = tunnelPortal(fr, { mouthW: 12, mouthH: 6, below: 0.8, half: 12, crest: 7.5, drop: 3, trees: lowEnd ? 6 : 12, shrubs: true, depth: 3.5 });
+      for (const g of mouth.berm) {
+        g.deleteAttribute("uv");
+        bermParts.push(g);
+      }
+      white.push(...mouth.wall.map((geo) => ({ geo })));
+      yellow.push(...mouth.band.map((geo) => ({ geo })));
+      dark.push(...mouth.mouth.map((geo) => ({ geo })));
     }
     // each station's pavilion over the line as drawn (the first, Great Northern Way, moved with the line's approach),
     // on the corner beside the street rather than in it
     const tunnelPts: Vector3[] = [];
-    for (let s = portal; s <= BROADWAY_LINE.len; s += 3) tunnelPts.push(BROADWAY_LINE.curve.getPointAt(s / BROADWAY_LINE.len));
+    // (past the berm over the portal)
+    for (let s = portal + 20; s <= BROADWAY_LINE.len; s += 3) tunnelPts.push(BROADWAY_LINE.curve.getPointAt(s / BROADWAY_LINE.len));
     for (const st of BROADWAY_STATIONS) {
       if (st.x < -512) continue;
       const on = tunnelPts.reduce((b, p) => ((p.x - st.x) ** 2 + (p.z - st.z) ** 2 < (b.x - st.x) ** 2 + (b.z - st.z) ** 2 ? p : b), tunnelPts[0]);
@@ -381,6 +380,22 @@ export function Millennium() {
 
     // ------------------------------------------------------------------ the cut's walls
     const walls = cutWalls(lowEnd ? 4 : 2);
+    walls.ledges.push(...bermParts);
+    // the line's east end, past Holdom: into a tunnel under a wooded hill (the line carries on beyond the map), painted
+    // into a mesh of its own, so the line's shared meshes keep their bounds (and stay out of views that cannot see it)
+    const hill = (() => {
+      const last = MILL_LINE.stationS[MILL_LINE.stationS.length - 1];
+      const fr = framesOf(MILL_LINE, Math.min(MILL_LINE.len - 20, last + 30), MILL_LINE.len, 3);
+      const gy = groundAt(fr[0].p.x, fr[0].p.z);
+      const h = tunnelPortal(fr, { mouthW: 10, mouthH: 6.5, below: 2.4, half: 26, crest: 10, drop: fr[0].p.y - gy + 2, trees: lowEnd ? 16 : 34, shrubs: false });
+      return merged([
+        ...h.berm.map((g) => ({ geo: paint(g, 0x3f6b35) })),
+        ...h.wall.map((g) => ({ geo: paint(g, 0xc9c4ba) })),
+        ...h.band.map((g) => ({ geo: paint(g, MILL_YELLOW) })),
+        ...h.mouth.map((g) => ({ geo: paint(g, 0x050608) })),
+      ]);
+    })();
+    const hillMat = new MeshStandardMaterial({ vertexColors: true, roughness: 0.9 });
 
     // ------------------------------------------------------------------ freight in the cut
     const ballast: BufferGeometry[] = [];
@@ -447,6 +462,8 @@ export function Millennium() {
       ribs: merged(ribs),
       dark: merged(dark),
       blue: merged(blue),
+      hill,
+      hillMat,
       led,
       line,
       roundel,
@@ -460,7 +477,8 @@ export function Millennium() {
   useEffect(
     () => () => {
       for (const g of [built.girder, built.bed, built.sleepers, built.leds, built.rails, built.ballast, built.faces, built.ledges, built.white, built.plat, built.pane, built.yellow, built.canopy, built.ribs, built.dark, built.blue]) g.dispose();
-      for (const m of [built.led, built.line, built.roundel, built.mouth, built.freightMat, built.concrete]) m.dispose();
+      for (const m of [built.led, built.line, built.roundel, built.mouth, built.freightMat, built.concrete, built.hillMat]) m.dispose();
+      built.hill.dispose();
       built.piers.geometry.dispose();
       built.piers.dispose();
       if (built.freightCars) {
@@ -573,6 +591,7 @@ export function Millennium() {
       <mesh geometry={built.ribs} material={mats.girder} />
       <mesh geometry={built.dark} material={built.mouth} />
       <mesh geometry={built.blue} material={built.roundel} />
+      <mesh geometry={built.hill} material={built.hillMat} receiveShadow />
       {built.trains.map((t, i) => (
         <primitive key={i} object={t.g} />
       ))}

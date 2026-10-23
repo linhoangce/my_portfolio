@@ -23,7 +23,7 @@ import { getCityData } from "./cityData";
 import { FEATURES, type Feature, onFeature, PLACES, terraceSoffit } from "./commonsLayout";
 import { CELL, COMMONS_BOX, commonsGround, PAVINGS } from "./commonsGround";
 import { chessBoard, dragon, globeLamp, lanternString, laughingFigures, parkLamp, picnic, pingPong, playground, ringSculpture, stageWithSeats, steamLocomotive, waveArch } from "./commonsKit";
-import { bench, foodTruck, pavilion, type Pieces, stall, umbrellaTable, warmLights } from "./pavilion";
+import { bench, foodTruck, pavilion, type Pieces, shopGlow, stall, umbrellaTable, warmLights } from "./pavilion";
 import { canvasTexture, merge, paint } from "./shapes";
 import { surfaceAt } from "./terrain";
 import { skipInMirror } from "./waterMirror";
@@ -343,7 +343,7 @@ export function Commons() {
       }
     }
     // small and low: they take shadows but cast none (no shadow pass for them)
-    const solid = new Mesh(merge(all.solid), new MeshStandardMaterial({ vertexColors: true, roughness: 0.75 }));
+    const solid = new Mesh(merge(all.solid), shopGlow(new MeshStandardMaterial({ vertexColors: true, roughness: 0.75 }), world));
     solid.receiveShadow = true;
     const glass = new Mesh(all.glass.length ? merge(all.glass) : new BufferGeometry(), mats.pane);
     const warm = new Mesh(merge(all.warm), warmLights(world, new MeshBasicMaterial({ map: atlas, vertexColors: true, toneMapped: false })));

@@ -179,10 +179,8 @@ export const GREEN_CAFES: { x: number; z: number; w: number; d: number; face: [n
  */
 export const FORECOURT = { x0: -28.4, x1: -4, z0: -53, z1: -30 };
 export const FORECOURT_TREES: [number, number][] = [
-  [-26, -44],
-  [-22, -47.5],
-  [-18, -50],
-  [-26, -36.5],
+  [-26.5, -44],
+  [-26.5, -36.5],
 ];
 
 /** On one of Harbour Green's cafés or its deck, with a pad. */

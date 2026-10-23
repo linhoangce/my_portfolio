@@ -39,7 +39,7 @@ import {
 import { SEA } from "./constants";
 import { CONVENTION, DECK_Y, FLOAT_DOCK, FORECOURT, FORECOURT_TREES, GREEN_CAFES, harbourfrontBenches, harbourfrontTrees, inConvention, PLAZA, PLAZA_SOUTH, PLAZA_X, PROMENADE, PROMENADE_W } from "./harbourfront";
 import { SET_RECT, toStation } from "./sets/zones";
-import { pavilion, type Pieces, UMBRELLAS, warmLights } from "./pavilion";
+import { pavilion, type Pieces, shopGlow, UMBRELLAS, warmLights } from "./pavilion";
 import { registerPattern } from "./eventLights";
 import { EVENT_META } from "./lookTypes";
 import { addReflections } from "./reflectionSources";
@@ -201,6 +201,42 @@ function sailRoof(halfW: number, halfL: number, base: number, masts: P2[], peaks
   return g;
 }
 
+/**
+ * A long white vault, an elliptical section across (w wide, h high) rounding down at both ends, from y0, centred at zc
+ * and len long: the cruise terminal's roof.
+ */
+function vaultRoof(w: number, len: number, h: number, y0: number, zc: number, nx: number, nz: number): BufferGeometry {
+  const pos: number[] = [];
+  const idx: number[] = [];
+  for (let j = 0; j <= nz; j++) {
+    const v = -1 + (2 * j) / nz;
+    const end = Math.sqrt(Math.max(0, 1 - v ** 8));
+    for (let i = 0; i <= nx; i++) {
+      const u = -1 + (2 * i) / nx;
+      pos.push((u * w) / 2, y0 + h * Math.sqrt(Math.max(0, 1 - u * u)) * end, zc + (v * len) / 2);
+      if (i < nx && j < nz) {
+        const k = j * (nx + 1) + i;
+        idx.push(k, k + nx + 1, k + 1, k + 1, k + nx + 1, k + nx + 2);
+      }
+    }
+  }
+  const g = new BufferGeometry();
+  g.setAttribute("position", new BufferAttribute(new Float32Array(pos), 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
+/**
+ * Canada Place as it stands on its pier into the harbour, from the shore end out:
+ * - the Pan Pacific's curved white tower on a glass podium;
+ * - the convention hall in glass under the five white sails in a row, a mast through each, a white drum at their
+ *   seaward end;
+ * - the cruise terminal, glass under a long white curved roof;
+ * - the open deck at the pier's end, planted, with benches and flags;
+ * - glass canopies down both promenades, white gangway towers reaching out to a cruise ship berthed on each side.
+ * After dark each sail is floodlit in its own colour (or the event's), and the lamps come on.
+ */
 export function buildCanadaPlace(l: PlacedLandmark, world: World): Built {
   const { events, lowEnd, envTex } = world;
   const g = new Group();
@@ -208,55 +244,123 @@ export function buildCanadaPlace(l: PlacedLandmark, world: World): Built {
   const ROT = 0.15;
   g.rotation.y = ROT;
   const water = SEA - l.padY;
-  // the shore end gets the hotel and the ship's bow points out to sea
   const toWorld = (x: number, z: number): P2 => [l.px + x * Math.cos(ROT) + z * Math.sin(ROT), l.pz - x * Math.sin(ROT) + z * Math.cos(ROT)];
+  // which end of the pier is the shore's: everything is laid out in sz (toward the shore), z = sz × shore
   const shore = sdfAt(...toWorld(0, 44)) > sdfAt(...toWorld(0, -44)) ? 1 : -1;
+  const Z = (sz: number) => sz * shore;
   const deck = water + 2.6;
-  const lower = deck + 4.6;
-  const upper = lower + 3.2;
   const solid: BufferGeometry[] = [
-    // the pier on its piles, and the promenade railings along both sides
+    // the pier on its piles, its deck, and the promenade railings along both sides
     paint(new BoxGeometry(31, 3.4, 82).translate(0, water + 0.9, 0), 0x9a9890),
     paint(cap(rect(31, 82), deck), 0xc9c6bd),
     paint(new BoxGeometry(0.12, 0.9, 80).translate(15.2, deck + 0.45, 0), 0xe6e9ec),
     paint(new BoxGeometry(0.12, 0.9, 80).translate(-15.2, deck + 0.45, 0), 0xe6e9ec),
-    paint(cap(rect(27, 78), lower), 0xeef0ee),
-    paint(new BoxGeometry(0.12, 0.8, 74).translate(13.4, lower + 0.4, 0), 0xe6e9ec),
-    paint(new BoxGeometry(0.12, 0.8, 74).translate(-13.4, lower + 0.4, 0), 0xe6e9ec),
   ];
   for (let z = -36; z <= 36; z += 4) for (const x of [-15.5, 15.5]) solid.push(paint(new CylinderGeometry(0.35, 0.35, 3.2, 6).translate(x, water + 0.6, z), 0x6b6a64));
-  // lamp standards along the promenade and the upper walk, their lamps lit after dark
+  const glassWalls: BufferGeometry[] = [];
+  // the convention hall under the sails (sz -2 to 26) and the cruise terminal (sz -33 to -8): glass, a white cornice
+  const HALL = { s0: -2, s1: 26, w: 24, h: 5 };
+  const TERM = { s0: -33, s1: -8, w: 22, h: 4.6 };
+  for (const b of [HALL, TERM]) {
+    const zc = Z((b.s0 + b.s1) / 2);
+    const len = b.s1 - b.s0;
+    glassWalls.push(walls(rect(b.w, len, 0, zc), deck, deck + b.h, { uPer: 8, vPer: b.h }));
+    solid.push(paint(new BoxGeometry(b.w + 0.6, 0.45, len + 0.6).translate(0, deck + b.h + 0.2, zc), 0xeef0ee));
+  }
+  // the terminal's roof: a long white vault
+  solid.push(paint(vaultRoof(TERM.w + 1.2, TERM.s1 - TERM.s0 + 1.2, 5.2, deck + TERM.h + 0.4, Z((TERM.s0 + TERM.s1) / 2), lowEnd ? 12 : 20, lowEnd ? 14 : 24), 0xf4f5f3));
+  // the drum at the sails' seaward end, half round toward the sea
+  solid.push(paint(new CylinderGeometry(7, 7, 6.6, lowEnd ? 16 : 28, 1, false, shore > 0 ? Math.PI / 2 : -Math.PI / 2, Math.PI).translate(0, deck + 3.3, Z(HALL.s0)), 0xf1f2f0));
+  // the Pan Pacific: a crescent of white tower opening to the harbour, on a glass podium at the shore end
+  const podium = rect(27, 9, 0, Z(36.5));
+  glassWalls.push(walls(podium, deck, deck + 5, { uPer: 8, vPer: 5 }));
+  solid.push(paint(cap(podium, deck + 5), 0xd9d9d3));
+  const C = 45;
+  const arc = (r: number, from: number, to: number): P2[] => Array.from({ length: 13 }, (_, k) => {
+    const f = from + ((to - from) * k) / 12;
+    return [r * Math.sin(f), Z(C - r * Math.cos(f))] as P2;
+  });
+  const outer = arc(13.5, -1.0, 1.0);
+  const inner = arc(10.2, 1.0, -1.0);
+  const hotelTop = deck + 17;
+  const hotel = [...outer, ...inner];
+  // its roof: the strip between the two arcs
+  {
+    const pos: number[] = [];
+    for (let k = 0; k < 12; k++) {
+      const [a0, a1, b0, b1] = [outer[k], outer[k + 1], inner[12 - k], inner[11 - k]];
+      for (const [x, z] of [a0, b0, a1, a1, b0, b1]) pos.push(x, hotelTop, z);
+    }
+    const top = new BufferGeometry();
+    top.setAttribute("position", new Float32BufferAttribute(pos, 3));
+    top.computeVertexNormals();
+    // keep it facing up whichever way the arcs ran
+    if (top.attributes.normal.getY(0) < 0) {
+      for (let i = 0; i < pos.length; i += 9) for (let k = 0; k < 3; k++) [pos[i + 3 + k], pos[i + 6 + k]] = [pos[i + 6 + k], pos[i + 3 + k]];
+      top.setAttribute("position", new Float32BufferAttribute(pos, 3));
+      top.computeVertexNormals();
+    }
+    solid.push(paint(top, 0xd9d9d3));
+  }
+  // lamp standards along the promenades, their lamps lit after dark
   const lampAt: [number, number, number][] = [];
   for (let z = -36; z <= 36; z += 6) for (const x of [-14.7, 14.7]) lampAt.push([x, deck + 2.7, z]);
-  for (let z = -34; z <= 34; z += 8.5) for (const x of [-13, 13]) lampAt.push([x, lower + 1.7, z]);
   for (const [x, y, z] of lampAt) solid.push(paint(new CylinderGeometry(0.05, 0.07, 2.6, 4).translate(x, y - 1.35, z), 0x3a3f46));
   const lampMat = new MeshBasicMaterial({ color: 0xffe2b0, toneMapped: false });
   const lamps = new InstancedMesh(new IcosahedronGeometry(0.24, 0), lampMat, lampAt.length);
   lampAt.forEach(([x, y, z], i) => lamps.setMatrixAt(i, m4.makeTranslation(x, y, z)));
-  // the hotel at the shore end
-  const hz = shore * 31;
-  const hotel = roundRect(16, 11, 2.2);
-  const hotelTop = deck + 15;
-  solid.push(paint(cap(hotel.map(([x, z]) => [x, z + hz] as P2), hotelTop), 0xd9d9d3));
+  // the glass canopies down both promenades, on white posts
+  for (const x of [-13.4, 13.4]) {
+    solid.push(paint(new BoxGeometry(2.6, 0.12, 64).translate(x + Math.sign(x) * 0.5, deck + 4.2, Z(-3)), 0x8fc9c0));
+    for (let sz = -34; sz <= 28; sz += 6) solid.push(paint(new BoxGeometry(0.14, 4.2, 0.14).translate(x + Math.sign(x) * 1.6, deck + 2.1, Z(sz)), 0xf3f4f6));
+  }
+  // the gangway towers: white lattices by each berth, an arm out over the water to the ship's door
+  for (const sx of [-1, 1]) {
+    for (const sz of [-24, -10, 4]) {
+      const tx = sx * 16.6;
+      const tz = Z(sz);
+      for (const [dx, dz] of [
+        [-0.9, -0.9],
+        [0.9, -0.9],
+        [-0.9, 0.9],
+        [0.9, 0.9],
+      ])
+        solid.push(paint(new BoxGeometry(0.18, 10, 0.18).translate(tx + dx, deck + 5, tz + dz), 0xf3f4f6));
+      for (let y = 2; y <= 9; y += 2.4) {
+        solid.push(paint(new BoxGeometry(2, 0.12, 0.12).translate(tx, deck + y, tz - 0.9), 0xf3f4f6), paint(new BoxGeometry(2, 0.12, 0.12).translate(tx, deck + y, tz + 0.9), 0xf3f4f6));
+        solid.push(paint(new BoxGeometry(0.12, 0.12, 2).translate(tx - 0.9, deck + y, tz), 0xf3f4f6), paint(new BoxGeometry(0.12, 0.12, 2).translate(tx + 0.9, deck + y, tz), 0xf3f4f6));
+      }
+      solid.push(paint(new BoxGeometry(2.6, 0.5, 1.4).translate(tx + sx * 2.2, deck + 7.2, tz), 0xe6e9ec));
+    }
+  }
+  // the open deck at the pier's end: planters with shrubs, benches, three flags
+  for (const x of [-9, -3, 3, 9]) {
+    solid.push(paint(new BoxGeometry(2.4, 0.7, 2.4).translate(x, deck + 0.35, Z(-37)), 0x9c958a), paint(new IcosahedronGeometry(1.2, 0).scale(1, 0.75, 1).translate(x, deck + 1.2, Z(-37)), 0x4f7a3e));
+    solid.push(paint(new BoxGeometry(1.8, 0.45, 0.5).translate(x + 3, deck + 0.22, Z(-35.5)), 0x9a7048));
+  }
+  for (const [x, hex] of [
+    [-4, 0xd52b1e],
+    [0, 0x2f6bff],
+    [4, 0xd52b1e],
+  ] as [number, number][]) {
+    solid.push(paint(new CylinderGeometry(0.07, 0.09, 9, 5).translate(x, deck + 4.5, Z(-39.5)), 0xe6e9ec), paint(new BoxGeometry(0.05, 1.3, 2.2).translate(x, deck + 8.2, Z(-39.5) - shore * 1.15), hex));
+  }
   const tt = terminalTexture();
   const ht = hotelTexture();
   const terminalMat = cityToned(world, new MeshStandardMaterial({ map: tt.map, emissiveMap: tt.glow, emissive: 0xffffff, roughness: 0.6 }));
   const hotelMat = cityToned(world, new MeshStandardMaterial({ map: ht.map, emissiveMap: ht.glow, emissive: 0xffffff, roughness: 0.6 }));
-  const terminal = new Mesh(merge([walls(rect(27, 78), deck, lower, { uPer: 8, vPer: 4.6 }), walls(rect(24, 74), lower, upper, { uPer: 8, vPer: 3.2 })]), terminalMat);
-  const hotelMesh = new Mesh(walls(hotel.map(([x, z]) => [x, z + hz] as P2), upper, hotelTop, { uPer: 4, vPer: 3.2 }), hotelMat);
-  // the sails: ten peaks in two rows of five down the pier, the seaward ones the tallest, a mast through each and
-  // standing a little proud of its peak; the roof stops short of the hotel at the shore end (SAIL_ROOF: its centre
-  // and half-length along the pier) so no sail runs into it
-  const SAIL_Z = [-28, -16.5, -5, 6.5, 18].map((z) => z * shore);
-  const SAIL_ROOF = { zc: -6 * shore, half: 29 };
-  const masts: P2[] = SAIL_Z.flatMap((z): P2[] => [
-    [-5.4, z - 2.4],
-    [5.4, z + 2.4],
-  ]);
-  const peaks = masts.map(([, z]) => 9.4 + 2.6 * sstep(-30, 30, -shore * z));
+  const terminal = new Mesh(merge(glassWalls), terminalMat);
+  const hotelMesh = new Mesh(walls(hotel, deck, hotelTop, { uPer: 4, vPer: 3.2 }), hotelMat);
+  // the sails: five in a row down the hall, a mast through each standing a little proud of its peak, the seaward ones
+  // the tallest; the masts step a little either side of the middle
+  const SAIL_Z = [22, 16, 10, 4, -2].map((sz) => Z(sz) + 0);
+  const SAIL_ROOF = { zc: Z(11.5), half: 15.5 };
+  const masts: P2[] = SAIL_Z.map((z, k): P2 => [(k % 2 ? -1 : 1) * 1.4, z]);
+  const peaks = masts.map(([, z]) => 9.6 + 2.4 * sstep(-26, 2, -shore * z));
+  const upper = deck + HALL.h + 0.4;
   const sailMat = new MeshStandardMaterial({ color: 0xfbfbf9, roughness: 0.6, side: DoubleSide, emissive: 0xfff1d8, emissiveIntensity: 0 });
-  // after dark each pair of sails is floodlit in its own colour: blue, green, white, orange and red, or the event's;
-  // the fabric's seams run down from every peak
+  // after dark each sail is floodlit in its own colour: blue, green, white, orange and red, or the event's; the fabric's
+  // seams run down from every peak
   const sailCols = { value: SAIL_Z.map(() => new Color()) };
   const sailTint = { value: 0 };
   const mastUni = { value: masts.map(([x, z]) => new Vector2(x, z)) };
@@ -292,49 +396,49 @@ export function buildCanadaPlace(l: PlacedLandmark, world: World): Built {
         ].join("\n"),
       );
   };
-  const roof = new Mesh(sailRoof(12.5, SAIL_ROOF.half, upper, masts, peaks, 9.2, lowEnd ? 0.9 : 0.5, SAIL_ROOF.zc), sailMat);
+  const roof = new Mesh(sailRoof(13, SAIL_ROOF.half, upper, masts, peaks, 7.4, lowEnd ? 0.9 : 0.5, SAIL_ROOF.zc), sailMat);
   roof.castShadow = !lowEnd;
-  const mastGeo: BufferGeometry[] = masts.map(([x, z], k) => paint(new CylinderGeometry(0.13, 0.22, peaks[k] + 2.2, 8).translate(x, upper + (peaks[k] + 2.2) / 2, z), 0xf3f4f6));
-  // the teal canopies along the terminal's upper walk, the band of colour under the white
-  for (const x of [-13.6, 13.6]) for (let z = -33; z <= 33; z += 6) mastGeo.push(paint(new BoxGeometry(1.6, 0.18, 5.2).translate(x + Math.sign(x) * 0.6, lower + 2.6, z), 0x3f9c8e));
-  // uplights along the sails' feet, in the event's colours
-  // (one mesh for each of the two colours)
+  const mastGeo: BufferGeometry[] = masts.map(([x, z], k) => paint(new CylinderGeometry(0.14, 0.24, peaks[k] + 2.4, 8).translate(x, upper + (peaks[k] + 2.4) / 2, z), 0xf3f4f6));
+  // uplights along the sails' feet, in the event's colours (one mesh for each of the two colours)
   for (const odd of [0, 1]) {
-    const ups = [...SAIL_Z.entries()].filter(([i]) => i % 2 === odd).map(([, z]) => new BoxGeometry(1.2, 0.3, 8).translate(odd ? 9.5 : -9.5, upper + 0.2, z));
+    const ups = [...SAIL_Z.entries()].filter(([i]) => i % 2 === odd).map(([, z]) => new BoxGeometry(0.4, 0.2, 2.4).translate(odd ? 10.5 : -10.5, upper + 0.15, z));
     if (ups.length) g.add(new Mesh(merge(ups), odd ? events.glowB : events.glow));
   }
   const solidMesh = new Mesh(merge([...solid, ...mastGeo]), cityToned(world, new MeshStandardMaterial({ vertexColors: true, roughness: 0.7 })));
   solidMesh.receiveShadow = true;
-  // the cruise ship alongside, bow to the sea, berthed toward the pier's end so its stern keeps off the bank at the
-  // pier's root (its bow reaches a little past the end)
+  // a cruise ship berthed on each side, bows to the sea, toward the pier's end so their sterns keep off the bank at
+  // the pier's root (the bows reach a little past the end): both in the same two meshes
   const BERTH = -shore * 16;
+  const shipX = 15.5 + 4.4 + 0.4;
   const ship = cruiseShip(lowEnd);
-  const shipGroup = new Group();
-  const shipSolid = new Mesh(ship.solid, cityToned(world, new MeshStandardMaterial({ vertexColors: true, roughness: 0.5, envMap: envTex, envMapIntensity: 0.4 })));
+  const berth = (geo: BufferGeometry, sx: number) => geo.clone().rotateY(shore > 0 ? Math.PI : 0).translate(sx * shipX, water + 0.05, BERTH);
+  const shipSolidGeo = merge([berth(ship.solid, 1), berth(ship.solid, -1)]);
+  const shipCabinGeo = merge([berth(ship.cabins, 1), berth(ship.cabins, -1)]);
+  ship.solid.dispose();
+  ship.cabins.dispose();
+  const shipSolid = new Mesh(shipSolidGeo, cityToned(world, new MeshStandardMaterial({ vertexColors: true, roughness: 0.5, envMap: envTex, envMapIntensity: 0.4 })));
   const ct = cabinTexture();
-  const shipCabins = new Mesh(ship.cabins, cityToned(world, new MeshStandardMaterial({ map: ct.map, emissiveMap: ct.glow, emissive: 0xffffff, roughness: 0.4, envMap: envTex, envMapIntensity: 0.5 }), 1.2));
+  const shipCabins = new Mesh(shipCabinGeo, cityToned(world, new MeshStandardMaterial({ map: ct.map, emissiveMap: ct.glow, emissive: 0xffffff, roughness: 0.4, envMap: envTex, envMapIntensity: 0.5 }), 1.2));
   shipSolid.castShadow = !lowEnd;
-  shipGroup.add(shipSolid, shipCabins);
-  shipGroup.position.set(15.5 + 4.4 + 0.4, water + 0.05, BERTH);
-  shipGroup.rotation.y = shore > 0 ? Math.PI : 0;
-  g.add(solidMesh, terminal, hotelMesh, roof, shipGroup, lamps);
+  g.add(solidMesh, terminal, hotelMesh, roof, shipSolid, shipCabins, lamps);
   // the fabric is translucent: a little light through it by day, floodlit in colour after dark
   const SAILS_LIT = [0x2f6bff, 0x2fd36b, 0xffffff, 0xff7a2a, 0xff2a2a];
   const warm = new Color(0xffd29a);
-  const shipSide = shore > 0 ? -1 : 1;
   addReflections([
     ...SAIL_Z.map((z, k) => {
       const [x, wz] = toWorld(0, z);
-      return { x, z: wz, y: l.padY + upper, h: 11, w: 10, col: sailCols.value[k], gain: 0.9 };
+      return { x, z: wz, y: l.padY + upper, h: 11, w: 9, col: sailCols.value[k], gain: 0.9 };
     }),
     ...[-24, 0, 24].map((z) => {
       const [x, wz] = toWorld(-15.5, z);
-      return { x, z: wz, y: l.padY + deck, h: upper - deck, w: 16, col: warm, gain: 0.45 };
+      return { x, z: wz, y: l.padY + deck, h: 5, w: 16, col: warm, gain: 0.45 };
     }),
-    ...[-24, -8, 8, 24].map((z) => {
-      const [x, wz] = toWorld(20.3, z * shipSide + BERTH);
-      return { x, z: wz, y: l.padY + water, h: 16, w: 14, col: warm, gain: 0.5 };
-    }),
+    ...[-1, 1].flatMap((sx) =>
+      [-24, -8, 8, 24].map((z) => {
+        const [x, wz] = toWorld(sx * shipX, z + BERTH);
+        return { x, z: wz, y: l.padY + water, h: 16, w: 14, col: warm, gain: 0.5 };
+      }),
+    ),
   ]);
   events.followers.push((level, ev) => {
     const n = nightOf(level);
@@ -661,9 +765,12 @@ export function buildScienceWorld(l: PlacedLandmark, world: World): Built {
   const cy = DRUM_TOP + Math.sqrt(R * R - DRUM * DRUM);
   const BASE = 14;
   const DECK = 18.5;
-  /** The roof garden's arc on the water side, and the fan's arc over the land and its reach (local angles). */
+  /**
+   * The roof garden's arc on the water side, and the fan's arc over the land and its reach (local angles): the fan stops
+   * where the ground starts to rise toward the south-east (Creekside Slope, sites.ts), so all of it stands on the pad.
+   */
   const GARDEN: [number, number] = [2.2, 4.4];
-  const FAN = { a0: -1.35, a1: 1.3, r: 30 };
+  const FAN = { a0: -1.35, a1: 0.25, r: 30 };
   const SHELL = 0xc8ced5;
   const deckY = 0.28;
   const toWorld = (v: Vector3) => v.clone().applyAxisAngle(UPV, yaw).add(centre);
@@ -901,7 +1008,7 @@ export function buildScienceWorld(l: PlacedLandmark, world: World): Built {
   const towerCap = new Mesh(new CylinderGeometry(2.3, 2.3, 0.4, 24), white);
   towerCap.position.y = 9.8;
   tower.add(towerBody, towerCap);
-  tower.position.set(Math.cos(0.35) * (FAN.r + 3), 0, Math.sin(0.35) * (FAN.r + 3));
+  tower.position.set(Math.cos(FAN.a1 - 0.15) * (FAN.r + 3), 0, Math.sin(FAN.a1 - 0.15) * (FAN.r + 3));
 
   // the promenade deck out over the water on piles round the base, its white railing, the little pier with the C
   const deckMat = cityToned(world, new MeshStandardMaterial({ color: 0xd9d6cf, roughness: 0.85 }), 0);
@@ -2277,7 +2384,7 @@ export function buildHarbourfront(world: World): Built {
   }
   const panes = new Mesh(merge(glass), world.mats.pane);
   const lit = new Mesh(merge(warm), warmLights(world, new MeshBasicMaterial({ vertexColors: true, toneMapped: false })));
-  const solid = new Mesh(merge([paveGeo, ...parts]), cityToned(world, new MeshStandardMaterial({ vertexColors: true, roughness: 0.7 })));
+  const solid = new Mesh(merge([paveGeo, ...parts]), shopGlow(cityToned(world, new MeshStandardMaterial({ vertexColors: true, roughness: 0.7 })), world));
   solid.receiveShadow = true;
   solid.castShadow = !lowEnd;
   const lampMat = new MeshBasicMaterial({ color: 0xffe2b0, toneMapped: false });

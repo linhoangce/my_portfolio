@@ -126,6 +126,23 @@ const HINGE = shaped(
  * of it lies under the Convention Centre and Jack Poole Plaza here, which stand on the line's side of the bay.
  */
 const HARBOUR: Park = { ...shaped("Harbour Green Park", HARBOUR_GREEN, [], 0.18, false), rows: 4.4 };
+/**
+ * Creekside Slope: the bank where the ground rises from Science World's pad toward the blocks to the south-east, planted
+ * and left its own shape (lawn and trees on the slope, nothing standing in it), between the pad and where the city's
+ * lots begin.
+ */
+const SLOPE = shaped(
+  "Creekside Slope",
+  [
+    [105.0, 212.4], [105.0, 215.7], [104.6, 219.0], [104.0, 222.2], [103.0, 225.3], [101.7, 228.4], [100.1, 231.3],
+    [98.3, 234.0], [96.1, 236.5], [93.8, 238.8], [91.2, 240.9], [88.4, 242.6], [82.2, 231.8], [83.9, 230.7], [85.5, 229.4],
+    [87.0, 228.0], [88.3, 226.4], [89.5, 224.7], [90.5, 222.9], [91.3, 221.0], [91.9, 219.1], [92.3, 217.1], [92.5, 215.0],
+    [92.5, 213.0],
+  ],
+  [],
+  0.6,
+  false,
+);
 const DRAWN = [CREEKSIDE, NEFC, HINGE, THORNTON, HARBOUR];
 const MAPPED: Park[] = PARK_DATA.flatMap(({ name, poly: enc }) => {
   const bin = atob(enc);
@@ -154,6 +171,11 @@ export const PARKS: Park[] = [
   // Burnaby's Central Park, should the map not have it
   ...(MAPPED.some((p) => p.name === "Central Park") ? [] : [{ x: 860, z: 790, r: 95, name: "Central Park" }]),
 ];
+/**
+ * Lawns drawn and planted that are not parks to the city (it reads PARKS for its neighbourhoods and lots, and this lies
+ * where it keeps clear already): Science World's planted slope.
+ */
+export const PLANTED: Park[] = [SLOPE];
 /** The parks by 32-unit cell, so the many point tests stay quick. */
 const PARK_CELLS = new Map<number, Park[]>();
 for (const p of PARKS) {
@@ -167,7 +189,7 @@ for (const p of PARKS) {
   }
 }
 /** Even-odd test against a park's outline. */
-function inPoly(poly: XZ[], x: number, z: number): boolean {
+export function inPoly(poly: XZ[], x: number, z: number): boolean {
   let inside = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
     const [ax, az] = poly[j];

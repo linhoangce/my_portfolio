@@ -13,7 +13,7 @@ import { railNear } from "../rail";
 import { junction, type Near, pointAt, roadDist, roadNear, roads, WALK } from "../roadNetwork";
 import { onFeature } from "../commonsLayout";
 import { inSetZone } from "../sets/zones";
-import { inLandmark, inPark, nearBridge, parkAt, parkPathDist, PARKS, streamDist } from "../sites";
+import { inLandmark, inPark, inPoly, nearBridge, parkAt, parkPathDist, PARKS, PLANTED, streamDist } from "../sites";
 import { groundAt, inWater, sdfAt, slopeAt } from "../terrain";
 import { LEN, nearestStation, SAMPLES, samples, stationS, trackDist, trackNearest } from "../track";
 import { POOLS, SPECIES, SPECIES_INDEX, type SpeciesId } from "./species";
@@ -220,6 +220,20 @@ export function placeTrees(rng: Rng, lowEnd: boolean, lots: LotBox[]): TreeInst[
         const x = px + (park.x - px) * k;
         const z = pz + (park.z - pz) * k;
         if (ok(x, z) && parkPathDist(x, z) > 1.2) add(x, z, pick(rng, POOLS.park), 0.95 + rng.next() * 0.35);
+      }
+    }
+  }
+  // the planted lawns that are not parks to the city (Science World's slope): trees scattered over them
+  for (const lawn of PLANTED) {
+    const poly = lawn.poly;
+    if (!poly) continue;
+    const step = lowEnd ? 6.5 : 5;
+    for (let gx = lawn.x - lawn.r; gx <= lawn.x + lawn.r; gx += step) {
+      for (let gz = lawn.z - lawn.r; gz <= lawn.z + lawn.r; gz += step) {
+        const x = gx + (rng.next() - 0.5) * step * 0.7;
+        const z = gz + (rng.next() - 0.5) * step * 0.7;
+        if (!inPoly(poly, x, z) || !ok(x, z)) continue;
+        add(x, z, pick(rng, POOLS.park), 0.85 + rng.next() * 0.4);
       }
     }
   }

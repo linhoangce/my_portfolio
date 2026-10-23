@@ -234,7 +234,7 @@ export function buildPeople(rng: Rng, PEOPLE_N: number, commonsCovered: (x: numb
   for (let k = 0, n = 0; k < 60 && n < 10 && people.length < PEOPLE_N; k++) {
     const x = FORECOURT.x0 + 1 + rng.next() * (FORECOURT.x1 - FORECOURT.x0 - 2);
     const z = FORECOURT.z0 + 1 + rng.next() * (FORECOURT.z1 - FORECOURT.z0 - 2);
-    if (sdfAt(x, z) >= 0.6 || groundAt(x, z) < SEA + 0.4 || trackDist(x, z) < 6.5) continue;
+    if (sdfAt(x, z) >= 0.6 || groundAt(x, z) < SEA + 0.4 || trackDist(x, z) < 6.5 || onFeature(x, z, 0.5)) continue;
     add({ x, y: groundAt(x, z) + 0.15, z, ox: x, oz: z, ux: 1, uz: 0, pos: 0, lo: -2.5, hi: 2.5, dir: rng.next() < 0.5 ? 1 : -1, move: rng.next() < 0.5 ? 0.7 : 0 });
     n++;
   }

@@ -1,14 +1,16 @@
 /**
- * How people get up to each Expo platform. Every side platform has its own way in:
- * - a line of fare gates at the ground under the platform's end;
+ * How people get up to each Expo platform (transit is free in 2100: no fare gates). Every side platform has its own way
+ * in:
+ * - an entrance at the ground under the platform's end, paved, by the line's lit totem;
  * - a stair from there up under the platform, coming out through a stairwell in the platform's floor;
  * - a glass lift beside the stairwell's head.
  *
  * Where the platform stands only a step above the ground (29th Avenue's, in its cutting), a short flight of steps at
- * the platform's end leads down to the gates instead.
+ * the platform's end leads down to the entrance instead.
  *
  * Each platform takes the direction (stair rising toward one end or the other) whose footprint keeps clear of the drawn
- * streets, the rail cut, the water, the bus bays, and what stands on the ground of the sets and the open places.
+ * streets, the rail cut and every other line's bed (the West Coast Express's, the Millennium's, the freight's), the
+ * water, the bus bays, and what stands on the ground of the sets and the open places.
  * Commercial–Broadway's interchange has its own (Hub.tsx).
  *
  * Built in the station's frame: x left of travel, z ahead, y up from the deck. Pure layout.
@@ -18,7 +20,7 @@ import { stations } from "@/data";
 import { nearBusStop } from "./buses";
 import { onFeature } from "./commonsLayout";
 import { PLATFORM_LEN } from "./constants";
-import { inRailCut } from "./rail";
+import { inRailCut, railNear } from "./rail";
 import { roads } from "./roadNetwork";
 import { onSquareFixture, SQUARES, squareTrees } from "./sets/squares";
 import { COURTS, GYM, PERGOLA } from "./sets/wellness";
@@ -26,11 +28,12 @@ import { SET_SIDE, toStation } from "./sets/zones";
 import { LANDMARKS } from "./sites";
 import { groundAt, sdfAt } from "./terrain";
 import { frameAt, makeFrame, stationS } from "./track";
+import { nearWce } from "./wce";
 
 /** The stair's slope (rise over run), its width and its centre's distance out from the track; the lift beside it. */
 export const STAIR = { slope: 0.7, w: 2.2, x: 8.1 };
 export const LIFT = { w: 2.0, x: 8.4 };
-/** The gate line: its inner and outer ends across the platform's width. */
+/** The entrance line (where the gates stood before transit was free): its inner and outer ends across the platform. */
 export const GATES = { x0: 6.9, x1: 11.4 };
 /** A stair-and-lift tower beside the platform: its centre's distance out, its width (x) and length (z). */
 export const TOWER = { x: 13.4, w: 3.2, d: 4.4 };
@@ -41,16 +44,16 @@ export type Access = {
   side: 1 | -1;
   /**
    * "under": the stair rises under the platform; "end": steps down from the platform's end; "tower": a glass tower of
-   * stairs and a lift beside the platform (centred at zTop), joined to it by a landing, the gates at its far end.
+   * stairs and a lift beside the platform (centred at zTop), joined to it by a landing, the entrance at its far end.
    */
   kind: "under" | "end" | "tower";
-  /** Which way the stair rises (+1 toward +z); for a tower, which end its gates are at (0: outward, beside it). */
+  /** Which way the stair rises (+1 toward +z); for a tower, which end its entrance is at (0: outward, beside it). */
   dir: 1 | -1 | 0;
   /** Where the stair arrives at the platform (z), where its foot is (z) and the ground there (local y). */
   zTop: number;
   zFoot: number;
   yFoot: number;
-  /** The gate line (z) and the ground there; the lift's centre (z). */
+  /** The entrance line (z) and the ground there; the lift's centre (z). */
   zGates: number;
   yGates: number;
   zLift: number;
@@ -146,6 +149,7 @@ export function stationAccess(lowEnd: boolean, lots: Footprint[]): Access[] {
     if (sdfAt(x, z) < 0.5) return "~";
     if (inLot(x, z)) return "#";
     if (inRailCut(x, z, 1)) return "C";
+    if (nearWce(x, z, 0.5) || railNear(x, z, 1.2)) return "R";
     if (onStreet(x, z)) return "S";
     if (nearBusStop(x, z, 0.2)) return "B";
     if (onFeature(x, z, 0.4)) return "F";

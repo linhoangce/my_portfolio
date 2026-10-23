@@ -1,10 +1,10 @@
 /**
- * The geometry of a platform's way in (stationAccess.ts): fare gates, stairs, lifts and towers, in the station's
+ * The geometry of a platform's way in (stationAccess.ts): its entrance, stairs, lifts and towers, in the station's
  * frame (x left of travel, z ahead, y up from the deck), as parts for the station's own meshes:
  * - painted solid parts (one vertex-coloured material);
  * - glass;
  * - steel;
- * - what glows in the line's violet (the validators, the entrance totem).
+ * - what glows in the line's violet (the entrance totem).
  */
 import { BoxGeometry } from "three";
 
@@ -16,7 +16,6 @@ export type AccessParts = { painted: Part[]; glass: Part[]; steel: Part[]; glow:
 
 const CONCRETE = 0xb9b4aa;
 const STONE = 0xcfc8bb;
-const DARK = 0x2b2f36;
 const WELL = 0x1d2228;
 const WHITE = 0xe9ebee;
 
@@ -75,35 +74,15 @@ export function accessParts(e: Access, ground: (x: number, z: number) => number)
   };
 
   /**
-   * A row of fare gates: cabinets `along` the way people pass (z when `acrossX`, else x), glass paddles between, a
-   * violet validator on each; the paving under them, a ticket machine and the line's lit totem by them.
+   * The entrance, open (transit is free): the paving across the way in (`xs` its extent, along z when `acrossX`, else
+   * x) and the line's lit totem out on the incoming side.
    */
-  const gates = (xs: number[], z: number, acrossX: boolean, toward: number) => {
+  const entrance = (xs: number[], z: number, acrossX: boolean, toward: number) => {
     const g = Math.min(...xs.map((x) => (acrossX ? ground(x, z) : ground(z, x))));
     const span = Math.max(...xs) - Math.min(...xs);
     const mid = (Math.max(...xs) + Math.min(...xs)) / 2;
     if (acrossX) P(span + 1.2, 0.14, 3.4, mid, g + 0.05, z, STONE);
     else P(3.4, 0.14, span + 1.2, z, g + 0.05, mid, STONE);
-    xs.forEach((c, k) => {
-      const [x, zz] = acrossX ? [c, z] : [z, c];
-      if (acrossX) P(0.26, 1.0, 1.4, x, g + 0.62, zz, DARK);
-      else P(1.4, 1.0, 0.26, x, g + 0.62, zz, DARK);
-      // the validator at the cabinet's incoming end
-      const [vx, vz] = acrossX ? [x, zz + toward * 0.55] : [x + toward * 0.55, zz];
-      box(out.glow, 0.2, 0.05, 0.2, vx, g + 1.15, vz);
-      if (k + 1 < xs.length) {
-        const n = acrossX ? [(c + xs[k + 1]) / 2, z] : [z, (c + xs[k + 1]) / 2];
-        const gap = Math.abs(xs[k + 1] - c) - 0.3;
-        for (const off of [-0.2, 0.2]) {
-          if (acrossX) box(out.glass, gap / 2 - 0.05, 0.75, 0.04, n[0] + (off < 0 ? -1 : 1) * (gap / 4), g + 0.75, n[1] + off * 0.2);
-          else box(out.glass, 0.04, 0.75, gap / 2 - 0.05, n[0] + off * 0.2, g + 0.75, n[1] + (off < 0 ? -1 : 1) * (gap / 4));
-        }
-      }
-    });
-    // the ticket machine and the totem, out on the incoming side
-    const [tx, tz] = acrossX ? [xs[xs.length - 1] - s * 0.6, z + toward * 2.1] : [z + toward * 2.1, xs[0] + 0.6];
-    P(0.8, 1.7, 0.6, tx, g + 0.85, tz, WHITE);
-    P(0.6, 0.5, 0.04, tx, g + 1.2, tz + (acrossX ? toward * 0.32 : 0), 0x1f2a36);
     const [px, pz] = acrossX ? [xs[0] + s * 0.2, z + toward * 2.4] : [z + toward * 2.4, xs[xs.length - 1] - 0.2];
     box(out.steel, 0.12, 3.4, 0.12, px, g + 1.7, pz);
     box(out.glow, 0.14, 1.3, 0.7, px, g + 2.8, pz);
@@ -129,7 +108,7 @@ export function accessParts(e: Access, ground: (x: number, z: number) => number)
     lift(LIFT.x * s, e.zLift, LIFT.w, 1.4);
     const gx: number[] = [];
     for (let k = 0; k <= 4; k++) gx.push((GATES.x0 + ((GATES.x1 - GATES.x0) * k) / 4) * s);
-    gates(gx, e.zGates, true, -e.dir);
+    entrance(gx, e.zGates, true, -e.dir);
   } else if (e.kind === "end") {
     // steps down off the platform's end, a lift beside them where the climb is a storey or more
     const x = 8.9 * s;
@@ -138,7 +117,7 @@ export function accessParts(e: Access, ground: (x: number, z: number) => number)
     if (1.4 - e.yFoot > 4) lift(11.4 * s, e.zTop + out1 * 1.2, 1.8, 1.4);
     const gx: number[] = [];
     for (let k = 0; k <= 4; k++) gx.push((GATES.x0 + ((GATES.x1 - GATES.x0) * k) / 4) * s);
-    gates(gx, e.zGates, true, out1);
+    entrance(gx, e.zGates, true, out1);
   } else {
     // a glass tower of stairs and a lift beside the platform, a landing across to it
     const TX = e.tx ?? TOWER.x;
@@ -199,13 +178,13 @@ export function accessParts(e: Access, ground: (x: number, z: number) => number)
       // its steel truss underneath, a chord each side
       for (const dz of [-1.0, 1.0]) box(out.steel, span, 0.16, 0.12, ((11.4 + x0) / 2) * s, top - 0.45, zLand + dz);
     }
-    // the gates: beyond the tower's end, or beside it on its outer face
+    // the entrance: beyond the tower's end, or beside it on its outer face
     if (e.dir !== 0) {
       const gx = [0, 1, 2, 3].map((k) => (x0 + 0.1 + (k * (TOWER.w - 0.2)) / 3) * s);
-      gates(gx, e.zGates, true, -e.dir);
+      entrance(gx, e.zGates, true, -e.dir);
     } else {
       const gz = [0, 1, 2, 3].map((k) => zA + 0.3 + (k * (TOWER.d - 0.6)) / 3);
-      gates(gz, (x0 + TOWER.w + 1.4) * s, false, s);
+      entrance(gz, (x0 + TOWER.w + 1.4) * s, false, s);
     }
   }
   return out;

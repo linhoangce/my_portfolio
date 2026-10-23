@@ -285,9 +285,9 @@ export function hoverCar(): BufferGeometry {
 
 /**
  * A Coast Salish–style journey canoe on False Creek, bow along +z as the boats are built: a long dark hull, bow and
- * stern sweeping up, and ten paddlers in red and black, their paddles in the water, alternating sides.
+ * stern sweeping up, and (with its crew) ten paddlers in red and black, their paddles in the water, alternating sides.
  */
-export function canoe(): BufferGeometry {
+export function canoe(crew = true): BufferGeometry {
   // prettier-ignore
   const hull: Sec[] = [
     [-3.4, 0.08, 0.6, 0.92, 0.96, 0.06, 0],
@@ -300,7 +300,7 @@ export function canoe(): BufferGeometry {
   ];
   const skins = [0xd39b6f, 0xb07a4f, 0x8a5a36, 0x5e3b22, 0xeac09a];
   const parts: BufferGeometry[] = [loft(hull, false)];
-  for (let k = 0; k < 10; k++) {
+  for (let k = 0; k < (crew ? 10 : 0); k++) {
     const x = -2.45 + k * 0.54;
     const s = k % 2 ? 1 : -1;
     parts.push(

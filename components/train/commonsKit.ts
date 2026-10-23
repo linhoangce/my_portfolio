@@ -189,7 +189,7 @@ export function parkLamp(): Pieces {
   return out;
 }
 
-/** A string of red paper lanterns between two posts' tops (points in the caller's frame, y up): each a lit octahedron. */
+/** A string of paper lanterns, red and amber, between two posts' tops (points in the caller's frame, y up), bulbs hung below. */
 export function lanternString(out: Pieces, a: [number, number, number], b: [number, number, number], sag = 0.5): void {
   const L = Math.hypot(b[0] - a[0], b[2] - a[2]);
   const n = Math.max(2, Math.round(L / 1.4));
@@ -198,7 +198,13 @@ export function lanternString(out: Pieces, a: [number, number, number], b: [numb
     out.solid.push(rod(pt(i / n), pt((i + 1) / n), 0.02, 0x24272c, 3));
     if (i > 0) {
       const p = pt(i / n);
-      out.warm.push(paint(new OctahedronGeometry(0.3, 0).scale(1, 1.2, 1).translate(p.x, p.y - 0.42, p.z), 0xe23b2e));
+      // red lanterns and amber ones in turn, and under every other a bare bulb on a cord, down over the stalls
+      out.warm.push(paint(new OctahedronGeometry(0.3, 0).scale(1, 1.2, 1).translate(p.x, p.y - 0.42, p.z), i % 2 ? 0xe23b2e : 0xffa53a));
+      if (i % 2 === 0) {
+        const q = p.clone().setY(p.y - 1.9);
+        out.solid.push(rod(p.clone().setY(p.y - 0.7), q, 0.012, 0x24272c, 3));
+        out.warm.push(paint(new OctahedronGeometry(0.12, 0).translate(q.x, q.y - 0.1, q.z), 0xffd49a));
+      }
     }
   }
 }

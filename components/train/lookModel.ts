@@ -343,6 +343,7 @@ export function tickLook(world: World, dt: number, instant: boolean, dockedIdx: 
   mats.tail.emissiveIntensity = c.tail;
   for (const sp of lights.spots) sp.intensity = c.spot;
   mats.lamp.emissiveIntensity = c.lamp;
+  world.shopGlow.value = c.lamp / 1.4;
   lights.stationLight.intensity = c.stationLight;
   mats.edge.forEach((m, i) => {
     m.emissiveIntensity = i === dockedIdx ? c.edge * 2.4 : c.edge;

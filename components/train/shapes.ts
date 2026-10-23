@@ -161,6 +161,12 @@ export function paint(g: BufferGeometry, hex: number): BufferGeometry {
   return ng;
 }
 
+/** Where some of the parts to merge glow (aGlow, pavilion.ts lit), the rest get a glow of none, so all merge. */
+export function unlit(gs: BufferGeometry[]): void {
+  if (!gs.some((g) => g.attributes.aGlow)) return;
+  for (const g of gs) if (!g.attributes.aGlow) g.setAttribute("aGlow", new Float32BufferAttribute(new Float32Array(g.attributes.position.count), 1));
+}
+
 /** Merge geometries with the same attribute set (use paint() or keep them all textured), disposing the parts. */
 export function merge(gs: BufferGeometry[]): BufferGeometry {
   const flat = gs.map((g) => {
@@ -170,6 +176,7 @@ export function merge(gs: BufferGeometry[]): BufferGeometry {
     if (!ng.attributes.normal) ng.computeVertexNormals();
     return ng;
   });
+  unlit(flat);
   const out = mergeGeometries(flat, false);
   for (const g of flat) g.dispose();
   return out;

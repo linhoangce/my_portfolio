@@ -260,7 +260,11 @@ export type Kind =
   | "moongate"
   | "taiko"
   | "banner"
-  | "mural";
+  | "mural"
+  | "longhouse"
+  | "landing"
+  | "post"
+  | "fire";
 /**
  * One thing standing in a place: where, its turn (as rotation.y: its local +z faces (sin ry, cos ry)), a colour, a
  * pavilion's name and size, a lantern string's ends (hung under the Stadium terrace).
@@ -350,6 +354,14 @@ const CULTURE: Feature[] = [
   { kind: "mural", ...inSet(5, -19.2, 36, 1, 0), cell: ART.hands, w: 5.4, site: "commercial" },
   { kind: "flag", ...inSet(5, -19.4, 46, 1, 0), cell: ART.pride, site: "commercial" },
   { kind: "flag", ...inSet(5, -19.4, 50, 1, 0), cell: ART.trans, site: "commercial" },
+  // the canoe landing on the slope of the Canada Place forecourt down to the harbour: a longhouse at its head facing the
+  // water, two carved posts at the top of its steps, a fire circle between, the steps (Culture.tsx lays them on the
+  // ground) running down to a float where two journey canoes are drawn up
+  { kind: "longhouse", x: -16.5, z: -30, ry: Math.PI, w: 10, d: 6, site: "forecourt" },
+  { kind: "fire", x: -16.5, z: -34.6, ry: 0, site: "forecourt" },
+  { kind: "post", x: -24.4, z: -36.2, ry: Math.PI, site: "forecourt" },
+  { kind: "post", x: -8.6, z: -36.2, ry: Math.PI, site: "forecourt" },
+  { kind: "landing", x: -16.5, z: -45.5, ry: Math.PI, w: 15, d: 19, site: "forecourt" },
 ];
 
 const MARKET_HEX = [0xe4572e, 0xd2452f, 0xf3a712, 0x29a19c, 0xc8281e, 0xe84393];
@@ -515,6 +527,14 @@ export function footprint(f: Feature): Shape[] {
       return [["c", f.x, f.z, 0.9]];
     case "mural":
       return [rect((f.w ?? 6) / 2 + 0.2, 0.3)];
+    case "longhouse":
+      return [rect((f.w ?? 10) / 2 + 1.2, (f.d ?? 6) / 2 + 1.2)];
+    case "landing":
+      return [rect((f.w ?? 15) / 2 + 0.6, (f.d ?? 19) / 2)];
+    case "post":
+      return [["c", f.x, f.z, 0.9]];
+    case "fire":
+      return [["c", f.x, f.z, 2.9]];
     default:
       return [["c", f.x, f.z, 0.5]];
   }

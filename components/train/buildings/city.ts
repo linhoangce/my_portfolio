@@ -22,12 +22,15 @@ import { inLandmark, inPark, LANDMARKS, nearBridge, seawallDist, streamDist } fr
 import { groundAt, inWater, RASTER, surfaceAt } from "../terrain";
 import { PATH_SAMPLES, STATION_XZ, trackDist, trackNearest } from "../track";
 import type { SpeciesId } from "../trees/species";
-import { ART } from "../cultureArt";
+import { ART, MURAL0 } from "../cultureArt";
+import { type MuralKind, muralsOf } from "../muralArt";
 import { BUILD, type Ctx, PAL } from "./archetypes";
+import { cap, fp, walls } from "./parts";
+import { inSenakw, PAVILION, podiumLevels, PODIUMS, towerBase, towerPoly, TOWERS } from "./senakw";
 import { ARCH_BY_ERA, ARCH_DENSE, ARCH_LOWRISE, type ArchId, hood, type Hood, HOUSE_MIX, TOWERISH, ZONES } from "./eras";
 import { HEROES } from "./heroes";
 import { type HouseInst, type HouseKind } from "./houses";
-import { GeoBuilder } from "./meshBuilder";
+import { GeoBuilder, type V3 } from "./meshBuilder";
 import type { Sink } from "./parts";
 
 /**
@@ -38,25 +41,38 @@ export type Lot = { x: number; z: number; w: number; d: number; h: number; top: 
 /** A mural on a building's blank side wall: its centre, the turn that faces its plane out, its size, the atlas cell. */
 export type Mural = { x: number; y: number; z: number; ry: number; s: number; cell: number; w?: number };
 
+/** A mural's subject: one of the city's murals of a kind (muralArt.ts), or one of the community's (cultureArt.ts). */
+type Subject = MuralKind | "hogan" | "faces" | "hands" | "dragon" | "rangoli" | "japantown";
 /**
- * The murals' subjects by neighbourhood (cultureArt.ts cells): Chinatown's dragon, Hogan's Alley's faces round Main and
- * Union, the rangoli on Commercial Drive and round Joyce, Coast Salish salmon and orca by the water, rainbow hands
- * toward Davie, and faces of the community everywhere.
+ * Where the murals are and what they show, each wall a mural of its own (no two the same): Hogan's Alley's faces at Main
+ * and Union, the Powell Street banner by Oppenheimer Park, the Mural Festival's portraits and colour murals round Main
+ * Street and Mount Pleasant, Chinatown's dragon, weavings and formline in Gastown and by Science World, the rangoli and
+ * raised hands on Commercial Drive, rainbow hands toward Davie. A place's murals take its biggest walls within sight of
+ * the line, the nearest first.
  */
-const MURAL_SUBJECTS: Partial<Record<Hood, number[]>> = {
-  chinatown: [ART.dragon, ART.dragon, ART.faces, ART.salmon],
-  strathcona: [ART.hogan, ART.faces, ART.salmon, ART.japantown],
-  gastown: [ART.orca, ART.salmon, ART.faces, ART.hands],
-  downtown: [ART.orca, ART.hands, ART.faces, ART.salmon],
-  westend: [ART.hands, ART.hands, ART.orca, ART.faces],
-  yaletown: [ART.orca, ART.hands, ART.faces, ART.salmon],
-  mainst: [ART.hogan, ART.faces, ART.salmon, ART.rangoli],
-  mountpleasant: [ART.faces, ART.salmon, ART.hands, ART.rangoli],
-  flats: [ART.salmon, ART.orca, ART.faces, ART.hands],
-  commercial: [ART.rangoli, ART.faces, ART.hands, ART.salmon, ART.orca],
-  joyce: [ART.faces, ART.rangoli, ART.dragon, ART.hands],
-};
-const MURAL_ANY = [ART.orca, ART.salmon, ART.faces, ART.hands, ART.rangoli];
+const MURAL_PLAN: [Hood | { x: number; z: number; r: number }, Subject[]][] = [
+  [{ x: 98, z: 101, r: 50 }, ["hogan", "faces"]],
+  [{ x: 143, z: 43, r: 60 }, ["japantown"]],
+  ["mountpleasant", ["portrait", "abstract", "weave", "portrait", "formline", "portrait"]],
+  ["mainst", ["portrait", "weave", "formline"]],
+  ["strathcona", ["weave", "portrait"]],
+  ["chinatown", ["dragon", "formline"]],
+  ["gastown", ["formline", "weave", "abstract"]],
+  ["flats", ["weave", "formline"]],
+  ["commercial", ["portrait", "rangoli", "hands", "abstract"]],
+  ["westend", ["hands", "portrait"]],
+  ["downtown", ["formline", "abstract"]],
+  ["yaletown", ["abstract"]],
+  ["olympic", ["weave"]],
+  ["joyce", ["faces", "portrait"]],
+];
+const COMMUNITY: Partial<Record<Subject, number>> = { hogan: ART.hogan, faces: ART.faces, hands: ART.hands, dragon: ART.dragon, rangoli: ART.rangoli, japantown: ART.japantown };
+/**
+ * Where Coast Salish–inspired halls stand among the city's blocks, and how often a block there is one: round Main
+ * Street, Mount Pleasant and the flats by Science World, East Hastings and Strathcona, Commercial Drive, a few on the
+ * North Shore. Elsewhere none.
+ */
+const HALL_RATE: Partial<Record<Hood, number>> = { mountpleasant: 0.05, mainst: 0.08, flats: 0.15, strathcona: 0.1, commercial: 0.1, northshore: 0.012 };
 /** Inside a lot's turned footprint (city.ts turns a lot's local (lx, lz) to (lx c + lz s, -lx s + lz c)). */
 function inFootprint(L: Lot, x: number, z: number): boolean {
   const c = Math.cos(L.ry ?? 0);
@@ -209,24 +225,22 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
   const houses: HouseInst[] = [];
   const terrace: TerraceTree[] = [];
   const addTerrace = (x: number, y: number, z: number, s: number, sp: SpeciesId) => terrace.push({ x, y, z, s, sp });
-  // the murals: about one blank side wall in two within sight of the line, as big as the wall allows (those that face a
-  // neighbour's wall are dropped once every lot stands)
-  const murals: Mural[] = [];
+  // the blank walls a mural could take, within sight of the line, as big as the wall allows: the murals are chosen from
+  // them once every lot stands (none on a wall facing a neighbour's)
+  type Blank = Mural & { hood: Hood; dist: number; subject?: number; front: boolean; lot: string };
+  const blanks: Blank[] = [];
   /** The low and mid-rise blocks a Coast Salish–inspired hall may stand for. */
   const SALISH_FROM = new Set<ArchId>(["midrise", "courtyard", "townhouses", "timberTerraces", "colourPanels", "metalLoft", "stacked", "ziggurat", "biodome"]);
   // one scratch sink for them all (a builder sets aside room for thousands of vertices): what goes in is never drawn
   let scratch: Sink | null = null;
   const scratchSink = (): Sink => (scratch ??= { solid: new GeoBuilder(), glass: new GeoBuilder(), crownA: new GeoBuilder(), crownB: new GeoBuilder(), dome: new GeoBuilder(), neon: new GeoBuilder() });
-  // a building's own paintings (subject given): -1 a Coast Salish–inspired building's, its front a painted house front
-  // and its sides formline; a cell, that cell (a carved post's face); a front's are as wide as the wall allows
-  const SALISH_SIDES = [ART.orca, ART.salmon, ART.whorl, ART.back];
+  // a building's own paintings (subject given): -1 a Coast Salish–inspired hall's, its front a painted house front and
+  // its sides formline or weaving; a cell, that cell (a carved post's face); a front's are as wide as the wall allows
   const muralAt = (x: number, z: number, ry: number, name: Hood, dist: number, lx: number, lz: number, len: number, y0: number, y1: number, subject?: number, front = false) => {
     const own = subject !== undefined;
     if (dist > (own ? 260 : 150)) return;
     const s = front ? Math.min(y1 - y0, 8) : Math.min(len, y1 - y0, 8);
     if (s < (front ? 1.2 : 2.4)) return;
-    const u = hash01(x * 1.37 + lx, z * 0.71 + lz);
-    if (!own && u > 0.5) return;
     const c = Math.cos(ry);
     const sn = Math.sin(ry);
     // the wall's face, a little out from it, and its outward normal: the side walls face along local x, the front -z
@@ -236,10 +250,8 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
     const wx = x + ox * c + oz * sn;
     const wz = z - ox * sn + oz * c;
     const [nx, nz] = front ? [-sn, -c] : [side * c, -side * sn];
-    const subjects = own && subject >= 0 ? [subject] : own ? (front ? [ART.bighouse] : SALISH_SIDES) : Math.hypot(wx - 98, wz - 101) < 50 ? [ART.hogan, ART.hogan, ART.faces] : (MURAL_SUBJECTS[name] ?? MURAL_ANY);
-    const cell = subjects[Math.floor(hash01(wz, wx) * subjects.length)];
     const w = front ? Math.min(len, 2 * s) : undefined;
-    murals.push({ x: wx, y: y0 + Math.min(0.4, (y1 - y0 - s) / 2) + s / 2, z: wz, ry: Math.atan2(nx, nz), s, cell, w });
+    blanks.push({ x: wx, y: y0 + Math.min(0.4, (y1 - y0 - s) / 2) + s / 2, z: wz, ry: Math.atan2(nx, nz), s, cell: subject ?? -1, w, hood: name, dist, subject, front, lot: `${x},${z}` });
   };
   // the ground drawn on low-end devices is coarser (12-unit cells), so on a slope it can stand above the true ground:
   // floors stand on whichever is higher and walls reach down to whichever is lower, so the land never covers a wall
@@ -328,6 +340,7 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
     const yb = Math.min(...pts.map(([px, pz]) => footAt(px, pz))) - 0.6;
     const yt = Math.max(...pts.map(([px, pz]) => floorAt(px, pz)));
     const dist = Math.min(...pts.map(([px, pz]) => cor.dist(px, pz)));
+    const onSite = pts.some(([px, pz]) => inSenakw(px, pz));
     // the turned footprint's extent on the axes, for the city's box tests
     const aw = Math.abs(w * Math.cos(ry)) + Math.abs(d * Math.sin(ry));
     const ad = Math.abs(w * Math.sin(ry)) + Math.abs(d * Math.cos(ry));
@@ -346,6 +359,8 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
       const palette = kind === "modern" ? [0x3a3d42, 0xf2f0ea, 0x6b7a6f, 0x2e3034, 0xb8bcc2, 0x9a5634] : kind === "duplex" ? [0x2f3b4c, 0x4a4d52, 0xe9e4da, 0x7f9a6a, 0x8f3b3b, 0xd9c08a] : PAL.wood;
       const wall = palette[Math.floor(rng.next() * palette.length)];
       const roof = [0x4a4f58, 0x5a4a42, 0x3e4651, 0x6b5a4a, 0x7a3b32, 0x445a4a][Math.floor(rng.next() * 6)];
+      // on the towers' podiums (senakw.ts): its numbers drawn, nothing built
+      if (onSite) return;
       houses.push({ kind, x, y: yt, z, ry, sx: Math.min(1.1, Math.max(0.7, w / 7)), sz: Math.min(1.1, Math.max(0.7, d / 9)), wall: toT(wall), roof: toT(roof) });
       lots.push({ x, z, w: aw, d: ad, h: 6, top: yt + 7, ry, fw: w, fd: d });
       return;
@@ -385,7 +400,11 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
     const tb = now();
     // some of today's and 2100's low and mid-rise blocks are halls after Coast Salish plank houses, chosen by place;
     // the block a hall stands for still draws its numbers (into a scratch sink), so the rest of the city is as it was
-    const hall = era > 0 && SALISH_FROM.has(chosen) && hash01(x * 0.73 + 5.1, z * 1.91 - 2.3) < 0.09;
+    if (onSite) {
+      BUILD[chosen as Exclude<ArchId, "house">]({ ...ctx, sink: scratchSink(), terrace: () => undefined, wall: undefined });
+      return;
+    }
+    const hall = era > 0 && SALISH_FROM.has(chosen) && hash01(x * 0.73 + 5.1, z * 1.91 - 2.3) < (HALL_RATE[name] ?? 0);
     if (hall) {
       BUILD[chosen as Exclude<ArchId, "house">]({ ...ctx, sink: scratchSink(), terrace: () => undefined, wall: undefined });
       H = Math.min(H, 6 * 1.9 + 3.7);
@@ -654,9 +673,53 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
     }
   }
 
+  // the towers after senákw (senakw.ts): planted podiums over the rise behind Science World, faceted towers on them, all
+  // in the first podium's chunk (the tallest tower would lift the next chunk's bounds into the opening view)
+  const senakw = sinkAt(PODIUMS[0].x0, PODIUMS[0].z0);
+  for (const pd of PODIUMS) {
+    const { yb, yt } = podiumLevels(pd, lowEnd);
+    const cx = (pd.x0 + pd.x1) / 2;
+    const cz = (pd.z0 + pd.z1) / 2;
+    const w = pd.x1 - pd.x0;
+    const d = pd.z1 - pd.z0;
+    const sink = senakw;
+    walls(sink, "dark", fp.rect(w, d), cx, cz, yb, yt + 0.5, { yRef: yt });
+    const ring = walls(sink, "glass", fp.rect(w - 0.4, d - 0.4), cx, cz, yt + 0.5, yt + pd.h, { yRef: yt, tint: [0.75, 0.82, 0.88] });
+    walls(sink, "concrete", fp.rect(w + 0.3, d + 0.3), cx, cz, yt + pd.h, yt + pd.h + 0.4, { tint: [0.93, 0.93, 0.9] });
+    cap(sink, "garden", ring.map(([a, , b]) => [a, yt + pd.h + 0.35, b]));
+    for (let k = 0; k < 7; k++) addTerrace(pd.x0 + 1.5 + ((w - 3) * k) / 6, yt + pd.h + 0.4, k % 2 ? pd.z0 + 1.2 : pd.z1 - 1.2, 0.6 + (k % 3) * 0.12, (["cedar", "smaple", "cherry"] as const)[k % 3]);
+    lots.push({ x: cx, z: cz, w, d, h: yt + pd.h - yb, top: yt + pd.h + 3 });
+  }
+  {
+    const pv = PAVILION;
+    const pd = PODIUMS[pv.podium];
+    const base = podiumLevels(pd, lowEnd).yt + pd.h;
+    const sink = senakw;
+    const seg = lowEnd ? 14 : 22;
+    const ring = walls(sink, "glass", fp.ellipse(pv.r * 2, pv.r * 2, seg), pv.x, pv.z, base, base + pv.h, { tint: [0.8, 0.9, 0.95], yRef: base });
+    walls(sink, "concrete", fp.ellipse(pv.r * 2 + 0.7, pv.r * 2 + 0.7, seg), pv.x, pv.z, base + pv.h, base + pv.h + 0.4, { tint: [0.95, 0.95, 0.92] });
+    cap(sink, "garden", ring.map(([a, , b]) => [a, base + pv.h + 0.35, b]));
+    for (let k = 0; k < 3; k++) addTerrace(pv.x + Math.cos(k * 2.1) * 1.2, base + pv.h + 0.4, pv.z + Math.sin(k * 2.1) * 1.2, 0.55, k ? "smaple" : "cherry");
+  }
+  for (const t of TOWERS) {
+    const sink = senakw;
+    const base = towerBase(t, lowEnd);
+    const poly = towerPoly(t);
+    // dark navy glass, each tower a shade of its own
+    const tint: [number, number, number] = t.podium ? [0.4, 0.5, 0.66] : t.rot < 0 ? [0.44, 0.52, 0.66] : [0.38, 0.47, 0.62];
+    let top: V3[] = [];
+    for (const [f0, f1, s0, s1, r0, r1] of t.prisms) top = walls(sink, "senakw", poly, t.x, t.z, base + t.h * f0, base + t.h * f1, { s0, s1, r0, r1, tint, yRef: base });
+    cap(sink, "garden", top);
+    for (let k = 0; k < 4; k++) {
+      const a = (k / 4) * Math.PI * 2 + t.rot;
+      addTerrace(t.x + Math.cos(a) * t.r * 0.45, base + t.h, t.z + Math.sin(a) * t.r * 0.45, 0.7, k % 2 ? "cedar" : "smaple");
+    }
+    lots.push({ x: t.x, z: t.z, w: t.r * 2.3, d: t.r * 2.3, h: base + t.h - (base - PODIUMS[t.podium].h), top: base + t.h + 3 });
+  }
+
   mark("lots");
   // a mural only where the ground in front of its wall is open: none painted into a neighbour's wall
-  const open = murals.filter((m) => {
+  const open = blanks.filter((m) => {
     const nx = Math.sin(m.ry);
     const nz = Math.cos(m.ry);
     return [1.2, 3, 6].every((d) => {
@@ -665,8 +728,39 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
       return !lots.some((L) => Math.abs(L.x - x) < 20 && Math.abs(L.z - z) < 20 && inFootprint(L, x, z));
     });
   });
-  murals.length = 0;
-  murals.push(...open);
+  // the murals of each kind in turn, so none repeats until all of its kind are up
+  const pools = new Map<MuralKind, { cells: number[]; next: number }>();
+  const nextOf = (kind: MuralKind): number => {
+    let p = pools.get(kind);
+    if (!p) pools.set(kind, (p = { cells: muralsOf(kind), next: 0 }));
+    return MURAL0 + p.cells[p.next++ % p.cells.length];
+  };
+  const murals: Mural[] = [];
+  const keep = ({ x, y, z, ry, s, w }: Blank, cell: number) => murals.push({ x, y, z, ry, s, cell, w });
+  // each neighbourhood's murals on its biggest walls, the nearest the line first, none within 24 of another
+  const street = open.filter((m) => m.subject === undefined && m.dist <= 150);
+  const score = (m: Blank) => (m.s * (m.w ?? m.s)) / (1 + m.dist / 50);
+  for (const [where, subjects] of MURAL_PLAN) {
+    const here = street.filter((m) => (typeof where === "string" ? m.hood === where : Math.hypot(m.x - where.x, m.z - where.z) < where.r)).sort((a, b) => score(b) - score(a));
+    let k = 0;
+    for (const m of here) {
+      if (k >= subjects.length) break;
+      if (murals.some((o) => Math.hypot(o.x - m.x, o.z - m.z) < 24)) continue;
+      const sub = subjects[k++];
+      keep(m, COMMUNITY[sub] ?? nextOf(sub as MuralKind));
+    }
+  }
+  // each hall its own front, and its own weaving or formline on both sides; a carved post keeps its face
+  const halls = new Map<string, number>();
+  for (const m of open) {
+    if (m.subject === undefined) continue;
+    if (m.subject >= 0) keep(m, m.subject);
+    else if (m.front) keep(m, nextOf("front"));
+    else {
+      if (!halls.has(m.lot)) halls.set(m.lot, nextOf(halls.size % 2 ? "formline" : "weave"));
+      keep(m, halls.get(m.lot) ?? MURAL0);
+    }
+  }
   phases.lotGeometry = Math.round(buildMs);
   for (const [k, v] of Object.entries(archMs)) if (v > 20) phases[`arch:${k}`] = Math.round(v);
   const out: CityGeometry = {

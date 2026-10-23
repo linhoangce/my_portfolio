@@ -5,7 +5,9 @@
  */
 import { BoxGeometry, type BufferGeometry, CircleGeometry, ConeGeometry, CylinderGeometry, ExtrudeGeometry, Path, PlaneGeometry, Shape } from "three";
 
-import { ART, intoCell, onWhite } from "./cultureArt";
+import { ART, intoCell, MURAL0, onWhite } from "./cultureArt";
+import { muralsOf } from "./muralArt";
+import { canoe } from "./vehicles";
 import { paint } from "./shapes";
 
 const CEDAR = 0x8b4a2b;
@@ -157,6 +159,75 @@ export function bigHouse(w = 11, d = 6.5): BufferGeometry[] {
   return out;
 }
 
+/**
+ * A Coast Salish longhouse: cedar planks under a single shed roof falling from its tall front (facing +z, toward the
+ * water) to its low back, the front a painted house front (a woven one, one of the city's murals), two carved house
+ * posts at its corners, a smoke hole along the roof's high edge; on a timber platform reaching down to meet a slope.
+ */
+export function longhouse(w = 10, d = 6): BufferGeometry[] {
+  const hf = 5.2;
+  const hb = 3.2;
+  const out: BufferGeometry[] = [P(new BoxGeometry(w + 1.6, 3.2, d + 1.6).translate(0, -1.5, 0), 0x7d6650)];
+  out.push(
+    P(new BoxGeometry(w, hb, 0.3).translate(0, hb / 2, -d / 2 + 0.15), CEDAR),
+    P(new BoxGeometry(w, hf, 0.3).translate(0, hf / 2, d / 2 - 0.15), CEDAR),
+  );
+  // the side walls, tall at the front and low at the back
+  for (const s of [-1, 1]) {
+    const side = new Shape();
+    side.moveTo(-d / 2, 0);
+    side.lineTo(d / 2, 0);
+    side.lineTo(d / 2, hf);
+    side.lineTo(-d / 2, hb);
+    side.closePath();
+    out.push(P(new ExtrudeGeometry(side, { depth: 0.3, bevelEnabled: false }).rotateY(-Math.PI / 2).translate(s * (w / 2 - 0.15) + 0.15, 0, 0), CEDAR));
+  }
+  // the plank seams on the front and back, the painted front over them
+  for (let x = -w / 2 + 0.8; x < w / 2; x += 0.8) out.push(P(new BoxGeometry(0.05, hb, 0.05).translate(x, hb / 2, -d / 2 - 0.02), 0x6e4a2e));
+  out.push(...panel(MURAL0 + (muralsOf("front").at(-1) ?? 0), w - 0.3, hf - 0.2, 0, hf / 2, d / 2 + 0.005));
+  // the shed roof, overhanging front and back, and the smoke hole's raised board along its high edge
+  const run = d + 1.2;
+  const pitch = Math.atan2(hf - hb, d);
+  out.push(P(new BoxGeometry(w + 1, 0.22, Math.hypot(run, (hf - hb) * (run / d))).rotateX(-pitch).translate(0, (hf + hb) / 2 + 0.12, 0), 0x5e4a3a));
+  out.push(P(new BoxGeometry(w * 0.6, 0.5, 0.7).translate(0, hf + 0.15, d / 2 - 1.1), 0x5e4a3a));
+  // the house posts at the front corners, carved, their faces out
+  for (const s of [-1, 1]) {
+    out.push(P(new BoxGeometry(0.8, hf + 0.8, 0.8).translate(s * (w / 2 + 0.2), (hf + 0.8) / 2, d / 2 + 0.25), CEDAR));
+    out.push(...panel(s < 0 ? ART.welcome : ART.welcome2, 0.8, hf + 0.8, s * (w / 2 + 0.2), (hf + 0.8) / 2, d / 2 + 0.655));
+  }
+  return out;
+}
+
+/** A tall carved post: a welcome face at its head, formline salmon down its front, its back and sides carved too. */
+export function carvedPost(h = 8): BufferGeometry[] {
+  const out: BufferGeometry[] = [P(new BoxGeometry(1.0, h, 1.0).translate(0, h / 2, 0), CEDAR)];
+  out.push(...panel(ART.welcome2, 1.0, 3.0, 0, h - 1.5, 0.505));
+  out.push(...panel(MURAL0 + (muralsOf("formline").at(-1) ?? 0), 1.0, h - 3.2, 0, (h - 3.2) / 2 + 0.1, 0.505));
+  out.push(...panel(ART.back, 1.0, h, 0, h / 2, -0.505, undefined));
+  out.push(P(new BoxGeometry(1.5, 0.3, 1.5).translate(0, h + 0.15, 0), 0x5e4a3a));
+  return out;
+}
+
+/** A fire circle: a ring of stones round its embers, log benches round it. */
+export function fireCircle(): BufferGeometry[] {
+  const out: BufferGeometry[] = [P(new CylinderGeometry(0.75, 0.85, 0.12, 12).translate(0, 0.06, 0), 0x2a1d14)];
+  for (let k = 0; k < 9; k++) {
+    const a = (k / 9) * Math.PI * 2;
+    out.push(P(new BoxGeometry(0.4, 0.3, 0.35).rotateY(a).translate(Math.cos(a) * 1.0, 0.15, Math.sin(a) * 1.0), 0x8f8a82));
+  }
+  out.push(P(new ConeGeometry(0.4, 0.5, 6).translate(0, 0.35, 0), 0xd2452f), P(new ConeGeometry(0.22, 0.4, 5).translate(0.15, 0.3, -0.1), 0xf2b632));
+  for (let k = 0; k < 4; k++) {
+    const a = (k / 4) * Math.PI * 2 + 0.4;
+    out.push(P(new CylinderGeometry(0.22, 0.22, 2.2, 7).rotateZ(Math.PI / 2).rotateY(-a).translate(Math.cos(a) * 2.4, 0.22, Math.sin(a) * 2.4), 0x7a5a3a));
+  }
+  return out;
+}
+
+/** A journey canoe without its crew, bow along +z, its hull black. */
+export function canoeHull(): BufferGeometry[] {
+  return [P(canoe(false), 0x1d1b1a)];
+}
+
 /** A moon gate: a white garden wall with a round opening, under a tiled cap. */
 export function moonGate(w = 5, h = 3.2, r = 1.15): BufferGeometry[] {
   const s = new Shape();
@@ -199,6 +270,27 @@ export function banner(cell: number, h = 4.4, bw = 1.2, bh = 2.4): BufferGeometr
     P(new BoxGeometry(bw + 0.2, 0.06, 0.06).translate(bw / 2, h - 0.2, 0), STEEL),
     ...panel(cell, bw, bh, bw / 2 + 0.05, h - 0.25 - bh / 2, 0.01, -0.01),
   ];
+}
+
+/**
+ * One of senákw's sculpted forms, 9 across and 5.8 high, standing out from a face: a stem that splits into two arms
+ * curving apart, like a Y on its side (flip turns it to point the other way). Built in its face's plane, the face's
+ * outward normal along +z.
+ */
+export function towerForm(white: boolean, flip: boolean): BufferGeometry {
+  const sh = new Shape();
+  sh.moveTo(-1.9, 0.14);
+  sh.lineTo(-0.5, 0.14);
+  sh.quadraticCurveTo(0.6, 0.2, 1.9, 1.2);
+  sh.lineTo(1.9, 0.86);
+  sh.quadraticCurveTo(0.7, 0.06, 1.9, -0.86);
+  sh.lineTo(1.9, -1.2);
+  sh.quadraticCurveTo(0.6, -0.2, -0.5, -0.14);
+  sh.lineTo(-1.9, -0.14);
+  sh.closePath();
+  const g = new ExtrudeGeometry(sh, { depth: 0.32, bevelEnabled: true, bevelThickness: 0.06, bevelSize: 0.06, bevelSegments: 1, curveSegments: 10 });
+  g.scale(flip ? -2.4 : 2.4, 2.4, 2);
+  return P(g, white ? 0xf3f1ec : 0xe2541c);
 }
 
 /** A freestanding mural wall, its painting on both faces. */

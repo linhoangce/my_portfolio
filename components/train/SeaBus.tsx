@@ -17,27 +17,44 @@ import { useWorld } from "./world";
 /** The SeaBus's two berths: the end of the hub's gallery pier at Waterfront, and Lonsdale Quay on the North Shore. */
 export const SEABUS_A: [number, number] = [HUB_AT.x + HUB_GALLERY.x, HUB_AT.z + HUB_GALLERY.z1 - 7];
 export const SEABUS_B: [number, number] = [225, -271];
+/** The crossing's heading, Waterfront to Lonsdale. */
+export const SEABUS_YAW = Math.atan2(SEABUS_B[0] - SEABUS_A[0], SEABUS_B[1] - SEABUS_A[1]);
+/**
+ * Where Waterfront's name hangs on its terminal float's roof edge toward the inlet, facing out: drawn with the West
+ * Coast Express's sign (WestCoastExpress.tsx), which is in view wherever this is, so it costs no draw of its own.
+ */
+export const SEABUS_SIGN = { x: SEABUS_A[0] + Math.sin(SEABUS_YAW) * 4.45, y: SEA + 5.2, z: SEABUS_A[1] + Math.cos(SEABUS_YAW) * 4.45, ry: SEABUS_YAW };
 /** Seconds across, and at each berth. */
 const CROSS = 46;
 const DWELL = 16;
 
-const label = (text: string, bg: string) => {
+/** Berths' names, one over the other on one canvas (each sign takes its row). */
+const labels = (rows: [string, string][]) => {
   const cv = document.createElement("canvas");
   cv.width = 1024;
-  cv.height = 160;
+  cv.height = 160 * rows.length;
   const g = cv.getContext("2d");
   if (g) {
-    g.fillStyle = bg;
-    g.fillRect(0, 0, 1024, 160);
-    g.fillStyle = "#ffffff";
-    g.font = "600 82px system-ui, sans-serif";
-    g.textAlign = "center";
-    g.textBaseline = "middle";
-    g.fillText(text, 512, 84);
+    rows.forEach(([text, bg], k) => {
+      g.fillStyle = bg;
+      g.fillRect(0, k * 160, 1024, 160);
+      g.fillStyle = "#ffffff";
+      g.font = "600 82px system-ui, sans-serif";
+      g.textAlign = "center";
+      g.textBaseline = "middle";
+      g.fillText(text, 512, k * 160 + 84);
+    });
   }
   const t = new CanvasTexture(cv);
   t.colorSpace = SRGBColorSpace;
   return t;
+};
+/** A sign's plane showing row k of n of the labels' canvas. */
+const signPlane = (w: number, h: number, k: number, n: number) => {
+  const g = new PlaneGeometry(w, h);
+  const uv = g.attributes.uv;
+  for (let i = 0; i < uv.count; i++) uv.setY(i, 1 - (k + 1 - uv.getY(i)) / n);
+  return g;
 };
 
 /**
@@ -84,13 +101,33 @@ export function SeaBus() {
       { geo: paint(new BoxGeometry(2.6, 0.4, gang).translate(0, 0, 13 + gang / 2).rotateY(ry).translate(lx, SEA + 1.4, lz), 0x8e949b) },
       { geo: paint(new BoxGeometry(3.0, 0.2, gang).translate(0, 0, 13 + gang / 2).rotateY(ry).translate(lx, SEA + 4.2, lz), 0xeef0f2) },
     ]);
-    const solid = new Mesh(merged([{ geo: pontoon(ax, az, yaw) }, { geo: pontoon(bx, bz, yaw) }, { geo: quay }]), new MeshStandardMaterial({ vertexColors: true, roughness: 0.8 }));
+    // Waterfront's terminal float: a broad pontoon under a white roof on posts, railed, glass at its sides, and a covered
+    // gangway from the end of the hub's gallery
+    const wf = (w: number, h: number, d: number, lat: number, y: number, along: number, hex: number) => ({
+      geo: paint(new BoxGeometry(w, h, d).translate(lat, 0, along).rotateY(yaw).translate(ax, y, az), hex),
+    });
+    const terminal = merged([
+      wf(14, 0.9, 8, 0, SEA + 0.45, 0, 0x8e949b),
+      wf(14.6, 0.3, 8.6, 0, SEA + 4.3, 0, 0xeef0f2),
+      wf(14.6, 0.5, 0.2, 0, SEA + 4.0, 4.2, 0x1f6fb2),
+      ...[-6.6, -2.2, 2.2, 6.6].flatMap((lat) => [-3.6, 3.6].map((along) => wf(0.22, 3.4, 0.22, lat, SEA + 2.6, along, 0x3a3f46))),
+      ...[-1, 1].map((sd) => wf(0.06, 2.4, 7.2, sd * 7, SEA + 2.2, 0, 0x9fc3d6)),
+      ...[-1, 1].map((sd) => wf(13.6, 0.08, 0.08, 0, SEA + 1.95, sd * 3.9, 0xd9dcdf)),
+      ...[-1, 1].map((sd) => wf(0.08, 0.08, 7.6, sd * 6.9, SEA + 1.95, 0, 0xd9dcdf)),
+    ]);
+    const gz0 = HUB_AT.z + HUB_GALLERY.z1;
+    const walkLen = Math.max(1, gz0 - az - 3) + 1;
+    const walkZ = (gz0 + az + 3) / 2;
+    const walk = merged([
+      { geo: paint(new BoxGeometry(2.8, 0.4, walkLen).translate(ax, SEA + 1.4, walkZ), 0x8e949b) },
+      { geo: paint(new BoxGeometry(3.2, 0.2, walkLen).translate(ax, SEA + 4.0, walkZ), 0xeef0f2) },
+      ...[-1, 1].map((sd) => ({ geo: paint(new BoxGeometry(0.06, 2.2, walkLen).translate(ax + sd * 1.45, SEA + 2.7, walkZ), 0x9fc3d6) })),
+    ]);
+    const solid = new Mesh(merged([{ geo: terminal }, { geo: walk }, { geo: pontoon(bx, bz, yaw) }, { geo: quay }]), new MeshStandardMaterial({ vertexColors: true, roughness: 0.8 }));
     solid.receiveShadow = true;
-    // the quay's name over its front
-    const tex = label("Lonsdale Quay · SeaBus", "#9c3b2e");
-    const sign = new Mesh(new PlaneGeometry(12, 1.9), new MeshBasicMaterial({ map: tex, toneMapped: false }));
-    sign.position.set(lx + Math.sin(ry) * 5.75, lg + 5.2, lz + Math.cos(ry) * 5.75);
-    sign.rotation.y = ry;
+    // the quay's name over its front (Waterfront's goes with the West Coast Express's sign: SEABUS_SIGN)
+    const tex = labels([["Lonsdale Quay · SeaBus", "#9c3b2e"]]);
+    const sign = new Mesh(signPlane(12, 1.9, 0, 1).rotateY(ry).translate(lx + Math.sin(ry) * 5.75, lg + 5.2, lz + Math.cos(ry) * 5.75), new MeshBasicMaterial({ map: tex, toneMapped: false }));
     const g = new Group();
     g.add(solid, sign, boats, lamps);
     return { g, boats, lamps, mat, lampMat, solid, sign, tex, yaw };

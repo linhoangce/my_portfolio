@@ -27,7 +27,7 @@ import { drape } from "./drape";
 import { merged, type Part } from "./merge";
 import { cutNear } from "./rail";
 import { inHarbourfront, PROMENADE, PROMENADE_W } from "./harbourfront";
-import { type ParkPath, PARKS, SEAWALL, STREAM } from "./sites";
+import { type ParkPath, PARKS, PLANTED, SEAWALL, STREAM } from "./sites";
 import { groundAt, inWater, LAKE, polySdf, sdfAt, SHORE_BOX, SHORES, surfaceAt, terrainRaster } from "./terrain";
 import { skipInMirror } from "./waterMirror";
 import { useWorld } from "./world";
@@ -422,7 +422,7 @@ export function Ground() {
   const cityIn = useTrain((s) => s.loadStage >= CITY_STAGE + 1);
   const lawns = useMemo(() => {
     const tiles = new Map<number, BufferGeometry[]>();
-    for (const p of PARKS) {
+    for (const p of [...PARKS, ...PLANTED]) {
       const g = p.poly ? polyLawn(p.poly, lowEnd ? 2 : 1) : lawn(p.x, p.z, p.r);
       // the same attributes for every one, so they merge
       const n = g.index ? g.toNonIndexed() : g;

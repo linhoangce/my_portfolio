@@ -1,6 +1,7 @@
 /**
  * The city's public art, painted once into one atlas of 4 × 5 cells for every place that shows it: the culture sites
- * (Culture.tsx), the murals on the city's side walls and the people's flags.
+ * (Culture.tsx), the halls' carved posts and the people's flags. Under the cells, at half their size, the city's murals
+ * (muralArt.ts), each painted once.
  *
  * The Coast Salish–inspired pieces (the spindle whorl, the salmon, the orca, the welcome figures' carving, the big
  * house's front) use the tradition's general elements: ovoids, U-forms, split-U forms and trigons in black and red on
@@ -9,6 +10,8 @@
  * (Musqueam), Sḵwx̱wú7mesh (Squamish) and səlilwətaɬ (Tsleil-Waututh) Nations.
  */
 import { BufferGeometry, CanvasTexture, Float32BufferAttribute, MeshStandardMaterial, SRGBColorSpace } from "three";
+import { BLACK, eye, ovoid, RED, salmon, trigon, uform } from "./formline";
+import { MURALS, paintMural } from "./muralArt";
 
 /** What each cell holds. */
 export const ART = {
@@ -40,11 +43,15 @@ export const ART = {
 /** The plaques' quarters of the plaque cell: Hogan's Alley, Powell Street, the big house, the spindle whorl. */
 export const PLAQUE = { hogan: 0, powell: 1, bighouse: 2, whorl: 3 } as const;
 
-/** The atlas's cells: COLS across, ROWS down, square. */
+/** The atlas's cells: COLS across, ROWS down, square; under them the murals, MURAL_COLS across at half the size. */
 const COLS = 4;
 const ROWS = 5;
-const BLACK = "#15110e";
-const RED = "#b3261e";
+const MURAL_COLS = 8;
+const MURAL_ROWS = 6;
+/** The atlas's height, in cells. */
+const HEIGHT = ROWS + MURAL_ROWS / 2;
+/** The first mural's cell: mural k (muralArt.ts) is cell MURAL0 + k. */
+export const MURAL0 = COLS * ROWS;
 const CEDAR = "#b5703f";
 const CEDAR_LIGHT = "#d39a63";
 const SKINS = ["#f6d7bd", "#eac09a", "#d39b6f", "#b07a4f", "#8a5a36", "#5e3b22", "#3f2716"];
@@ -53,14 +60,14 @@ let atlas: CanvasTexture | null = null;
 let atlasFor = 0;
 let material: MeshStandardMaterial | null = null;
 
-/** The atlas (512 px cells, 2048 × 2560; half that on low-end devices). */
+/** The atlas (512 px cells, 2048 × 4096 with the murals; half that on low-end devices). */
 export function artAtlas(lowEnd: boolean): CanvasTexture {
   const S = lowEnd ? 1024 : 2048;
   if (atlas && atlasFor === S) return atlas;
   const c = document.createElement("canvas");
   const C = S / COLS;
   c.width = S;
-  c.height = C * ROWS;
+  c.height = C * HEIGHT;
   const g = c.getContext("2d");
   if (!g) throw new Error("2D canvas unavailable");
   const cs = getComputedStyle(document.documentElement);
@@ -101,6 +108,16 @@ export function artAtlas(lowEnd: boolean): CanvasTexture {
     paints[k]?.(g);
     g.restore();
   }
+  for (let k = 0; k < Math.min(MURALS.length, MURAL_COLS * MURAL_ROWS); k++) {
+    g.save();
+    g.translate((k % MURAL_COLS) * (C / 2), ROWS * C + Math.floor(k / MURAL_COLS) * (C / 2));
+    g.beginPath();
+    g.rect(0, 0, C / 2, C / 2);
+    g.clip();
+    g.scale(C / 2, C / 2);
+    paintMural(g, k);
+    g.restore();
+  }
   const t = new CanvasTexture(c);
   t.colorSpace = SRGBColorSpace;
   t.anisotropy = 4;
@@ -119,10 +136,13 @@ export function artMaterial(lowEnd: boolean): MeshStandardMaterial {
 
 /** The atlas rectangle of a cell, inset so mipmaps do not bleed in from its neighbours: u0, v0, u1, v1. */
 export function cellRect(cell: number, inset = 0.01): [number, number, number, number] {
-  const su = 1 / COLS;
-  const sv = 1 / ROWS;
-  const u0 = (cell % COLS) * su;
-  const v1 = 1 - Math.floor(cell / COLS) * sv;
+  const mural = cell >= MURAL0;
+  const k = mural ? cell - MURAL0 : cell;
+  const cols = mural ? MURAL_COLS : COLS;
+  const su = 1 / cols;
+  const sv = (mural ? 0.5 : 1) / HEIGHT;
+  const u0 = (k % cols) * su;
+  const v1 = 1 - (mural ? ROWS + Math.floor(k / cols) * 0.5 : Math.floor(k / cols)) / HEIGHT;
   return [u0 + su * inset, v1 - sv + sv * inset, u0 + su - su * inset, v1 - sv * inset];
 }
 
@@ -146,92 +166,6 @@ export function onWhite(g: BufferGeometry): BufferGeometry {
   for (let i = 0; i < n; i++) uv.set([(u0 + u1) / 2, (v0 + v1) / 2], i * 2);
   g.setAttribute("uv", new Float32BufferAttribute(uv, 2));
   return g;
-}
-
-/* ------------------------------------------------------------------ formline elements, on the unit square */
-
-/** An ovoid: a rounded, slightly squared oval, its top fuller than its base. */
-function ovoid(g: CanvasRenderingContext2D, cx: number, cy: number, w: number, h: number, col: string): void {
-  g.fillStyle = col;
-  g.beginPath();
-  g.moveTo(cx - w / 2, cy + h * 0.1);
-  g.bezierCurveTo(cx - w / 2, cy - h * 0.75, cx + w / 2, cy - h * 0.75, cx + w / 2, cy + h * 0.1);
-  g.bezierCurveTo(cx + w / 2, cy + h * 0.55, cx + w * 0.12, cy + h * 0.38, cx, cy + h * 0.38);
-  g.bezierCurveTo(cx - w * 0.12, cy + h * 0.38, cx - w / 2, cy + h * 0.55, cx - w / 2, cy + h * 0.1);
-  g.closePath();
-  g.fill();
-}
-
-/** An eye: a black ovoid, a pale inner ovoid and a black pupil, looking along dir (-1 left, 1 right). */
-function eye(g: CanvasRenderingContext2D, cx: number, cy: number, w: number, bg: string, dir = 0): void {
-  ovoid(g, cx, cy, w, w * 0.62, BLACK);
-  ovoid(g, cx, cy + w * 0.02, w * 0.72, w * 0.42, bg);
-  g.fillStyle = BLACK;
-  g.beginPath();
-  g.ellipse(cx + dir * w * 0.12, cy + w * 0.02, w * 0.17, w * 0.15, 0, 0, Math.PI * 2);
-  g.fill();
-}
-
-/** A U-form: a broad U, its arms tapering, `t` thick. */
-function uform(g: CanvasRenderingContext2D, cx: number, cy: number, w: number, h: number, t: number, col: string, rot = 0): void {
-  g.save();
-  g.translate(cx, cy);
-  g.rotate(rot);
-  g.fillStyle = col;
-  g.beginPath();
-  g.moveTo(-w / 2, -h / 2);
-  g.bezierCurveTo(-w / 2, h * 0.75, w / 2, h * 0.75, w / 2, -h / 2);
-  g.lineTo(w / 2 - t * 0.6, -h / 2);
-  g.bezierCurveTo(w / 2 - t, h * 0.75 - t * 1.6, -w / 2 + t, h * 0.75 - t * 1.6, -w / 2 + t * 0.6, -h / 2);
-  g.closePath();
-  g.fill();
-  g.restore();
-}
-
-/** A trigon: a small curved-sided triangle cut out between forms. */
-function trigon(g: CanvasRenderingContext2D, x: number, y: number, s: number, col: string, rot = 0): void {
-  g.save();
-  g.translate(x, y);
-  g.rotate(rot);
-  g.fillStyle = col;
-  g.beginPath();
-  g.moveTo(-s / 2, s / 3);
-  g.quadraticCurveTo(0, s * 0.1, 0, -s / 2);
-  g.quadraticCurveTo(0, s * 0.1, s / 2, s / 3);
-  g.quadraticCurveTo(0, s * 0.2, -s / 2, s / 3);
-  g.fill();
-  g.restore();
-}
-
-/** A salmon in formline, nose along +x, centred at (x, y), `len` long, on a background `bg`. */
-function salmon(g: CanvasRenderingContext2D, x: number, y: number, len: number, rot: number, bg: string, body = BLACK, accent = RED): void {
-  g.save();
-  g.translate(x, y);
-  g.rotate(rot);
-  g.scale(len, len);
-  g.translate(-0.5, 0);
-  g.fillStyle = body;
-  g.beginPath();
-  g.moveTo(1.0, 0.02);
-  g.quadraticCurveTo(0.92, -0.17, 0.62, -0.18);
-  g.quadraticCurveTo(0.3, -0.17, 0.14, -0.05);
-  g.lineTo(0.0, -0.16);
-  g.quadraticCurveTo(0.06, 0, 0.0, 0.16);
-  g.lineTo(0.14, 0.05);
-  g.quadraticCurveTo(0.3, 0.16, 0.62, 0.17);
-  g.quadraticCurveTo(0.92, 0.17, 1.0, 0.02);
-  g.closePath();
-  g.fill();
-  // the body's inner space, the spine's ovoids, the gill and the fins
-  ovoid(g, 0.5, 0.0, 0.5, 0.2, bg);
-  ovoid(g, 0.38, 0.0, 0.18, 0.09, accent);
-  ovoid(g, 0.6, 0.0, 0.18, 0.09, accent);
-  uform(g, 0.76, 0.0, 0.1, 0.22, 0.03, accent, -Math.PI / 2);
-  eye(g, 0.86, -0.03, 0.09, bg, 1);
-  trigon(g, 0.52, -0.2, 0.12, accent, 0);
-  trigon(g, 0.5, 0.2, 0.1, accent, Math.PI);
-  trigon(g, 0.09, 0.0, 0.06, bg, -Math.PI / 2);
-  g.restore();
 }
 
 /* ------------------------------------------------------------------ the cells */
@@ -609,7 +543,7 @@ function bigHouseFront(g: CanvasRenderingContext2D): void {
     for (const s of [-1, 1]) {
       g.save();
       g.translate(cx + s * 0.1, 0.48);
-      g.rotate(s * -0.7);
+      g.rotate(s * 0.7);
       g.fillStyle = BLACK;
       g.fillRect(-0.025, -0.24, 0.05, 0.24);
       g.restore();

@@ -160,6 +160,8 @@ export type World = {
   trees: TreeShading;
   buildings: BuildingMaterials;
   events: EventLights;
+  /** How brightly the shops' lit parts glow (pavilion.ts shopGlow): 0 by day, about 1 after dark; the look eases it. */
+  shopGlow: IUniform<number>;
   sunDir: Vector3;
 };
 
@@ -524,6 +526,7 @@ export function createWorld(gl: WebGLRenderer, scene: Scene, lowEnd: boolean): W
     },
     buildings: createBuildingMaterials(paintFacadeArrays(lowEnd), envTex, skyMat.uniforms),
     events: createEventLights(),
+    shopGlow: { value: 0 },
     look: { cur: null, tgt: null, lastSeason: null },
     sunDir,
   };

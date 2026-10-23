@@ -44,6 +44,7 @@ export type FamilyId =
   | "mullion"
   | "exo"
   | "salish"
+  | "senakw"
   | "roof"
   | "copper"
   | "garden"
@@ -92,15 +93,20 @@ export const FAMILY: Record<FamilyId, { layer: number; bay: number; floor: numbe
    * frames, and under each a band of formline (an ovoid between two U-forms, trigons) in black, red and blue-green.
    */
   salish: { layer: 23, bay: 2.4, floor: 1.9, glass: false },
-  roof: { layer: 24, bay: 3, floor: 3, glass: false },
-  copper: { layer: 25, bay: 3, floor: 3, glass: false },
-  garden: { layer: 26, bay: 3, floor: 3, glass: false },
-  shingle: { layer: 27, bay: 3, floor: 3, glass: false },
-  tile: { layer: 28, bay: 3, floor: 3, glass: false },
-  pad: { layer: 29, bay: 3, floor: 3, glass: false },
+  /**
+   * After senákw: dark glass (the tower's tint is the glass's) hung with balconies, most orange, some white, their glass
+   * rails over them, a planter here and there; each bay its own, so the pattern does not read as a grid.
+   */
+  senakw: { layer: 24, bay: 2.4, floor: 1.9, glass: true },
+  roof: { layer: 25, bay: 3, floor: 3, glass: false },
+  copper: { layer: 26, bay: 3, floor: 3, glass: false },
+  garden: { layer: 27, bay: 3, floor: 3, glass: false },
+  shingle: { layer: 28, bay: 3, floor: 3, glass: false },
+  tile: { layer: 29, bay: 3, floor: 3, glass: false },
+  pad: { layer: 30, bay: 3, floor: 3, glass: false },
 };
-const LAYERS = 30;
-const FACADE_LAYERS = 24;
+const LAYERS = 31;
+const FACADE_LAYERS = 25;
 
 /**
  * `wins` are the window rects of a bay-floor cell (256 px) that light at night; a façade whose windows differ from
@@ -173,6 +179,51 @@ function paintLayer(kind: FamilyId, P: Painter, R: Rng): void {
       rect(g, "#5b6a73", x + 140, y + 58, 60, 84);
       P.wins.push([60, 58, 60, 84], [140, 58, 60, 84]);
     });
+  } else if (kind === "senakw") {
+    // glass, a little lighter up each pane, mullions between
+    both("#9fb4c8", wall, 0, 0, 512, 512);
+    for (let x = 0; x < 512; x += 64) {
+      const gr = g.createLinearGradient(0, 0, 0, 512 * k);
+      gr.addColorStop(0, "rgba(255,255,255,0.10)");
+      gr.addColorStop(1, "rgba(0,0,0,0.12)");
+      g.fillStyle = gr;
+      g.fillRect(x * k, 0, 62 * k, 512 * k);
+      rect(g, "#35485a", x + 62, 0, 2, 512);
+    }
+    // each bay-floor its own balcony (or none): orange mostly, white sometimes, a rail of glass, a planter now and then
+    const slabs: [number, number, string][] = [
+      [24, 150, "#e2541c"],
+      [96, 140, "#e2541c"],
+      [0, 0, ""],
+      [60, 170, "#f2f0ea"],
+      [10, 120, "#e2541c"],
+      [120, 128, "#e2541c"],
+      [40, 176, "#e2541c"],
+      [0, 0, ""],
+    ];
+    for (let cy = 0; cy < 2; cy++) {
+      for (let cx = 0; cx < 2; cx++) {
+        const x = cx * 256;
+        const y = cy * 256;
+        P.wins.push([8, 20, 240, 170]);
+        rect(g, "#24313f", x, y + 236, 256, 20);
+        for (const half of [0, 1]) {
+          const [ox, w, col] = slabs[(cy * 2 + cx) * 2 + half];
+          if (!col) continue;
+          const sx = x + half * 128 + ox * 0.5;
+          const sw = Math.min(w * 0.5 + 56, 124);
+          rect(g, "rgba(210,232,242,0.5)", sx, y + 150, sw, 46);
+          both(col, keep, sx, y + 196, sw, 30);
+          both(col === "#e2541c" ? "#8f300e" : "#b9b7b0", keep, sx, y + 226, sw, 10);
+          if ((cx + cy + half) % 3 === 0) {
+            g.fillStyle = "#3f7a3a";
+            g.beginPath();
+            g.arc((sx + sw * 0.3) * k, (y + 202) * k, 12 * k, 0, Math.PI * 2);
+            g.fill();
+          }
+        }
+      }
+    }
   } else if (kind === "salish") {
     // boards: a light warm grain the tint turns to cedar, darker seams, each board its own shade
     both("#f1e6d6", wall, 0, 0, 512, 512);

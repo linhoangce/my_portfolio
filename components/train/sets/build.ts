@@ -63,7 +63,7 @@ import { frameAt, makeFrame, PATH_SAMPLES, stationS, UP } from "../track";
 import { sailboat, seabus, yacht } from "../vessels";
 import { barkTexture, type Conifer, coniferSkeleton, crownFromOf, DETAIL_FULL, DETAIL_LOW, frondTexture, limbGeometry, sprayCard, sprayMatrix, trunkGeometry } from "../trees/conifer";
 import type { World } from "../world";
-import { bench, bollard, festoon, foodTruck, type Pieces, pavilion, planter, stall, umbrellaTable, warmLights } from "../pavilion";
+import { bench, bollard, festoon, foodTruck, lit, type Pieces, pavilion, planter, shopGlow, stall, umbrellaTable, warmLights } from "../pavilion";
 import { inLandmark } from "../sites";
 import { COURTS, type FrameBox, GYM, MATS, PERGOLA, RUN_PATH, YOGA_DECK } from "./wellness";
 import { along, inCbSquare, lineLength, MARKET_HALF, MARKET_STREET, OCEAN_HALL, type Square, SQUARES, WOODLAND_LANE } from "./squares";
@@ -489,7 +489,7 @@ function canadaLineHall(c: Ctx, vc: Material, lit: Material): (t: number) => voi
  * tables under umbrellas, a fountain with leaping jets, a bike-share dock, trees in planters, and a departures board
  * for all four lines (the Expo, the Canada Line, the West Coast Express and the SeaBus). Returns the per-frame update.
  */
-function busyPlaza(c: Ctx, vc: Material, lit: Material): (t: number) => void {
+function busyPlaza(c: Ctx, vc: Material, lamps: Material): (t: number) => void {
   const { mats } = c.world;
   const G = (a: number, l: number) => c.G(a, l);
   // market kiosks along the station side of the plaza
@@ -499,9 +499,9 @@ function busyPlaza(c: Ctx, vc: Material, lit: Material): (t: number) => void {
     const l = 15.5;
     const g = G(a, l);
     c.add(mats.timber, new BoxGeometry(2.2, 1.1, 2.8), c.L(a, l, g + 0.55));
-    c.add(vc, paint(new BoxGeometry(2.8, 0.12, 3.4), col), c.L(a, l + 0.3, g + 2.7), [0, 0, 0.18 * Math.sign(c.L(0, 1, 0)[0] || 1)]);
+    c.add(vc, lit(paint(new BoxGeometry(2.8, 0.12, 3.4), col), 0.55), c.L(a, l + 0.3, g + 2.7), [0, 0, 0.18 * Math.sign(c.L(0, 1, 0)[0] || 1)]);
     for (const s of [-1.2, 1.2]) c.add(mats.post, new BoxGeometry(0.08, 2.6, 0.08), c.L(a + s * 1.1, l + 1.3, g + 1.3));
-    c.add(lit, paint(new BoxGeometry(0.06, 0.06, 2.4), 0xffd7a0), c.L(a, l + 1.3, g + 2.4));
+    c.add(lamps, paint(new BoxGeometry(0.06, 0.06, 2.4), 0xffd7a0), c.L(a, l + 1.3, g + 2.4));
   });
   // café tables under umbrellas
   for (let k = 0; k < 10; k++) {
@@ -510,7 +510,7 @@ function busyPlaza(c: Ctx, vc: Material, lit: Material): (t: number) => void {
     const g = G(a, l);
     c.add(mats.post, new CylinderGeometry(0.5, 0.5, 0.06, 12), c.L(a, l, g + 0.8));
     c.add(mats.post, new CylinderGeometry(0.05, 0.05, 2.4, 6), c.L(a, l, g + 1.2));
-    c.add(vc, paint(new ConeGeometry(1.4, 0.5, 10), 0xf4efe6), c.L(a, l, g + 2.5));
+    c.add(vc, lit(paint(new ConeGeometry(1.4, 0.5, 10), 0xf4efe6), 0.35), c.L(a, l, g + 2.5));
     for (const s of [-0.8, 0.8]) c.add(mats.timber, new BoxGeometry(0.4, 0.45, 0.4), c.L(a + s, l, g + 0.22));
   }
   // a fountain: a shallow round pool and jets that leap in turn
@@ -589,7 +589,7 @@ function busyPlaza(c: Ctx, vc: Material, lit: Material): (t: number) => void {
 
 function depart(c: Ctx): Partial<BuiltSet> {
   // the hub's own parts share one painted material and one for what glows
-  const vc = new MeshStandardMaterial({ vertexColors: true, roughness: 0.7 });
+  const vc = shopGlow(new MeshStandardMaterial({ vertexColors: true, roughness: 0.7 }), c.world);
   const glow = new MeshBasicMaterial({ vertexColors: true, toneMapped: false });
   // the plaza: stone laid on the ground right up to the Canada Line's hall, its planters down the middle
   paveSquare(c, vc, -24, 24, 14, 44, (a, l, i, j) => {
@@ -867,7 +867,7 @@ function about(c: Ctx): Partial<BuiltSet> {
  */
 function harbourMarket(c: Ctx, L0: number, posts: [number, number][]): void {
   const sq = SQUARES.find((s) => s.i === 1) as Square;
-  const vc = new MeshStandardMaterial({ vertexColors: true, roughness: 0.75 });
+  const vc = shopGlow(new MeshStandardMaterial({ vertexColors: true, roughness: 0.75 }), c.world);
   const kit = squareKit(c, sq, vc);
   const d = SET_RECT[0] as [number, number, number, number];
   paveSquare(c, vc, -22, 34, 8, 60, (a, l, i, j) => {
@@ -1066,15 +1066,128 @@ function trainBoard(stop: string): { tex: CanvasTexture; tick: (t: number) => vo
 }
 
 // ------------------------------------------------------------------ 03 Awdon · Stadium–Chinatown: meeting to sprint
+
+/** A guard rail: a steel handrail, a mid rail and posts, from (a0, l0) to (a1, l1) along a floor at height y. */
+function balustrade(c: Ctx, a0: number, l0: number, a1: number, l1: number, y: number): void {
+  const { mats } = c.world;
+  const zs = c.L(1, 0, 0)[2];
+  const len = Math.hypot(a1 - a0, l1 - l0);
+  if (len < 0.2) return;
+  // local x runs along l, z along a × zs; a box's length turned onto the run
+  const ry: V3 = [0, -Math.atan2((a1 - a0) * zs, l1 - l0), 0];
+  const am = (a0 + a1) / 2;
+  const lm = (l0 + l1) / 2;
+  c.add(mats.girder, new BoxGeometry(len, 0.08, 0.12), c.L(am, lm, y + 1.1), ry);
+  c.add(mats.girder, new BoxGeometry(len, 0.05, 0.06), c.L(am, lm, y + 0.6), ry);
+  c.add(mats.girder, new BoxGeometry(len, 0.05, 0.06), c.L(am, lm, y + 0.2), ry);
+  const n = Math.max(1, Math.round(len / 2));
+  for (let k = 0; k <= n; k++) c.add(mats.girder, new BoxGeometry(0.08, 1.1, 0.08), c.L(a0 + ((a1 - a0) * k) / n, l0 + ((l1 - l0) * k) / n, y + 0.55));
+}
+
+/**
+ * The sprint board: what the meeting decided, as cards in three columns (to do, doing, approved by the PM, in green),
+ * under the meeting's name.
+ */
+/** Where the sprint board's canvas keeps a warm white corner, for the terrace's lamps (u, v). */
+const LAMP_UV: [number, number] = [1012 / 1024, 1 - 500 / 512];
+
+function sprintBoard(): CanvasTexture {
+  const fonts = fontOf();
+  return canvasTex(1024, 512, (g) => {
+    g.fillStyle = "#121826";
+    g.fillRect(0, 0, 1024, 512);
+    g.fillStyle = "#ffe2b0";
+    g.fillRect(1000, 488, 24, 24);
+    g.fillStyle = "#f6efe2";
+    g.font = `600 34px ${fonts.sans}`;
+    g.textBaseline = "middle";
+    g.fillText("Sprint 14 · from Monday's client meeting", 36, 42);
+    g.fillStyle = "#a78bfa";
+    g.fillRect(36, 70, 952, 4);
+    const cols: [string, string, string[]][] = [
+      ["To do", "#7dd3fc", ["Draft minutes", "Email the client", "Timesheet, week 42"]],
+      ["Doing", "#f9a8d4", ["Update the Jira board", "Status report"]],
+      ["Approved", "#34d399", ["Scope change", "Sprint goal", "Risk log"]],
+    ];
+    cols.forEach(([head, col, cards], k) => {
+      const x = 36 + k * 322;
+      g.fillStyle = col;
+      g.font = `600 28px ${fonts.sans}`;
+      g.fillText(head, x, 108);
+      cards.forEach((t, j) => {
+        const y = 140 + j * 116;
+        g.fillStyle = k === 2 ? "#123d2f" : "#1d2638";
+        g.fillRect(x, y, 300, 98);
+        g.fillStyle = col;
+        g.fillRect(x, y, 8, 98);
+        g.fillStyle = "#f6efe2";
+        g.font = `500 26px ${fonts.sans}`;
+        g.fillText(t, x + 24, y + 34, 260);
+        g.fillStyle = "rgba(246,239,226,0.35)";
+        g.fillRect(x + 24, y + 62, 150 + ((j * 53 + k * 31) % 90), 8);
+        if (k === 2) {
+          g.fillStyle = col;
+          g.font = `700 30px ${fonts.sans}`;
+          g.fillText("✓", x + 262, y + 34);
+        }
+      });
+    });
+  });
+}
+
+/**
+ * A roof garden at platform level over Chinatown's night market, reached across a bridge from the platform: a glass
+ * meeting room under a planted roof, a long table inside; its transcripts flowing as ribbons to the sprint board they
+ * become; the arrivals board where the bridge lands; trees, café tables and benches; a glass balustrade all round.
+ */
 function awdon(c: Ctx): Partial<BuiltSet> {
   const { mats } = c.world;
-  const top = terrace(c, -16, 16, 14, 30);
+  // the garden's plain colours share the set's one painted material (a textured one would be a mesh, a draw, each)
+  const plain = (color: number) => new MeshStandardMaterial({ color, roughness: 0.8 });
+  const GREEN = plain(0x5f8f3e);
+  const WOOD = plain(0x9a7048);
+  const POST = plain(0x3a3f46);
+  const STONE = plain(0x9c958a);
+  const A0 = -16;
+  const A1 = 16;
+  const LI = 14;
+  const LO = 30;
+  const top = terrace(c, A0, A1, LI, LO);
   const L0 = 22;
-  // the meeting pod
-  c.add(mats.pane, new CylinderGeometry(3.6, 3.6, 3.2, 28, 1, true), c.L(-9, L0, top + 1.6));
-  c.add(mats.canopy, new SphereGeometry(3.7, 24, 10, 0, Math.PI * 2, 0, Math.PI / 2), c.L(-9, L0, top + 3.2), [0, 0, 0], [1, 0.45, 1]);
-  c.add(glowMat(0xa78bfa, 1.8), new TorusGeometry(3.65, 0.08, 6, 48), c.L(-9, L0, top + 3.2), [Math.PI / 2, 0, 0]);
-  // three translucent transcript ribbons flowing toward the task wall
+  // the balustrade round the open edges, open where the bridge from the platform lands (a ±2.5), and along the bridge
+  const e = 0.15;
+  balustrade(c, A0 + e, LI + e, -2.8, LI + e, top);
+  balustrade(c, 2.8, LI + e, A1 - e, LI + e, top);
+  balustrade(c, A1 - e, LI + e, A1 - e, LO - e, top);
+  balustrade(c, A1 - e, LO - e, A0 + e, LO - e, top);
+  balustrade(c, A0 + e, LO - e, A0 + e, LI + e, top);
+  for (const s of [-1, 1]) balustrade(c, s * 2.6, 11.5, s * 2.6, LI + e, Math.min(top, 1.4));
+  // the meeting room: glass on slim dark mullions, a planted roof, a long table and eight chairs, a screen at its end
+  const MA = -9;
+  const MW = 8;
+  const MD = 6;
+  c.add(mats.pane, new BoxGeometry(MD, 3.2, MW), c.L(MA, L0, top + 1.6));
+  for (const [da, dl] of [
+    [-1, -1],
+    [1, -1],
+    [-1, 1],
+    [1, 1],
+  ])
+    c.add(mats.girder, new BoxGeometry(0.14, 3.2, 0.14), c.L(MA + (da * MW) / 2, L0 + (dl * MD) / 2, top + 1.6));
+  for (const da of [-2, 0, 2]) for (const dl of [-1, 1]) c.add(mats.girder, new BoxGeometry(0.08, 3.2, 0.08), c.L(MA + da, L0 + (dl * MD) / 2, top + 1.6));
+  c.add(mats.canopy, new BoxGeometry(MD + 0.8, 0.3, MW + 0.8), c.L(MA, L0, top + 3.35));
+  c.add(GREEN, new BoxGeometry(MD + 0.4, 0.16, MW + 0.4), c.L(MA, L0, top + 3.55));
+  c.add(WOOD, new BoxGeometry(1.5, 0.08, 4.6), c.L(MA, L0, top + 0.78));
+  for (const da of [-2, 2]) c.add(POST, new BoxGeometry(0.1, 0.74, 0.1), c.L(MA + da, L0, top + 0.39));
+  const seats = [0xe8663a, 0x2a9d8f, 0xf2b632, 0x6c5ce7].map((color) => new MeshStandardMaterial({ color, roughness: 0.7 }));
+  for (let k = 0; k < 8; k++) {
+    const da = -1.8 + (k % 4) * 1.2;
+    const dl = k < 4 ? -1.15 : 1.15;
+    c.add(seats[k % 4], new BoxGeometry(0.5, 0.08, 0.5), c.L(MA + da, L0 + dl, top + 0.48));
+    c.add(seats[k % 4], new BoxGeometry(0.06, 0.5, 0.5), c.L(MA + da, L0 + dl + (dl > 0 ? 0.25 : -0.25), top + 0.75));
+  }
+  c.add(POST, new BoxGeometry(1.6, 0.9, 0.06), c.L(MA - MW / 2 + 0.2, L0, top + 1.7), [0, Math.PI / 2, 0]);
+  // three translucent transcript ribbons flowing out of the room to the sprint board
   const flow = canvasTex(256, 32, (g) => {
     g.fillStyle = "#000";
     g.fillRect(0, 0, 256, 32);
@@ -1086,34 +1199,81 @@ function awdon(c: Ctx): Partial<BuiltSet> {
   flow.colorSpace = NoColorSpace;
   const ribbonMats = [0x7dd3fc, 0xa78bfa, 0xf9a8d4].map((col) => new MeshBasicMaterial({ color: col, map: flow, alphaMap: flow, transparent: true, opacity: 0.9, side: DoubleSide, depthWrite: false, blending: AdditiveBlending }));
   ribbonMats.forEach((m, k) => {
-    const geo = ribbonGeo(c, [-6, L0 + (k - 1) * 1.6, top + 1.4 + k * 0.6], [5, L0 + (k - 1) * 1.2, top + 2.2 + k * 0.4], 0.7);
+    const geo = ribbonGeo(c, [MA + MW / 2 + 0.2, L0 + (k - 1) * 1.6, top + 1.4 + k * 0.6], [8.9, L0 + (k - 1) * 1.8, top + 2.4 + k * 0.6], 0.7);
     c.group.add(new Mesh(geo, m));
   });
-  // the approval gate
-  const gate = glowMat(0x34d399, 0.6);
-  c.add(gate, new BoxGeometry(0.25, 4.2, 0.25), c.L(1.5, L0 - 2.6, top + 2.1));
-  c.add(gate, new BoxGeometry(0.25, 4.2, 0.25), c.L(1.5, L0 + 2.6, top + 2.1));
-  c.add(gate, new BoxGeometry(5.45, 0.25, 0.25), c.L(1.5, L0, top + 4.2));
-  // a two-sided departures screen on two legs: the line, the stop and the time, then the next trains each way
+  // the sprint board: two-sided, lit, on two legs, facing back along the ribbons and out the far way
   const zs = c.L(1, 0, 0)[2];
   const bezel = new MeshStandardMaterial({ color: 0x15181d, roughness: 0.45, metalness: 0.5 });
-  c.add(bezel, new BoxGeometry(0.42, 4.5, 8.8), c.L(9.5, L0, top + 3.65), [0, Math.PI / 2, 0]);
-  for (const s of [-1, 1]) c.add(bezel, new BoxGeometry(0.3, 1.4, 0.3), c.L(9.5, L0 + s * 3.4, top + 0.7));
-  const board = trainBoard(stations[c.i].name);
-  const screenMat = new MeshBasicMaterial({ map: board.tex, toneMapped: false });
+  c.add(bezel, new BoxGeometry(0.42, 4.6, 9.2), c.L(9.5, L0, top + 3.7), [0, Math.PI / 2, 0]);
+  for (const s of [-1, 1]) c.add(bezel, new BoxGeometry(0.3, 1.4, 0.3), c.L(9.5, L0 + s * 3.6, top + 0.7));
+  // its two faces and the terrace's lamps in one mesh: the lamps take the board's warm corner (sprintBoard), so they are
+  // lit as it is
+  const boardTex = sprintBoard();
+  const boardMat = new MeshBasicMaterial({ map: boardTex, toneMapped: false });
+  const lit: Part[] = [];
   for (const face of [-1, 1]) {
-    const m = new Mesh(new PlaneGeometry(8.4, 4.1), screenMat);
-    m.position.set(...c.L(9.5 + face * 0.22, L0, top + 3.65));
     // a plane faces +z, and local z runs along the track as a × zs
-    m.rotation.y = face * zs > 0 ? 0 : Math.PI;
-    c.group.add(m);
+    lit.push({ geo: new PlaneGeometry(8.8, 4.4), position: c.L(9.5 + face * 0.22, L0, top + 3.7), rotation: [0, face * zs > 0 ? 0 : Math.PI, 0] });
+  }
+  const lamp = (geo: BufferGeometry, pos: V3) => {
+    const uv = geo.attributes.uv;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, LAMP_UV[0], LAMP_UV[1]);
+    lit.push({ geo, position: pos });
+  };
+  // the meeting room's ceiling light, and lamps along the balustrade
+  lamp(new BoxGeometry(1.2, 0.08, 3.6), c.L(MA, L0, top + 3.1));
+  for (const [a0, l0] of [
+    [-12, 15],
+    [-6, 15],
+    [8, 15],
+    [13, 15],
+    [-10, 29.2],
+    [-3, 29.2],
+    [4, 29.2],
+    [11, 29.2],
+  ])
+    lamp(new CylinderGeometry(0.16, 0.16, 0.5, 8), c.L(a0, l0, top + 1.45));
+  c.group.add(new Mesh(merged(lit), boardMat));
+  // the arrivals board where the bridge lands, facing the people coming off the platform
+  const board = trainBoard(stations[c.i].name);
+  c.add(bezel, new BoxGeometry(0.3, 2.7, 5.2), c.L(5.2, 16.2, top + 2.6));
+  for (const s of [-1, 1]) c.add(bezel, new BoxGeometry(0.2, 1.3, 0.2), c.L(5.2 + s * 2, 16.2, top + 0.65));
+  const screenMat = new MeshBasicMaterial({ map: board.tex, toneMapped: false });
+  c.group.add(new Mesh(merged([-1, 1].map((face) => ({ geo: new PlaneGeometry(4.9, 2.4), position: c.L(5.2, 16.2 + face * 0.17, top + 2.6), rotation: [0, (face * Math.PI) / 2, 0] }))), screenMat));
+  // the garden: trees in planters at the corners, shrubs along the far rail, café tables between, benches facing out
+  for (const [a, l] of [
+    [-14.4, 15.6],
+    [14.4, 15.6],
+    [-14.4, 28.4],
+    [14.4, 28.4],
+    [0.5, 28.4],
+  ]) {
+    c.add(STONE, new BoxGeometry(2.2, 0.8, 2.2), c.L(a, l, top + 0.4));
+    c.add(WOOD, new CylinderGeometry(0.12, 0.16, 2.4, 6), c.L(a, l, top + 1.6));
+    c.add(GREEN, new IcosahedronGeometry(1.4, 1), c.L(a, l, top + 3.2), [0, 0, 0], [1, 0.85, 1]);
+  }
+  for (let a = -11; a <= 12; a += 3.2) {
+    if (Math.abs(a - 0.5) < 2) continue;
+    c.add(STONE, new BoxGeometry(2.4, 0.6, 0.9), c.L(a, 29.1, top + 0.3));
+    c.add(GREEN, new SphereGeometry(0.75, 8, 5, 0, Math.PI * 2, 0, Math.PI / 2), c.L(a, 29.1, top + 0.6), [0, 0, 0], [1.4, 0.8, 0.6]);
+  }
+  for (const a of [-3.2, 0.8, 4.8]) {
+    for (const l of [26.4]) {
+      c.add(POST, new CylinderGeometry(0.5, 0.5, 0.06, 12), c.L(a, l, top + 0.8));
+      c.add(POST, new CylinderGeometry(0.05, 0.05, 0.78, 6), c.L(a, l, top + 0.4));
+      for (const s of [-0.8, 0.8]) c.add(WOOD, new BoxGeometry(0.4, 0.45, 0.4), c.L(a + s, l, top + 0.22));
+    }
+  }
+  for (const a of [-12.5, 11.5]) {
+    c.add(WOOD, new BoxGeometry(0.5, 0.1, 1.8), c.L(a, 26.8, top + 0.45), [0, Math.PI / 2, 0]);
+    c.add(POST, new BoxGeometry(0.5, 0.42, 0.08), c.L(a, 26.4, top + 0.22), [0, Math.PI / 2, 0]);
   }
   return {
-    anchors: [new Vector3(...c.L(-9, L0, top + 5.4)), new Vector3(...c.L(9.5, L0, top + 6.4)), new Vector3(...c.L(-3, L0 - 2, top + 3.6))],
+    anchors: [new Vector3(...c.L(MA, L0, top + 5.2)), new Vector3(...c.L(9.5, L0, top + 6.6)), new Vector3(...c.L(-1, L0 - 2, top + 3.6))],
     focus: new Vector3(...c.L(0, L0 - 4, top + 3)),
     update: (t) => {
       flow.offset.x = -t * 0.25;
-      gate.emissiveIntensity = 0.6 + Math.max(0, Math.sin(t * 1.3)) ** 8 * 3;
       board.tick(t);
     },
     shot: { from: [-56, 66, 8], to: [-24, 58, 22], look: [0, 20, 4] },
@@ -1211,7 +1371,7 @@ function planktoneer(c: Ctx): Partial<BuiltSet> {
 function vessel(c: Ctx): Partial<BuiltSet> {
   const { mats } = c.world;
   const sq = SQUARES.find((s) => s.i === 5) as Square;
-  const vc = new MeshStandardMaterial({ vertexColors: true, roughness: 0.75 });
+  const vc = shopGlow(new MeshStandardMaterial({ vertexColors: true, roughness: 0.75 }), c.world);
   const kit = squareKit(c, sq, vc);
   const H = OCEAN_HALL;
   const zs = c.L(1, 0, 0)[2];
@@ -2235,16 +2395,6 @@ function more(c: Ctx): Partial<BuiltSet> {
     }
     c.add(mats.pane, new BoxGeometry(wallL, 0.06, BW), c.L(BA, lIn + wallL / 2, roofY + 0.08));
     for (let l = lIn; l <= LF + 0.01; l += wallL / 5) c.add(mats.timber, new BoxGeometry(0.16, 0.18, BW + 0.2), c.L(BA, l, roofY + 0.02));
-    // the fare gates across it at the hall's door: cabinets along the way through, violet validators toward the platform
-    const gl = LF - 1.4;
-    const dark = new MeshStandardMaterial({ color: 0x2b2f36, roughness: 0.6 });
-    const val = glowMat(0xa78bfa, 1.6);
-    for (let k = 0; k < 4; k++) {
-      const a = BA - BW / 2 + 0.15 + (k * (BW - 0.3)) / 3;
-      c.add(dark, new BoxGeometry(1.3, 1.0, 0.22), c.L(a, gl, UP1 + 0.5));
-      c.add(val, new BoxGeometry(0.2, 0.05, 0.18), c.L(a, gl - 0.5, UP1 + 1.03));
-      if (k < 3) c.add(mats.pane, new BoxGeometry(0.04, 0.7, (BW - 0.3) / 3 - 0.3), c.L(a + (BW - 0.3) / 6, gl, UP1 + 0.65));
-    }
   }
   // the plaza's planters and benches
   for (let a = A0 + 2; a <= A1 - 2; a += 8) {

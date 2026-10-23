@@ -13,8 +13,11 @@
  * - `solid`, painted, for one vertex-coloured material;
  * - `glass`;
  * - `warm`, the lights, painted, for one glowing material that brightens after dark.
+ *
+ * After dark the awnings, umbrellas and stalls' goods glow in their own colours too, lit from the bulbs under them: their
+ * solid parts carry a glow (`lit`), and the material they are merged into is patched to show it (`shopGlow`).
  */
-import { BoxGeometry, type BufferGeometry, ConeGeometry, CylinderGeometry, IcosahedronGeometry, type MeshBasicMaterial, OctahedronGeometry, PlaneGeometry } from "three";
+import { BoxGeometry, type BufferGeometry, ConeGeometry, CylinderGeometry, Float32BufferAttribute, IcosahedronGeometry, type Material, type MeshBasicMaterial, OctahedronGeometry, PlaneGeometry } from "three";
 
 import { merge, paint } from "./shapes";
 import type { World } from "./world";
@@ -51,14 +54,40 @@ const STONE = 0x9c958a;
 const WARM = 0xffd49a;
 
 const at = (g: BufferGeometry, x: number, y: number, z: number) => g.translate(x, y, z);
+
+/** Mark a painted part as glowing after dark, `v` of its own colour (after paint(), which drops the mark). */
+export function lit(g: BufferGeometry, v: number): BufferGeometry {
+  g.setAttribute("aGlow", new Float32BufferAttribute(new Float32Array(g.attributes.position.count).fill(v), 1));
+  return g;
+}
+
+/** Let a vertex-coloured material show its parts' glow (lit), by the world's shop light (0 by day, about 1 at night). */
+export function shopGlow<M extends Material>(mat: M, world: World): M {
+  const prev = mat.onBeforeCompile.bind(mat);
+  mat.onBeforeCompile = (sh, r) => {
+    prev(sh, r);
+    sh.uniforms.uShopGlow = world.shopGlow;
+    sh.vertexShader = sh.vertexShader
+      .replace("#include <common>", "#include <common>\nattribute float aGlow;\nvarying float vShopGlow;")
+      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvShopGlow = aGlow;");
+    sh.fragmentShader = sh.fragmentShader
+      .replace("#include <common>", "#include <common>\nuniform float uShopGlow;\nvarying float vShopGlow;")
+      .replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\ntotalEmissiveRadiance += vColor.rgb * vShopGlow * uShopGlow;");
+  };
+  const key = mat.customProgramCacheKey.bind(mat);
+  mat.customProgramCacheKey = () => `${key()}|shopGlow`;
+  return mat;
+}
 const box = (w: number, h: number, d: number, x: number, y: number, z: number, hex: number) => paint(at(new BoxGeometry(w, h, d), x, y, z), hex);
 const cyl = (r0: number, r1: number, h: number, seg: number, x: number, y: number, z: number, hex: number) => paint(at(new CylinderGeometry(r0, r1, h, seg), x, y, z), hex);
 
 /** A round table under an umbrella with two stools, standing on a floor at height y. */
 export function umbrellaTable(out: Pieces, x: number, y: number, z: number, hex: number): void {
+  // a bulb under the umbrella, its canvas glowing with it after dark
+  out.warm.push(paint(at(new OctahedronGeometry(0.09, 0), x, y + 2.12, z), WARM));
   out.solid.push(
     cyl(0.04, 0.04, 2.3, 5, x, y + 1.15, z, FRAME),
-    paint(at(new ConeGeometry(1.15, 0.42, 8, 1, true), x, y + 2.42, z), hex),
+    lit(paint(at(new ConeGeometry(1.15, 0.42, 8, 1, true), x, y + 2.42, z), hex), 0.35),
     cyl(0.4, 0.4, 0.05, 8, x, y + 0.78, z, LINEN),
     cyl(0.05, 0.05, 0.76, 4, x, y + 0.38, z, FRAME),
     box(0.32, 0.45, 0.32, x - 0.72, y + 0.22, z, TIMBER),
@@ -135,12 +164,15 @@ export function pavilion(s: PavilionSpec): Pieces & { sign: SignSpot } {
   return { ...out, sign: { x: 0, y: ry, z: d / 2 + ov + 0.02, w: Math.min(w * 0.55, 4.6), h: 0.34 } };
 }
 
-/** A market stall: a timber counter with crates of produce, four posts and an awning striped in its colour and white. */
+/**
+ * A market stall: a timber counter with crates of produce, four posts and an awning striped in its colour and white;
+ * after dark a lamp bar and three bulbs under the awning's front, the awning and the goods glowing with them.
+ */
 export function stall(hex: number, seed = 0): Pieces {
   const out: Pieces = { solid: [], glass: [], warm: [] };
   out.solid.push(box(2.2, 0.95, 1.1, 0, 0.47, 0, TIMBER));
   const goods = [0xd2452f, 0xf2b632, 0x6aa84f, 0xe8663a, 0x8e44ad, 0xf1e9da];
-  for (let k = 0; k < 3; k++) out.solid.push(box(0.55, 0.22, 0.6, -0.7 + k * 0.7, 1.06, 0.1, goods[(seed + k * 2) % goods.length]));
+  for (let k = 0; k < 3; k++) out.solid.push(lit(box(0.55, 0.22, 0.6, -0.7 + k * 0.7, 1.06, 0.1, goods[(seed + k * 2) % goods.length]), 0.3));
   for (const [x, z] of [
     [-1.05, -0.5],
     [1.05, -0.5],
@@ -149,8 +181,9 @@ export function stall(hex: number, seed = 0): Pieces {
   ])
     out.solid.push(box(0.07, 2.4, 0.07, x, 1.2, z, FRAME));
   // the awning, sloping down toward the customers, in four stripes
-  for (let k = 0; k < 4; k++) out.solid.push(paint(at(new BoxGeometry(0.62, 0.06, 1.6).rotateX(0.22), -0.93 + k * 0.62, 2.42, 0.05), k % 2 ? 0xf6f1e7 : hex));
-  out.warm.push(box(2.0, 0.04, 0.04, 0, 2.25, 0.62, WARM));
+  for (let k = 0; k < 4; k++) out.solid.push(lit(paint(at(new BoxGeometry(0.62, 0.06, 1.6).rotateX(0.22), -0.93 + k * 0.62, 2.42, 0.05), k % 2 ? 0xf6f1e7 : hex), 0.55));
+  out.warm.push(box(2.0, 0.06, 0.06, 0, 2.2, 0.5, WARM));
+  for (const x of [-0.7, 0, 0.7]) out.warm.push(paint(at(new OctahedronGeometry(0.1, 0), x, 2.02, 0.45), WARM));
   return out;
 }
 
@@ -167,7 +200,7 @@ export function foodTruck(hex: number): Pieces {
     out.solid.push(paint(at(new CylinderGeometry(0.38, 0.38, 0.3, 8).rotateZ(Math.PI / 2), x, 0.38, z), 0x1d2228));
   // the hatch, its flap propped up over it, a counter shelf and the lit menu board beside it
   out.solid.push(box(0.05, 0.9, 2.2, 1.0, 1.65, -0.4, 0x1d2228), box(0.06, 0.06, 2.4, 1.45, 2.32, -0.4, 0xf6f1e7));
-  out.solid.push(paint(at(new BoxGeometry(0.9, 0.05, 2.4).rotateZ(-0.35), 1.42, 2.2, -0.4), 0xf6f1e7), box(0.35, 0.06, 2.0, 1.15, 1.2, -0.4, 0xc0c4c8));
+  out.solid.push(lit(paint(at(new BoxGeometry(0.9, 0.05, 2.4).rotateZ(-0.35), 1.42, 2.2, -0.4), 0xf6f1e7), 0.45), box(0.35, 0.06, 2.0, 1.15, 1.2, -0.4, 0xc0c4c8));
   out.warm.push(box(0.04, 0.6, 0.7, 1.03, 1.75, 0.95, WARM));
   return out;
 }
