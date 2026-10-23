@@ -4,6 +4,7 @@ import { CanvasTexture, RepeatWrapping, SRGBColorSpace, type Texture } from "thr
 import type { Station } from "@/data";
 
 import type { Rng } from "./cityModel";
+import { PEOPLE_CELLS } from "./constants";
 
 const canvas = (w: number, h: number): [HTMLCanvasElement, CanvasRenderingContext2D] => {
   const c = document.createElement("canvas");
@@ -85,56 +86,294 @@ export function streetLightTexture(): CanvasTexture {
   return t;
 }
 
-/** A painted person (coat, trousers, hair, a bag or an umbrella) from a seed; six variants are built. */
-export function personTexture(seed: number): CanvasTexture {
-  const W = 96;
-  const H = 192;
-  const [c, g] = canvas(W, H);
-  let sd = seed * 9301 + 49297;
+/**
+ * The people of the city, painted into one atlas of PEOPLE_CELLS figures (4 × 4 cells of 96 × 192 px), so every
+ * pedestrian is one instanced mesh whose cell an instance attribute picks:
+ * - walkers in coats, with bags and umbrellas, across the full range of skin tones;
+ * - a woman in a hijab;
+ * - a Sikh man in a dastar;
+ * - a woman in a salwar kameez and dupatta;
+ * - an elder with a cane;
+ * - a wheelchair user;
+ * - a parent with a child;
+ * - two couples (two men, two women) holding hands;
+ * - someone carrying a small Progress Pride flag;
+ * - someone in a woven cedar hat and a red-and-black blanket cape (seen at the big house and the welcome figures).
+ * Each cell's figure keeps a few pixels clear of its edges, so mipmaps do not bleed between cells.
+ */
+const SKINS = ["#f6d7bd", "#eac09a", "#d39b6f", "#b07a4f", "#8a5a36", "#5e3b22", "#3f2716"];
+const HAIRS = ["#111111", "#2b1d12", "#5a3a22", "#a8875a", "#d9c7a0", "#8a8a8a"];
+const COATS = ["#1f2937", "#7c2d12", "#1e3a8a", "#9f1239", "#e5e7eb", "#065f46", "#f59e0b", "#0f766e", "#c2410c", "#6d28d9", "#334155", "#b45309"];
+const PANTS = ["#111827", "#1f2937", "#334155", "#3b2f2f", "#6b7280", "#1e293b"];
+
+/** Paint the atlas. */
+export function peopleAtlas(): CanvasTexture {
+  const CW = 96;
+  const CH = 192;
+  const [c, g] = canvas(CW * 4, CH * 4);
+  for (let k = 0; k < PEOPLE_CELLS; k++) {
+    g.save();
+    g.translate((k % 4) * CW, Math.floor(k / 4) * CH);
+    g.beginPath();
+    g.rect(0, 0, CW, CH);
+    g.clip();
+    paintPerson(g, k);
+    g.restore();
+  }
+  return texture(c);
+}
+
+function paintPerson(g: CanvasRenderingContext2D, k: number): void {
+  let sd = (k + 1) * 9301 + 49297;
   const rnd = () => {
     sd = (sd * 9301 + 49297) % 233280;
     return sd / 233280;
   };
-  const pk = (arr: string[]) => arr[Math.floor(rnd() * arr.length)];
-  const skin = pk(["#f1c9a5", "#e0b48f", "#c68642", "#8d5a3b", "#5c3a21", "#f5d6b8"]);
-  const hair = pk(["#111111", "#3b2a1a", "#6b4a2b", "#bfa36f", "#2b2b2b", "#8a8a8a"]);
-  const coat = pk(["#1f2937", "#374151", "#7c2d12", "#1e3a8a", "#9f1239", "#e5e7eb", "#065f46", "#f59e0b", "#4b5563", "#b91c1c", "#0f766e", "#c2410c"]);
-  const pants = pk(["#111827", "#1f2937", "#334155", "#3b2f2f", "#6b7280", "#1e293b"]);
-  const rr = (x: number, y: number, w: number, hh: number, r: number, col: string) => {
+  const pk = <T,>(arr: T[]) => arr[Math.floor(rnd() * arr.length)];
+  const rr = (x: number, y: number, w: number, h: number, r: number, col: string) => {
     g.fillStyle = col;
     g.beginPath();
-    g.roundRect(x, y, w, hh, r);
+    g.roundRect(x, y, w, h, r);
     g.fill();
   };
-  rr(33, 118, 12, 62, 4, pants);
-  rr(51, 118, 12, 62, 4, pants);
-  rr(31, 176, 15, 10, 3, "#111");
-  rr(50, 176, 15, 10, 3, "#111");
-  rr(26, 58, 44, 66, 10, coat);
-  rr(17, 62, 12, 54, 6, coat);
-  rr(67, 62, 12, 54, 6, coat);
-  g.fillStyle = skin;
-  g.fillRect(19, 112, 8, 8);
-  g.fillRect(69, 112, 8, 8);
-  g.fillRect(43, 46, 10, 14);
-  g.beginPath();
-  g.arc(48, 34, 16, 0, 6.28);
-  g.fill();
-  g.fillStyle = hair;
-  g.beginPath();
-  g.arc(48, 31, 16.5, Math.PI, 0);
-  g.fill();
-  if (rnd() < 0.4) g.fillRect(31.5, 31, 33, 8);
-  if (rnd() < 0.35) rr(12, 80, 10, 22, 3, pk(["#7c2d12", "#111827", "#9a3412"]));
-  if (rnd() < 0.25) {
-    g.fillStyle = "#333";
-    g.fillRect(57, 22, 2, 42);
-    g.fillStyle = pk(["#1d4ed8", "#dc2626", "#111", "#f59e0b"]);
+  const disc = (x: number, y: number, r: number, col: string, a0 = 0, a1 = Math.PI * 2) => {
+    g.fillStyle = col;
     g.beginPath();
-    g.arc(58, 22, 26, Math.PI, 0);
+    g.arc(x, y, r, a0, a1);
     g.fill();
+  };
+  // every figure's skin from the whole range, spread over the cells
+  const skin = SKINS[(k * 3) % SKINS.length];
+  /** A standing figure, `s` its scale and `cx` its middle; returns nothing, paints legs, body, arms, head and hair. */
+  const walker = (cx: number, s: number, skinC: string, coat: string, pants: string, hair: string | null, opts: { long?: boolean; skirt?: string } = {}) => {
+    const X = (v: number) => cx + (v - 48) * s;
+    const Y = (v: number) => 192 - (192 - v) * s;
+    const W = (v: number) => v * s;
+    if (opts.skirt) {
+      // a long tunic over trousers: the trousers' hems show at the ankles
+      rr(X(34), Y(150), W(11), W(30), 3 * s, pants);
+      rr(X(51), Y(150), W(11), W(30), 3 * s, pants);
+      g.fillStyle = opts.skirt;
+      g.beginPath();
+      g.moveTo(X(28), Y(92));
+      g.lineTo(X(68), Y(92));
+      g.lineTo(X(72), Y(158));
+      g.lineTo(X(24), Y(158));
+      g.closePath();
+      g.fill();
+    } else {
+      rr(X(33), Y(118), W(12), W(62), 4 * s, pants);
+      rr(X(51), Y(118), W(12), W(62), 4 * s, pants);
+    }
+    rr(X(31), Y(176), W(15), W(10), 3 * s, "#111");
+    rr(X(50), Y(176), W(15), W(10), 3 * s, "#111");
+    rr(X(26), Y(58), W(44), W(opts.long ? 92 : 66), 10 * s, coat);
+    rr(X(17), Y(62), W(12), W(54), 6 * s, coat);
+    rr(X(67), Y(62), W(12), W(54), 6 * s, coat);
+    g.fillStyle = skinC;
+    g.fillRect(X(19), Y(112), W(8), W(8));
+    g.fillRect(X(69), Y(112), W(8), W(8));
+    g.fillRect(X(43), Y(46), W(10), W(14));
+    disc(X(48), Y(34), W(16), skinC);
+    if (hair) disc(X(48), Y(31), W(16.5), hair, Math.PI, 0);
+  };
+  const coat = pk(COATS);
+  const pants = pk(PANTS);
+  const hair = pk(HAIRS);
+  switch (k) {
+    case 6: {
+      // a hijab: the scarf over the head and shoulders, the face open
+      walker(48, 1, skin, pk(["#1e3a8a", "#065f46", "#7c2d12", "#334155"]), pants, null, { long: true });
+      const scarf = pk(["#be185d", "#0f766e", "#f1e9da", "#6d28d9", "#1f2937"]);
+      disc(48, 33, 19, scarf);
+      rr(30, 40, 36, 26, 10, scarf);
+      disc(48, 35, 12, skin);
+      break;
+    }
+    case 7: {
+      // a Sikh man: a dastar wound high over the head, a beard
+      walker(48, 1, skin, pk(["#1f2937", "#1e3a8a", "#e5e7eb"]), pants, null);
+      const turban = pk(["#f59e0b", "#1d4ed8", "#b91c1c", "#f97316", "#0f172a"]);
+      g.fillStyle = turban;
+      g.beginPath();
+      g.ellipse(48, 24, 18, 13, 0, 0, Math.PI * 2);
+      g.fill();
+      rr(31, 22, 34, 10, 4, turban);
+      g.fillStyle = "#1b1410";
+      g.beginPath();
+      g.ellipse(48, 44, 11, 9, 0, 0, Math.PI);
+      g.fill();
+      break;
+    }
+    case 8: {
+      // a salwar kameez: a long tunic over trousers, the dupatta over one shoulder
+      const tunic = pk(["#db2777", "#f59e0b", "#0ea5e9", "#16a34a", "#9333ea"]);
+      walker(48, 1, skin, tunic, pk(["#f1e9da", "#fde68a", "#e5e7eb"]), hair, { skirt: tunic });
+      g.strokeStyle = pk(["#facc15", "#f472b6", "#fef3c7"]);
+      g.lineWidth = 7;
+      g.beginPath();
+      g.moveTo(30, 60);
+      g.lineTo(64, 96);
+      g.lineTo(66, 128);
+      g.stroke();
+      break;
+    }
+    case 9: {
+      // an elder, grey-haired, leaning a little on a cane
+      walker(46, 0.96, skin, pk(["#78350f", "#374151", "#1e3a8a"]), pants, "#c9c9c9");
+      g.strokeStyle = "#5b3a1e";
+      g.lineWidth = 3;
+      g.beginPath();
+      g.moveTo(74, 112);
+      g.lineTo(78, 186);
+      g.stroke();
+      break;
+    }
+    case 10: {
+      // a wheelchair user: seated, the big wheel beside, the footrest forward
+      const W0 = 48;
+      g.strokeStyle = "#1f2937";
+      g.lineWidth = 5;
+      g.beginPath();
+      g.arc(W0 + 2, 154, 28, 0, Math.PI * 2);
+      g.stroke();
+      g.lineWidth = 2;
+      for (let a = 0; a < 6; a++) {
+        g.beginPath();
+        g.moveTo(W0 + 2, 154);
+        g.lineTo(W0 + 2 + Math.cos(a) * 26, 154 + Math.sin(a) * 26);
+        g.stroke();
+      }
+      rr(28, 128, 44, 10, 3, "#374151");
+      rr(26, 84, 8, 50, 3, "#374151");
+      // the person: torso upright, thighs forward, shins down to the footrest
+      rr(30, 82, 36, 50, 9, coat);
+      rr(36, 124, 44, 12, 5, pants);
+      rr(70, 130, 11, 40, 4, pants);
+      rr(68, 170, 18, 8, 3, "#111");
+      g.fillStyle = skin;
+      g.fillRect(43, 70, 10, 14);
+      disc(48, 58, 15, skin);
+      disc(48, 55, 15.5, hair, Math.PI, 0);
+      rr(60, 96, 10, 34, 5, coat);
+      break;
+    }
+    case 11: {
+      // a parent and a child holding hands
+      walker(36, 0.92, skin, coat, pants, hair);
+      walker(72, 0.56, SKINS[(k * 3 + 2) % SKINS.length], pk(["#f59e0b", "#ef4444", "#22c55e", "#3b82f6"]), "#1f2937", pk(HAIRS));
+      g.strokeStyle = skin;
+      g.lineWidth = 3;
+      g.beginPath();
+      g.moveTo(58, 120);
+      g.lineTo(66, 132);
+      g.stroke();
+      break;
+    }
+    case 12:
+    case 13: {
+      // a couple holding hands: two men (12), two women (13)
+      const other = SKINS[(k * 5 + 3) % SKINS.length];
+      if (k === 12) {
+        walker(30, 0.86, skin, pk(["#1e3a8a", "#065f46", "#1f2937"]), pants, pk(HAIRS));
+        walker(66, 0.88, other, pk(["#b45309", "#9f1239", "#e5e7eb"]), "#1f2937", pk(HAIRS));
+      } else {
+        walker(30, 0.84, skin, pk(["#9333ea", "#0f766e", "#f59e0b"]), pants, pk(HAIRS), { long: true });
+        walker(66, 0.84, other, pk(["#be185d", "#1e3a8a", "#16a34a"]), "#111827", pk(HAIRS));
+        // longer hair on one
+        rr(53, 34, 26, 30, 10, pk(HAIRS));
+        disc(66, 40, 11, other);
+      }
+      g.strokeStyle = skin;
+      g.lineWidth = 3.5;
+      g.beginPath();
+      g.moveTo(44, 120);
+      g.lineTo(54, 120);
+      g.stroke();
+      break;
+    }
+    case 14: {
+      // someone carrying a small Progress Pride flag over the shoulder
+      walker(44, 1, skin, coat, pants, hair);
+      g.fillStyle = "#3a3a3a";
+      g.fillRect(70, 20, 2.5, 96);
+      const stripes = ["#e40303", "#ff8c00", "#ffed00", "#008026", "#004dff", "#750787"];
+      stripes.forEach((col, i) => {
+        g.fillStyle = col;
+        g.fillRect(72, 20 + i * 5, 22, 5);
+      });
+      // the chevron: white, pink, light blue, brown, black, from the hoist
+      ["#000000", "#613915", "#5bcefa", "#f5a9b8", "#ffffff"].forEach((col, i) => {
+        g.fillStyle = col;
+        g.beginPath();
+        g.moveTo(72, 20 + i * 1.2);
+        g.lineTo(72 + 13 - i * 2.6, 35);
+        g.lineTo(72, 50 - i * 1.2);
+        g.closePath();
+        g.fill();
+      });
+      break;
+    }
+    case 15: {
+      // a woven cedar hat (wide, conical) and a red blanket cape bordered in black with a row of pale buttons
+      walker(48, 1, skin, "#1f2937", "#1f2937", "#111111");
+      g.fillStyle = "#b9874f";
+      g.beginPath();
+      g.moveTo(22, 30);
+      g.lineTo(48, 8);
+      g.lineTo(74, 30);
+      g.closePath();
+      g.fill();
+      g.strokeStyle = "#7a5530";
+      g.lineWidth = 1.5;
+      for (let y = 14; y < 30; y += 4) {
+        g.beginPath();
+        g.moveTo(48 - (y - 8) * 1.18, y);
+        g.lineTo(48 + (y - 8) * 1.18, y);
+        g.stroke();
+      }
+      g.fillStyle = "#111";
+      g.beginPath();
+      g.moveTo(22, 58);
+      g.lineTo(74, 58);
+      g.lineTo(82, 134);
+      g.lineTo(14, 134);
+      g.closePath();
+      g.fill();
+      g.fillStyle = "#b91c1c";
+      g.beginPath();
+      g.moveTo(26, 62);
+      g.lineTo(70, 62);
+      g.lineTo(77, 128);
+      g.lineTo(19, 128);
+      g.closePath();
+      g.fill();
+      g.fillStyle = "#f5f0e6";
+      for (let x = 20; x <= 76; x += 6) disc(x, 131, 1.6, "#f5f0e6");
+      // a simple formline ovoid on the back panel, black on red
+      g.strokeStyle = "#111";
+      g.lineWidth = 3;
+      g.beginPath();
+      g.ellipse(48, 96, 13, 9, 0, 0, Math.PI * 2);
+      g.stroke();
+      disc(48, 96, 4, "#111");
+      break;
+    }
+    default: {
+      // walkers: the first six, each with its own extras
+      walker(48, 1, skin, coat, pants, hair);
+      if (rnd() < 0.4) g.fillRect(31.5, 31, 33, 8);
+      if (rnd() < 0.4) rr(12, 80, 10, 22, 3, pk(["#7c2d12", "#111827", "#9a3412"]));
+      if (k === 2 || k === 5) {
+        g.fillStyle = "#333";
+        g.fillRect(57, 22, 2, 42);
+        g.fillStyle = pk(["#1d4ed8", "#dc2626", "#111", "#f59e0b"]);
+        g.beginPath();
+        g.arc(58, 22, 26, Math.PI, 0);
+        g.fill();
+      }
+    }
   }
-  return texture(c);
 }
 
 /**

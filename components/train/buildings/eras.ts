@@ -86,6 +86,7 @@ export const ZONES: Partial<Record<Hood, Zone>> = {
 };
 
 export type ArchId =
+  | "salishHall"
   | "heritageBrick"
   | "warehouse"
   | "chinatownBlock"

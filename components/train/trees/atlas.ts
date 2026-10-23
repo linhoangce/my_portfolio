@@ -150,7 +150,24 @@ function paintConifer(sp: Conifer, layers: CanvasRenderingContext2D[], bx: numbe
   for (const g of [gLL, gLA]) g.setTransform(1, 0, 0, 1, 0, 0);
 }
 
-export function paintTreeAtlas(): DataTexture {
+/**
+ * The atlas texture at its full size, empty: the trees' material takes it from the start, and paintTreeAtlas fills it
+ * when the trees come in (the painting is a good half second the opening need not wait for).
+ */
+export function treeAtlasTexture(): DataTexture {
+  const AW = CW * ATLAS_COLS;
+  const AH = CH * ATLAS_ROWS;
+  const t = new DataTexture(new Uint8Array(AW * AH * 4), AW, AH, RGBAFormat);
+  t.generateMipmaps = true;
+  t.minFilter = LinearMipmapLinearFilter;
+  t.magFilter = LinearFilter;
+  t.anisotropy = 4;
+  t.needsUpdate = true;
+  return t;
+}
+
+/** Paint every species into the atlas texture (treeAtlasTexture's). */
+export function paintTreeAtlas(t: DataTexture): void {
   const AW = CW * ATLAS_COLS;
   const AH = CH * ATLAS_ROWS;
   const layers = [0, 1, 2, 3].map(() => {
@@ -258,7 +275,7 @@ export function paintTreeAtlas(): DataTexture {
   // pack the four greyscale layers into RGBA, rows flipped (DataTexture v = 0 is the first row); outside a layer its
   // luminance is a mid grey so mipmaps do not pull dark halos into the crowns
   const d = layers.map((g) => g.getImageData(0, 0, AW, AH).data);
-  const out = new Uint8Array(AW * AH * 4);
+  const out = t.image.data as Uint8Array;
   for (let y = 0; y < AH; y++) {
     for (let x = 0; x < AW; x++) {
       const si = (y * AW + x) * 4;
@@ -271,11 +288,5 @@ export function paintTreeAtlas(): DataTexture {
       out[di + 3] = ba;
     }
   }
-  const t = new DataTexture(out, AW, AH, RGBAFormat);
-  t.generateMipmaps = true;
-  t.minFilter = LinearMipmapLinearFilter;
-  t.magFilter = LinearFilter;
-  t.anisotropy = 4;
   t.needsUpdate = true;
-  return t;
 }

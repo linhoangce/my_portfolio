@@ -10,7 +10,7 @@ import { busNetwork } from "./buses";
 import { FORECOURT, inHarbourGreen, onGreenCafe, PLAZA_SOUTH, PLAZA_X, promenadeStretches } from "./harbourfront";
 import { stations } from "@/data";
 
-import { PEOPLE_VARIANTS, SEA } from "./constants";
+import { CELL_WHEELCHAIR, PEOPLE_CELLS, SEA, WALK_CELLS } from "./constants";
 import { roads, WALK } from "./roadNetwork";
 import { inLandmark, inPark } from "./sites";
 import { inWater, sdfAt } from "./terrain";
@@ -102,12 +102,17 @@ export type Person = {
 };
 
 /** Fourteen per station on both platforms, a few on the BC Parkway, the rest walking the sidewalks within 70 units of the line. */
-export function buildPeople(rng: Rng, PEOPLE_N: number, commonsCovered: (x: number, z: number) => boolean = () => false): { people: Person[]; counts: number[] } {
+export function buildPeople(rng: Rng, PEOPLE_N: number, commonsCovered: (x: number, z: number) => boolean = () => false, access: { x: number; y: number; z: number }[] = []): { people: Person[]; counts: number[] } {
   const people: Person[] = [];
-  const counts = new Array<number>(PEOPLE_VARIANTS).fill(0);
+  const counts = new Array<number>(PEOPLE_CELLS).fill(0);
+  // the atlas's cells in turn (or the one asked for); a wheelchair user does not pace the sidewalk's stride
+  let turn = 0;
   const add = (h: Omit<Person, "v" | "k" | "ox" | "oz" | "ux" | "uz" | "pos" | "lo" | "hi" | "dir" | "move"> & Partial<Person>) => {
-    const v = people.length % PEOPLE_VARIANTS;
-    people.push({ ox: h.x, oz: h.z, ux: 1, uz: 0, pos: 0, lo: 0, hi: 0, dir: 1, move: 0, ...h, v, k: counts[v]++ });
+    const v = h.v ?? WALK_CELLS[turn++ % WALK_CELLS.length];
+    const p: Person = { ox: h.x, oz: h.z, ux: 1, uz: 0, pos: 0, lo: 0, hi: 0, dir: 1, move: 0, ...h, v, k: people.length };
+    if (v === CELL_WHEELCHAIR) p.move = Math.min(p.move, 0.5);
+    counts[v]++;
+    people.push(p);
   };
   const f = makeFrame();
   stations.forEach((_, i) => {
@@ -185,8 +190,9 @@ export function buildPeople(rng: Rng, PEOPLE_N: number, commonsCovered: (x: numb
       placed++;
     }
   }
-  // Patterson's wellness park: players on the courts, people at the gym, the yoga class
-  for (const p of wellnessPeople()) if (people.length < PEOPLE_N) add(p);
+  // Patterson's wellness park: players on the courts, people at the gym, the yoga class; and people at the stations'
+  // fare gates
+  for (const p of [...wellnessPeople(), ...access]) if (people.length < PEOPLE_N) add(p);
   for (const f of FEATURES) {
     if (f.kind !== "stage") continue;
     for (let k = 0; k < 9 && people.length < PEOPLE_N; k++) {

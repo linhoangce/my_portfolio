@@ -124,6 +124,22 @@ export function roads(): Roads {
         }
       }
     }
+    // within reach of a hero tower (larger than life, wider than a block), pieces at most 2.5 long, so only those
+    // under its footprint go out of sight and the rest of the street stays drawn
+    const nearHero = (x: number, z: number) => HEROES.some((h) => Math.abs(h.x - x) < h.r + 14 && Math.abs(h.z - z) < h.r + 14);
+    for (let i = 0; i + 1 < xs.length / 2; i++) {
+      const ax = xs[i * 2];
+      const az = xs[i * 2 + 1];
+      const bx = xs[i * 2 + 2];
+      const bz = xs[i * 2 + 3];
+      const L = Math.hypot(bx - ax, bz - az);
+      if (L <= 2.5 || !(nearHero(ax, az) || nearHero(bx, bz) || nearHero((ax + bx) / 2, (az + bz) / 2))) continue;
+      const m = Math.ceil(L / 2.5);
+      const add: number[] = [];
+      for (let k = 1; k < m; k++) add.push(ax + ((bx - ax) * k) / m, az + ((bz - az) * k) / m);
+      xs.splice(i * 2 + 2, 0, ...add);
+      i += m - 1;
+    }
     const pts = new Float32Array(xs);
     const n = pts.length / 2;
     const cum = new Float32Array(n);
@@ -160,13 +176,14 @@ export function roads(): Roads {
   buildFence();
   const hidden = (x: number, z: number, half: number) =>
     sdfAt(x, z) < 1 || inLandmark(x, z, 0) || inHarbourfront(x, z, half) || inHarbourGreen(x, z, half) || wceDist(x, z) < WCE_HALF + 1 + half || inSetZone(x, z, 0) || HEROES.some((h) => (h.x - x) ** 2 + (h.z - z) ** 2 < (h.r - 1) ** 2) || fenced(x, z, 9 + half);
+  const underHero = (x: number, z: number, half: number) => HEROES.some((h) => Math.abs(h.x - x) < h.r - 1 + half - 0.4 && Math.abs(h.z - z) < h.r - 1 + half - 0.4);
   edges.forEach((e) => {
     const n = e.pts.length / 2;
     for (let i = 0; i < n; i++) e.y[i] = groundAt(e.pts[i * 2], e.pts[i * 2 + 1]);
     for (let i = 0; i + 1 < n; i++) {
       const mx = (e.pts[i * 2] + e.pts[i * 2 + 2]) / 2;
       const mz = (e.pts[i * 2 + 1] + e.pts[i * 2 + 3]) / 2;
-      if (hidden(mx, mz, e.half) || hidden(e.pts[i * 2], e.pts[i * 2 + 1], e.half) || hidden(e.pts[i * 2 + 2], e.pts[i * 2 + 3], e.half)) e.shown[i] = 0;
+      if (hidden(mx, mz, e.half) || hidden(e.pts[i * 2], e.pts[i * 2 + 1], e.half) || hidden(e.pts[i * 2 + 2], e.pts[i * 2 + 3], e.half) || underHero(mx, mz, e.half)) e.shown[i] = 0;
     }
   });
   // over the Millennium's trench a road crosses on a bridge from one bank's lip to the other's, or ends at its rim
@@ -512,9 +529,14 @@ function tidyFragments(nodes: RNode[], edges: REdge[]): void {
       const island = (size.get(find(i)) ?? 0) < 26;
       // a short spur that hiding cut off (it ran on into a set, a landmark or a plaza, and the data has more road
       // beyond): it would end in nothing, so it goes back to its junction. The streets that end at the Grandview Cut's
-      // rim stay: they end there as the real ones do
-      const cutOff = (atNode: boolean, node: number, s: number) =>
-        atNode ? nodes[node].deg >= 2 && (arms.get(node) ?? 0) === 1 : !inRailCut(...pointAt(e, s), TRENCH.wall + 4);
+      // rim stay: they end there as the real ones do; so do those that end at a hero tower's forecourt, which stands
+      // across them as a superblock does
+      const atHero = (x: number, z: number) => HEROES.some((h) => Math.abs(h.x - x) < h.r + 4 && Math.abs(h.z - z) < h.r + 4);
+      const cutOff = (atNode: boolean, node: number, s: number) => {
+        if (atNode) return nodes[node].deg >= 2 && (arms.get(node) ?? 0) === 1;
+        const [px, pz] = pointAt(e, s);
+        return !inRailCut(px, pz, TRENCH.wall + 4) && !atHero(px, pz);
+      };
       const deadA = cutOff(r.atA, e.a, e.cum[r.i0]);
       const deadB = cutOff(r.atB, e.b, e.cum[r.i1]);
       const spur = r.len < 30 && ((deadA && r.atB && (arms.get(e.b) ?? 0) >= 2) || (deadB && r.atA && (arms.get(e.a) ?? 0) >= 2));

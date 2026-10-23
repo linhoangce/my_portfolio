@@ -71,7 +71,7 @@ export function stepFilm(st: TrainState, dt: number): void {
     st.setStage(quick ? 4 : T > 2.4 ? 4 : T > 1.7 ? 3 : T > 1.0 ? 2 : T > 0.5 ? 1 : 0);
     if (T >= (quick ? 0.6 : SHOT_S)) st.setPhase("hold");
   } else if (film.phase === "hold") {
-    // the opening hold behind the intro card reveals everything once the card goes
+    // the opening hold, Waterfront's scene on first load, reveals everything at once
     if (st.introDone && st.sceneStage < 4) st.setStage(4);
   } else if (film.phase === "exit") {
     if (film.t > EXIT_S) st.setPhase("idle");

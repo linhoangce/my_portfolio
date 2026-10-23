@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, ChevronUp, EyeOff } from "lucide-react";
+import { ChevronUp } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { PanelFor } from "@/components/panels";
@@ -10,9 +10,10 @@ import { useTrain } from "../store";
 
 /**
  * The station's section as a film overlay: a left column on a gradient scrim on desktop, a bottom sheet on phones
- * (collapsed to the kicker, title, two lines of lead and the stop buttons until expanded). The panel is the same one
- * /text renders; its parts appear in stages as the establishing shot plays. Hide with E or Esc (remembered for this
- * stay). A visually hidden status line announces each scene once.
+ * (collapsed to the kicker, title and two lines of lead until expanded). The panel is the same one /text renders; its
+ * parts appear in stages as the establishing shot plays. Hide with E or Esc (remembered for this stay). The stop
+ * buttons are StopNav's, at the column's foot whether it is open or not. A visually hidden status line announces each
+ * scene once.
  */
 export function SceneOverlay() {
   const overlay = useTrain((s) => s.overlay);
@@ -21,8 +22,6 @@ export function SceneOverlay() {
   const phase = useTrain((s) => s.scenePhase);
   const filmOn = useTrain((s) => s.filmOn);
   const monument = useTrain((s) => s.monument);
-  const hideOverlay = useTrain((s) => s.hideOverlay);
-  const driveTo = useTrain((s) => s.driveTo);
   const [expanded, setExpanded] = useState(false);
   const [status, setStatus] = useState("");
   const body = useRef<HTMLDivElement>(null);
@@ -57,7 +56,6 @@ export function SceneOverlay() {
   }, [phase, i, filmOn, overlay]);
 
   const st = stations[i];
-  const last = i === stations.length - 1;
   const tab = open ? 0 : -1;
   return (
     <>
@@ -77,18 +75,6 @@ export function SceneOverlay() {
             <button type="button" className="btn expand" aria-expanded={expanded} onClick={() => setExpanded(!expanded)} tabIndex={tab}>
               <ChevronUp className="h-4 w-4" aria-hidden="true" />
               {expanded ? "Less" : "More"}
-            </button>
-            <button type="button" className="btn" disabled={i === 0} onClick={() => driveTo(i - 1)} tabIndex={tab}>
-              <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
-              Previous
-            </button>
-            <button type="button" className="btn-primary" disabled={last} onClick={() => driveTo(i + 1)} tabIndex={tab}>
-              {last ? "End of the line" : "Next stop"}
-              <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-            </button>
-            <button type="button" className="btn hide" onClick={hideOverlay} tabIndex={tab}>
-              <EyeOff className="h-3.5 w-3.5" aria-hidden="true" />
-              Hide <kbd>E</kbd>
             </button>
           </div>
         </div>

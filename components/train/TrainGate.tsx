@@ -14,13 +14,14 @@ import { Pointer } from "./controls/Pointer";
 import { Wheel } from "./controls/Wheel";
 import { useTrain } from "./store";
 import { FilmFx } from "./ui/FilmFx";
-import { Intro } from "./ui/Intro";
+import { LoadBar } from "./ui/LoadBar";
 import { Help, Menu } from "./ui/Menu";
 import { MonumentCard } from "./ui/MonumentCard";
 import { Readout } from "./ui/Readout";
 import { MapCredit } from "./ui/MapCredit";
 import { SceneCaptions } from "./ui/SceneCaptions";
 import { SceneOverlay } from "./ui/SceneOverlay";
+import { StopNav } from "./ui/StopNav";
 import { TopBar } from "./ui/TopBar";
 
 const Scene = dynamic(() => import("./Scene"), { ssr: false, loading: () => null });
@@ -45,7 +46,7 @@ function canRide(): boolean {
 
 /**
  * Client gate for the home page: checks capabilities, redirects to /text when the ride would be a bad experience,
- * otherwise lazy-loads the scene chunk under the DOM shell (top bar, HUD, intro, dock, attendant).
+ * otherwise lazy-loads the scene chunk under the DOM shell (top bar, the stop buttons, the scene's column, attendant).
  */
 export function TrainGate() {
   const router = useRouter();
@@ -126,15 +127,16 @@ export function TrainGate() {
       <Wheel />
       <FilmFx />
       <TopBar />
+      <LoadBar />
       <Readout />
       <MapCredit />
       <DriveButtons />
       <SceneCaptions />
       <SceneOverlay />
+      <StopNav />
       <MonumentCard />
       <Menu />
       <Help />
-      <Intro />
       <AskPanel />
     </>
   );

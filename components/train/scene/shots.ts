@@ -8,6 +8,7 @@
 import { Box3, Vector3 } from "three";
 
 import { blockedSamples, roofAt } from "../camSafe";
+import { cityBuilt } from "../cityData";
 import { monumentFocus } from "../monuments";
 import type { ShotSpec } from "../sets/build";
 import { setRegistry } from "../sets/registry";
@@ -25,7 +26,8 @@ const FALLBACK: ShotSpec = { from: [-58, 82, 15], to: [-22, 62, 24], look: [0, 1
 const cache = new Map<string, ShotPlan>();
 
 export function shotFor(i: number, lowEnd: boolean): ShotPlan {
-  const k = `${i}:${lowEnd}:${setRegistry.sets ? 1 : 0}`;
+  // planned again once the sets and then the city are in (the camera keeps out of what stands)
+  const k = `${i}:${lowEnd}:${setRegistry.sets ? 1 : 0}:${cityBuilt(lowEnd) ? 1 : 0}`;
   let plan = cache.get(k);
   if (!plan) {
     plan = i === 4 ? scienceWorldShot(lowEnd) : stationShot(i, lowEnd);

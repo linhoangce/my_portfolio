@@ -339,15 +339,7 @@ export function boatLights(kind: number): BufferGeometry {
   ]);
 }
 
-/** The cars' head and tail lights (bow along +x as the car body is built): two warm white in front, two red behind. */
-export function carLights(): BufferGeometry {
-  return merge([
-    ...[-0.36, 0.36].map((z) => box(0.06, 0.12, 0.24, 1.24, 0.46, z, 0xfff3d6)),
-    ...[-0.4, 0.4].map((z) => box(0.06, 0.1, 0.26, -1.24, 0.5, z, 0xff2a1f)),
-  ]);
-}
-
-/** A part's glow: 1 where it lights (signs, lamps, the light line), for the bus material's shader. */
+/** A part's glow: 1 where it lights (signs, lamps, the light line), for the vehicles' shader (Life.tsx). */
 const glowing = (g: BufferGeometry, v: number): BufferGeometry => {
   g.setAttribute("aGlow", new Float32BufferAttribute(new Float32Array(g.attributes.position.count).fill(v), 1));
   return g;

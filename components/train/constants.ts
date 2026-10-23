@@ -107,5 +107,19 @@ export const AUTO_LOOK_PERIOD = 15;
 /** Below this width the layout is the phone layout (bottom sheets, hold buttons). */
 export const PHONE_MAX_WIDTH = 860;
 
-export const PEOPLE_VARIANTS = 6;
+/** The scene loads in this many stages (Scene.tsx), the opening shot's essentials first. */
+export const LOAD_STAGES = 6;
+/** The stage the city's buildings and lots come in with: what reads them before then sees open ground. */
+export const CITY_STAGE = 2;
+
+/** The people's atlas (textures.ts peopleAtlas): its cells and what each holds. */
+export const PEOPLE_CELLS = 16;
+/** Width of each cell's figure, as a share of a single walker's (couples, a parent and child, a wheelchair are wider). */
+export const PEOPLE_WIDTH: number[] = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1.25, 1.35, 1.55, 1.55, 1, 1];
+/** The cells everyone is drawn from; the cedar hat is placed on purpose, not at random. */
+export const WALK_CELLS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
+export const CELL_COUPLES = [12, 13];
+export const CELL_FLAG = 14;
+export const CELL_CEDAR = 15;
+export const CELL_WHEELCHAIR = 10;
 

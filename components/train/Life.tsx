@@ -3,12 +3,14 @@
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo } from "react";
 import {
+  BatchedMesh,
   BoxGeometry,
   Color,
   CylinderGeometry,
   DoubleSide,
-  ExtrudeGeometry,
+  Euler,
   Group,
+  InstancedBufferAttribute,
   InstancedMesh,
   Matrix4,
   Mesh,
@@ -16,20 +18,19 @@ import {
   MeshStandardMaterial,
   PlaneGeometry,
   Quaternion,
-  Shape,
-  Vector2,
   Vector3,
 } from "three";
-import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
 import { Rng } from "./cityModel";
 import { getLifeData } from "./cityData";
-import { PEOPLE_VARIANTS, SEA } from "./constants";
+import { PEOPLE_WIDTH, SEA } from "./constants";
 import { merged, type Part } from "./merge";
 import { paint } from "./shapes";
 import { sdfAt } from "./terrain";
 import { groundAt, UP } from "./track";
-import { boatLights, busSection, carLights, sailboat, seabus, yacht } from "./vessels";
+import { boatLights, busSection, sailboat, seabus, yacht } from "./vessels";
+import { asVehicle, canoe, carKinds, hoverCar } from "./vehicles";
+import { flyHover, laneGeometry, skyway } from "./hoverLanes";
 import { SEABUS_A, SEABUS_B } from "./SeaBus";
 import { inNoSail } from "./waterfrontHub";
 import { skipInMirror } from "./waterMirror";
@@ -42,10 +43,12 @@ const q = new Quaternion();
 const one = new Vector3(1, 1, 1);
 const p = new Vector3();
 const sc = new Vector3();
+const eu = new Euler();
 
 /**
- * kind: 0 SeaBus (or, smaller, a False Creek ferry), 1 sailboat, 2 motor yacht. A moored boat keeps its heading (bow
- * along yaw) at scale s; a lane boat runs along False Creek at distance u, `side` units right of the lane.
+ * kind: 0 SeaBus (or, smaller, a False Creek ferry), 1 sailboat, 2 motor yacht, 3 journey canoe (drawn with the
+ * vehicles). A moored boat keeps its heading (bow along yaw) at scale s; a lane boat runs along False Creek at distance
+ * u, `side` units right of the lane.
  */
 type Boat = { x: number; z: number; dir: 1 | -1; speed: number; kind: number; k: number; moored?: { yaw: number; s: number }; lane?: { u: number; s: number; side: number } };
 
@@ -183,69 +186,81 @@ export function Life() {
 
   const built = useMemo(() => {
     const rng = new Rng(5);
-    // cars: a body extruded from a side profile (hood, raked windshield, roof, hatch), glass and wheels in a dark second mesh
-    const prof = new Shape(
-      [
-        [-1.2, 0.3],
-        [1.2, 0.3],
-        [1.2, 0.58],
-        [0.8, 0.64],
-        [0.4, 0.96],
-        [-0.45, 0.98],
-        [-0.9, 0.66],
-        [-1.2, 0.6],
-      ].map(([x, y]) => new Vector2(x, y)),
-    );
-    const body = new ExtrudeGeometry(prof, { depth: 1.1, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.05, bevelSegments: 1, curveSegments: 1 });
-    body.translate(0, 0, -0.55);
-    const glass = new BoxGeometry(0.95, 0.3, 1.16);
-    glass.translate(-0.05, 0.74, 0);
-    // the wheels as two dark axle blocks: at street distance they read the same for 24 triangles instead of 160
-    const wheels = [-0.75, 0.75].map((x) => new BoxGeometry(0.38, 0.38, 1.2).translate(x, 0.19, 0));
-    const n = data.traffic.cars.length;
-    const carMesh = new InstancedMesh(body, mats.car, Math.max(1, n));
-    const carTrim = new InstancedMesh(mergeGeometries([glass, ...wheels], false), mats.carTrim, Math.max(1, n));
-    const c = new Color();
-    data.traffic.cars.forEach((_, i) => carMesh.setColorAt(i, c.setHex(rng.pick(CAR_COLOURS))));
-    carMesh.count = carTrim.count = n;
-    carMesh.castShadow = !lowEnd;
-    // head and tail lights after dark, riding on the bodies' own instance matrices
-    const lightMat = new MeshBasicMaterial({ vertexColors: true, toneMapped: false, side: DoubleSide });
-    const carLamps = new InstancedMesh(carLights(), lightMat, Math.max(1, n));
-    carLamps.instanceMatrix = carMesh.instanceMatrix;
-    carLamps.count = n;
-    glass.dispose();
-    for (const w of wheels) w.dispose();
-    // the buses: a front and a rear section each, one instanced mesh per section; their signs, lamps and light line
-    // glow by an attribute, brighter after dark
+    // the vehicles: the five kinds of car, the buses' two sections and the hover cars (vehicles.ts), one batched mesh,
+    // one draw. The paint takes each one's colour; lamps, light bars and the buses' signs glow by an attribute,
+    // brighter after dark.
+    const kinds = carKinds();
+    const HOVER = kinds.length;
+    const BUS_F = HOVER + 1;
+    const BUS_R = HOVER + 2;
+    const CANOE = HOVER + 3;
+    const geos = [...kinds, hoverCar(), asVehicle(busSection(true)), asVehicle(busSection(false)), canoe()];
+    // the journey canoes on False Creek, paddled from end to end
+    const nCanoe = lowEnd ? 1 : 2;
+    const cars = data.traffic.cars;
     const nb = data.traffic.buses.length;
-    const busGlow = { value: 0.6 };
-    const busMat = new MeshStandardMaterial({ vertexColors: true, roughness: 0.4, metalness: 0.15, envMap: world.envTex, envMapIntensity: 0.4 });
-    busMat.onBeforeCompile = (sh) => {
-      sh.uniforms.uBusGlow = busGlow;
+    const sky = skyway(lowEnd);
+    const vehGlow = { value: 0.6 };
+    const vehMat = new MeshStandardMaterial({ vertexColors: true, roughness: 0.36, metalness: 0.2, envMap: world.envTex, envMapIntensity: 0.55 });
+    vehMat.onBeforeCompile = (sh) => {
+      sh.uniforms.uGlow = vehGlow;
       sh.vertexShader = sh.vertexShader
-        .replace("#include <common>", "#include <common>\nattribute float aGlow;\nvarying float vGlow;")
+        .replace("#include <common>", "#include <common>\nattribute float aGlow;\nattribute float aTint;\nvarying float vGlow;")
+        .replace("#include <color_vertex>", "#include <color_vertex>\nvColor.xyz = mix(color.xyz, vColor.xyz, aTint);")
         .replace("#include <begin_vertex>", "#include <begin_vertex>\nvGlow = aGlow;");
       sh.fragmentShader = sh.fragmentShader
-        .replace("#include <common>", "#include <common>\nuniform float uBusGlow;\nvarying float vGlow;")
-        .replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\ntotalEmissiveRadiance += vColor.rgb * vGlow * uBusGlow;");
+        .replace("#include <common>", "#include <common>\nuniform float uGlow;\nvarying float vGlow;")
+        .replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\ntotalEmissiveRadiance += vColor.rgb * vGlow * uGlow;");
     };
-    const busFront = new InstancedMesh(busSection(true), busMat, Math.max(1, nb));
-    const busRear = new InstancedMesh(busSection(false), busMat, Math.max(1, nb));
-    busFront.count = busRear.count = nb;
-    for (const m of [busFront, busRear]) {
-      m.castShadow = !lowEnd;
-      m.frustumCulled = false;
+    vehMat.customProgramCacheKey = () => "vehicles";
+    const vehicles = new BatchedMesh(
+      cars.length + sky.cars.length + 2 * nb + nCanoe,
+      geos.reduce((s, g) => s + g.attributes.position.count, 0),
+      0,
+      vehMat,
+    );
+    const geoIds = geos.map((g) => vehicles.addGeometry(g));
+    for (const g of geos) g.dispose();
+    const c = new Color();
+    const carIds = cars.map((car) => {
+      const id = vehicles.addInstance(geoIds[car.kind]);
+      // the trucks in their stainless steel, the vans in delivery liveries, the rest from the street's palette
+      const hex = car.kind === 4 ? rng.pick([0xc3c8ce, 0xaab0b7, 0x2b2f36]) : car.kind === 3 ? rng.pick([0xffffff, 0xf2f3f5, 0x2563eb, 0xf59e0b, 0x0f766e]) : rng.pick(CAR_COLOURS);
+      vehicles.setColorAt(id, c.setHex(hex));
+      return id;
+    });
+    const hoverIds = sky.cars.map(() => {
+      const id = vehicles.addInstance(geoIds[HOVER]);
+      vehicles.setColorAt(id, c.setHex(rng.pick([0xffffff, 0x111111, 0xc9ccd1, 0x1f3a8a, 0x8c1d1d, 0x6d28d9])));
+      return id;
+    });
+    const busIds = data.traffic.buses.map(() => [vehicles.addInstance(geoIds[BUS_F]), vehicles.addInstance(geoIds[BUS_R])]);
+    for (const [f, r] of busIds) {
+      vehicles.setColorAt(f, c.setHex(0xffffff));
+      vehicles.setColorAt(r, c.setHex(0xffffff));
     }
+    const canoeIds = Array.from({ length: nCanoe }, () => {
+      const id = vehicles.addInstance(geoIds[CANOE]);
+      vehicles.setColorAt(id, c.setHex(0x221a16));
+      return id;
+    });
+    vehicles.castShadow = !lowEnd;
+    vehicles.frustumCulled = false;
+    vehicles.sortObjects = false;
+    // the hyperwave's guide lines, bands and hoops, unlit and see-through, brighter after dark
+    const laneMat = new MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, toneMapped: false, side: DoubleSide });
+    const lanes = new Mesh(laneGeometry(sky.lanes), laneMat);
+    // the boats' lamps, unlit
+    const lightMat = new MeshBasicMaterial({ vertexColors: true, toneMapped: false, side: DoubleSide });
 
-    // people: painted billboards, six variants, facing the camera every frame
+    // people: painted billboards facing the camera every frame, all in one mesh, each instance's figure a cell of the
+    // people's atlas (textures.ts), as wide as its figure is
     const quad = new PlaneGeometry(0.55, 1.1);
     quad.translate(0, 0.55, 0);
-    const peopleMeshes = Array.from({ length: PEOPLE_VARIANTS }, (_, v) => {
-      const m = new InstancedMesh(quad, mats.people[v], Math.max(1, data.counts[v]));
-      m.count = data.counts[v];
-      return m;
-    });
+    const np = data.people.length;
+    const peopleMesh = new InstancedMesh(quad, mats.people, Math.max(1, np));
+    peopleMesh.count = np;
+    quad.setAttribute("aCell", new InstancedBufferAttribute(Float32Array.from(data.people.map((h) => h.v)), 1));
 
     // boats on the inlet: the SeaBus, sailboats and motor yachts, one instanced mesh per kind
     const KINDS = 3;
@@ -283,6 +298,7 @@ export function Life() {
       const speed = kind === 0 ? 4.5 : kind === 1 ? 2 + rng.next() : 3.5 + rng.next() * 2;
       boats.push({ x: 0, z: 0, dir: rng.next() < 0.5 ? 1 : -1, speed, kind, k: perKind[kind]++, lane: { u, s: kind === 0 ? 0.32 : kind === 1 ? 0.7 : 0.6, side: 3 + rng.next() * 3 } });
     });
+    for (let k = 0; k < nCanoe; k++) boats.push({ x: 0, z: 0, dir: k % 2 ? -1 : 1, speed: 2.2, kind: 3, k, lane: { u: ((k + 0.3) / nCanoe) * LANE_LEN, s: 1, side: 2 + k } });
     const docks = new Mesh(merged(moorings.docks), boatMat);
     docks.receiveShadow = true;
 
@@ -310,26 +326,21 @@ export function Life() {
       m.frustumCulled = false;
       return m;
     });
-    return { carMesh, carTrim, carLamps, busFront, busRear, busMat, busGlow, peopleMeshes, boats, boatMeshes, boatLamps, boatMat, lightMat, docks, plane, planeT: 0 };
+    return { vehicles, vehMat, vehGlow, carIds, hoverIds, busIds, canoeIds, sky, lanes, laneMat, peopleMesh, boats, boatMeshes, boatLamps, boatMat, lightMat, docks, plane, planeT: 0 };
   }, [data, mats, lowEnd, world.envTex]);
 
-  // cars and people are too small and low to show in the water
-  useEffect(() => skipInMirror(built.carMesh, built.carTrim, built.carLamps, built.busFront, built.busRear, ...built.peopleMeshes), [built]);
+  // cars and people are too small and low to show in the water, and the sky lanes too thin
+  useEffect(() => skipInMirror(built.vehicles, built.lanes, built.peopleMesh), [built]);
 
   useEffect(
     () => () => {
-      built.carMesh.geometry.dispose();
-      built.carTrim.geometry.dispose();
-      for (const m of [built.busFront, built.busRear]) {
-        m.geometry.dispose();
-        m.dispose();
-      }
-      built.busMat.dispose();
-      built.carMesh.dispose();
-      built.carTrim.dispose();
-      built.peopleMeshes[0].geometry.dispose();
-      for (const m of built.peopleMeshes) m.dispose();
-      for (const m of [...built.boatMeshes, ...built.boatLamps, built.carLamps]) {
+      built.vehicles.dispose();
+      built.vehMat.dispose();
+      built.lanes.geometry.dispose();
+      built.laneMat.dispose();
+      built.peopleMesh.geometry.dispose();
+      built.peopleMesh.dispose();
+      for (const m of [...built.boatMeshes, ...built.boatLamps]) {
         m.geometry.dispose();
         m.dispose();
       }
@@ -350,23 +361,24 @@ export function Life() {
     data.traffic.cars.forEach((c, i) => {
       p.set(c.x, c.y, c.z);
       q.setFromAxisAngle(UP, c.yaw);
-      m4.compose(p, q, one);
-      built.carMesh.setMatrixAt(i, m4);
-      built.carTrim.setMatrixAt(i, m4);
+      built.vehicles.setMatrixAt(built.carIds[i], m4.compose(p, q, one));
     });
-    built.carMesh.instanceMatrix.needsUpdate = true;
-    built.carTrim.instanceMatrix.needsUpdate = true;
     data.traffic.buses.forEach((c, i) => {
       const b = c.bus!;
       p.set(b.fx, c.y, b.fz);
       q.setFromAxisAngle(UP, b.fyaw);
-      built.busFront.setMatrixAt(i, m4.compose(p, q, one));
+      built.vehicles.setMatrixAt(built.busIds[i][0], m4.compose(p, q, one));
       p.set(b.rx, c.y, b.rz);
       q.setFromAxisAngle(UP, b.ryaw);
-      built.busRear.setMatrixAt(i, m4.compose(p, q, one));
+      built.vehicles.setMatrixAt(built.busIds[i][1], m4.compose(p, q, one));
     });
-    built.busFront.instanceMatrix.needsUpdate = true;
-    built.busRear.instanceMatrix.needsUpdate = true;
+    // the hover cars on the hyperwave: their bank and pitch on top of the heading
+    flyHover(built.sky, dt, state.clock.elapsedTime);
+    built.sky.cars.forEach((h, i) => {
+      p.set(h.x, h.y, h.z);
+      q.setFromEuler(eu.set(h.roll, h.yaw, h.pitch, "YZX"));
+      built.vehicles.setMatrixAt(built.hoverIds[i], m4.compose(p, q, one));
+    });
     for (const h of data.people) {
       if (h.move) {
         const pos = h.pos + h.dir * h.move * dt;
@@ -380,10 +392,10 @@ export function Life() {
       }
       p.set(h.x, h.y, h.z);
       q.setFromAxisAngle(UP, Math.atan2(cam.x - h.x, cam.z - h.z));
-      m4.compose(p, q, one);
-      built.peopleMeshes[h.v].setMatrixAt(h.k, m4);
+      m4.compose(p, q, sc.set(PEOPLE_WIDTH[h.v] ?? 1, 1, 1));
+      built.peopleMesh.setMatrixAt(h.k, m4);
     }
-    for (const m of built.peopleMeshes) m.instanceMatrix.needsUpdate = true;
+    built.peopleMesh.instanceMatrix.needsUpdate = true;
     const t = state.clock.elapsedTime;
     built.boats.forEach((b) => {
       if (b.moored) {
@@ -406,7 +418,8 @@ export function Life() {
         p.set(lane.x - fz * b.lane.side, SEA + 0.05 + Math.sin(t * 1.3 + b.lane.u) * 0.06, lane.z + fx * b.lane.side);
         q.setFromAxisAngle(UP, Math.atan2(fx, fz));
         m4.compose(p, q, sc.setScalar(b.lane.s));
-        built.boatMeshes[b.kind].setMatrixAt(b.k, m4);
+        if (b.kind === 3) built.vehicles.setMatrixAt(built.canoeIds[b.k], m4);
+        else built.boatMeshes[b.kind].setMatrixAt(b.k, m4);
         return;
       }
       // turn around before the shore
@@ -423,9 +436,9 @@ export function Life() {
     built.boatMat.color.copy(world.buildings.solid.color);
     const lit = world.buildings.solid.emissiveIntensity;
     built.lightMat.color.setScalar(1.6 * lit);
-    built.carLamps.visible = lit > 0.02;
-    built.busMat.color.copy(world.buildings.solid.color);
-    built.busGlow.value = 0.5 + 1.8 * lit;
+    built.vehMat.color.copy(world.buildings.solid.color);
+    built.vehGlow.value = 0.5 + 1.8 * lit;
+    built.laneMat.color.setScalar(0.55 + 1.1 * lit);
     for (const m of built.boatLamps) m.visible = lit > 0.02;
     built.planeT += dt * 0.12;
     const R = 190;
@@ -438,14 +451,9 @@ export function Life() {
 
   return (
     <>
-      <primitive object={built.carMesh} />
-      <primitive object={built.carTrim} />
-      <primitive object={built.carLamps} />
-      <primitive object={built.busFront} />
-      <primitive object={built.busRear} />
-      {built.peopleMeshes.map((m, v) => (
-        <primitive key={`people${v}`} object={m} />
-      ))}
+      <primitive object={built.vehicles} />
+      <primitive object={built.lanes} />
+      <primitive object={built.peopleMesh} />
       {built.boatMeshes.map((m, i) => (
         <primitive key={`boat${i}`} object={m} />
       ))}

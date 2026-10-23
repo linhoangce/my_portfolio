@@ -515,56 +515,6 @@
   gap: 10px;
   white-space: nowrap;
 }
-/* where the train is, the event and season, the controls: a footnote in the bottom-right corner, over the map credit */
-.foot {
-  position: fixed;
-  right: 10px;
-  bottom: 22px;
-  z-index: 9;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-  max-width: calc(100% - 20px);
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  text-align: right;
-  color: rgb(var(--fg-2));
-  /* a soft halo of the page colour, so it reads over any part of the scene */
-  text-shadow:
-    0 0 3px rgb(var(--bg)),
-    0 0 8px rgb(var(--bg)),
-    0 0 14px rgb(var(--bg) / 0.8);
-  pointer-events: none;
-  transition: opacity 0.4s;
-}
-.foot p {
-  margin: 0;
-}
-.foot b {
-  color: rgb(var(--fg));
-  font-weight: 500;
-}
-.foot button {
-  pointer-events: auto;
-  padding: 0;
-  border: 0;
-  background: none;
-  font: inherit;
-  letter-spacing: inherit;
-  text-transform: inherit;
-  color: rgb(var(--fg-2));
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
-}
-.foot button:hover,
-.foot button:focus-visible {
-  color: rgb(var(--fg));
-}
-
 .drive {
   position: fixed;
   left: 50%;
@@ -597,39 +547,6 @@
   border-color: rgb(var(--accent));
 }
 
-.intro {
-  position: fixed;
-  inset: 0;
-  z-index: 12;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: var(--scrim);
-  transition: opacity 0.5s;
-}
-.intro.gone {
-  opacity: 0;
-  pointer-events: none;
-}
-.card {
-  width: min(560px, 100%);
-  padding: 32px;
-  border-radius: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-.card h1 {
-  margin: 0;
-  font-size: 56px;
-  line-height: 1;
-}
-.card > p {
-  margin: 0;
-  color: rgb(var(--fg-2));
-  font-size: 16px;
-}
 .keys {
   display: grid;
   grid-template-columns: auto 1fr;
@@ -700,10 +617,6 @@ html[data-film="on"] .top {
   --accent-ink: 11 7 22;
   color: rgb(var(--fg));
 }
-html[data-film="on"] .foot {
-  opacity: 0;
-}
-
 .scene-ov {
   position: fixed;
   top: 64px;
@@ -755,6 +668,24 @@ html[data-film="on"] .scene-ov {
   flex-wrap: wrap;
   gap: 8px;
   padding-top: 14px;
+  /* the stop buttons stand here (StopNav), whether the column is open or not */
+  min-height: 54px;
+}
+.stop-nav {
+  position: fixed;
+  left: 32px;
+  bottom: 16px;
+  z-index: 12;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+html[data-film="on"] .stop-nav {
+  bottom: calc(var(--bar-h) + 16px);
+}
+.stop-nav kbd {
+  font-size: 11px;
+  padding: 0 5px;
 }
 .scene-ov .col-foot .expand {
   display: none;
@@ -1134,8 +1065,7 @@ html:has(.scene-ov.open) .ask {
     gap: 8px;
     padding: 0 12px;
   }
-  .top .label,
-  .foot-hint {
+  .top .label {
     display: none;
   }
   .linemap ol {
@@ -1146,18 +1076,28 @@ html:has(.scene-ov.open) .ask {
     min-width: 0;
   }
   .linemap .stepper .btn-icon {
-    width: 30px;
-    height: 30px;
+    width: 26px;
+    height: 26px;
+    padding: 0;
     flex: none;
   }
   .linemap .here {
-    max-width: 26vw;
+    max-width: 30vw;
+    font-size: 12px;
   }
   .brand .name {
-    font-size: 18px;
+    font-size: 16px;
   }
+  /* four round icon buttons on the right (Ask, the text version, day and night, the menu), small enough to leave the
+     stop's name room */
   .top .right {
-    gap: 6px;
+    gap: 5px;
+  }
+  .top .right .btn,
+  .top .right .btn-primary {
+    width: 32px;
+    height: 32px;
+    padding: 0;
   }
   .menu {
     top: auto;
@@ -1171,11 +1111,9 @@ html:has(.scene-ov.open) .ask {
   .top .btn-primary {
     padding: 0 12px;
   }
-  .foot {
-    bottom: 86px;
-  }
   .drive {
     display: flex;
+    bottom: 84px;
   }
   :root {
     --bar-h: 58px;
@@ -1203,7 +1141,7 @@ html:has(.scene-ov.open) .ask {
   .scene-ov .col {
     width: 100%;
     max-height: 40dvh;
-    padding: 18px 18px max(env(safe-area-inset-bottom), 14px);
+    padding: 18px 18px calc(max(env(safe-area-inset-bottom), 8px) + 64px);
     border-radius: 18px 18px 0 0;
     background: rgb(var(--surface) / var(--glass-a));
     border-top: 1px solid rgb(var(--border));
@@ -1230,8 +1168,25 @@ html:has(.scene-ov.open) .ask {
   .scene-ov .col-foot .expand {
     display: inline-flex;
   }
-  .scene-ov .col-foot .hide {
+  .scene-ov .col-foot {
+    min-height: 0;
+  }
+  /* above the map's credit, which keeps the very bottom */
+  .stop-nav,
+  html[data-film="on"] .stop-nav {
+    left: 12px;
+    right: 12px;
+    bottom: calc(max(env(safe-area-inset-bottom), 8px) + 18px);
+    justify-content: center;
+    flex-wrap: nowrap;
+  }
+  .stop-nav kbd {
     display: none;
+  }
+  .stop-nav .btn,
+  .stop-nav .btn-primary {
+    height: 40px;
+    padding: 0 12px;
   }
   .scene-ov .col-foot .btn,
   .scene-ov .col-foot .btn-primary {
@@ -1262,17 +1217,44 @@ html:has(.scene-ov.open) .ask {
     height: min(78dvh, 640px);
     border-radius: 18px 18px 0 0;
   }
-  .card h1 {
-    font-size: 44px;
-  }
 }
 @media (prefers-reduced-motion: reduce) {
   .scene-ov,
   .scene-ov .panel > *,
   .film-bar,
   .film-dip,
-  .ask,
-  .intro {
+  .ask {
+    transition: none;
+  }
+}
+
+/* the scene coming in stage by stage: a hairline across the very top, gone once it is all in */
+.load-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  z-index: 30;
+  pointer-events: none;
+  transition:
+    opacity 0.6s ease 0.3s,
+    visibility 0s linear 0.9s;
+}
+.load-bar span {
+  display: block;
+  height: 100%;
+  background: rgb(var(--accent));
+  transform-origin: left;
+  transition: transform 0.5s ease;
+}
+.load-bar[data-done] {
+  opacity: 0;
+  visibility: hidden;
+}
+@media (prefers-reduced-motion: reduce) {
+  .load-bar,
+  .load-bar span {
     transition: none;
   }
 }
@@ -1300,6 +1282,11 @@ html:has(.scene-ov.open) .ask {
   gap: 6px;
   font-size: 12px;
   line-height: 1.45;
+  color: rgb(var(--muted));
+}
+.land-ack {
+  font-size: 12px;
+  line-height: 1.5;
   color: rgb(var(--muted));
 }
 .map-sources a {

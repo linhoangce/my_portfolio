@@ -7,6 +7,7 @@ import { type InstancedMesh, type Mesh, type MeshStandardMaterial, type Object3D
 import { stations } from "@/data";
 
 import type { EventId, Season, Weather } from "./lookTypes";
+import { skyway } from "./hoverLanes";
 import { skipToHold } from "./scene/director";
 import { shotFor } from "./scene/shots";
 import { orbitBy, zoomBy } from "./scene/view";
@@ -44,7 +45,7 @@ export type TrainDebug = {
   skip: () => void;
   /** The current scene's shot plan (positions only), for the frame checks. */
   shot: (i: number) => { from: number[]; to: number[]; focus: number[]; owns?: string };
-  /** Drop the intro card as a click on it would (Depart drives; this does not). */
+  /** Kept for the headless checks: the page opens on the first stop's scene, so there is no card to drop. */
   dismiss: () => void;
   /** Where the camera is and what it looks at, this frame. */
   cam: () => { pos: number[]; dir: number[] };
@@ -56,6 +57,8 @@ export type TrainDebug = {
   warp: (k: number) => void;
   /** Current eased scene background as a hex string (theme and weather checks). */
   bg: () => string;
+  /** The hover cars on the hyperwave: x, y, z and lane of each. */
+  hover: () => number[][];
   state: () => Record<string, unknown>;
   /** The water's signed distance at a point (negative on water), for the shore checks. */
   sdf: (x: number, z: number) => number;
@@ -207,6 +210,7 @@ export function Debug() {
         st().sim.warp = Math.max(0.1, Math.min(40, k));
       },
       bg: () => world.scene.background.getHexString(),
+      hover: () => skyway(st().env.lowEnd).cars.map((c) => [c.x, c.y, c.z, c.lane]),
       sdf: (x, z) => sdfAt(x, z),
       geometry: () => {
         const city = getCityData(st().env.lowEnd);

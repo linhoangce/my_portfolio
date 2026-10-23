@@ -115,7 +115,11 @@ export function crossGeo(): BufferGeometry {
 export function Trees() {
   const world = useWorld();
   const { lowEnd, trees } = world;
-  const data = useMemo(() => getTreeData(lowEnd), [lowEnd]);
+  // the atlas the crowns are cut from is painted as the trees come in
+  const data = useMemo(() => {
+    world.paintTrees();
+    return getTreeData(lowEnd);
+  }, [world, lowEnd]);
 
   const built = useMemo(() => {
     const cfg = NEAR[lowEnd ? "lite" : "full"];

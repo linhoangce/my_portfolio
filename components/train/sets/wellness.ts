@@ -19,15 +19,16 @@ export const COURTS: FrameBox[] = [
   { a0: 4.2, a1: 21.5, l0: 36, l1: 47.5 },
 ];
 export const PERGOLA: FrameBox = { a0: -3.2, a1: 3.2, l0: 37.5, l1: 45 };
-export const GYM: FrameBox = { a0: 10, a1: 21.5, l0: 8.5, l1: 17.6 };
-export const YOGA: FrameBox = { a0: -21.5, a1: -8, l0: 7.5, l1: 14.6 };
+/** The gym and the yoga lawn keep out from under the platform's edge, where its stairs come down (stationAccess.ts). */
+export const GYM: FrameBox = { a0: 10, a1: 21.5, l0: 12, l1: 20.6 };
+export const YOGA: FrameBox = { a0: -21.5, a1: -8, l0: 11.7, l1: 18.8 };
 /** The instructor's deck at the yoga lawn's west end, and the mats in rows facing it: (along, lateral). */
-export const YOGA_DECK: [number, number] = [-19.6, 11];
+export const YOGA_DECK: [number, number] = [-19.6, 15.2];
 export const MATS: [number, number][] = [];
-for (let row = 0; row < 3; row++) for (let k = 0; k < 4; k++) MATS.push([-16.2 + row * 2.6, 8.6 + k * 1.75]);
+for (let row = 0; row < 3; row++) for (let k = 0; k < 4; k++) MATS.push([-16.2 + row * 2.6, 12.8 + k * 1.75]);
 /** The running path: from the gym up the east side, along the courts' front and down to the yoga lawn. */
 export const RUN_PATH: [number, number][] = [
-  [21, 18.4],
+  [21, 21.4],
   [21.6, 26],
   [21, 33.6],
   [12, 34.4],
@@ -60,10 +61,10 @@ export function wellnessPeople(): { x: number; y: number; z: number }[] {
     at(0.8, 41, boxTop(PERGOLA) + 0.2),
     at(-1.2, 43, boxTop(PERGOLA) + 0.2),
     // on the gym's bars and benches
-    at(12.5, 11.5),
-    at(15.4, 15),
-    at(18.6, 11),
-    at(20.2, 15.6),
+    at(GYM.a0 + 2.5, GYM.l0 + 3),
+    at(GYM.a0 + 5.4, GYM.l0 + 6.5),
+    at(GYM.a0 + 8.6, GYM.l0 + 2.5),
+    at(GYM.a0 + 10.2, GYM.l0 + 7),
     // the class on its mats, and the instructor
     ...MATS.filter((_, k) => k % 4 !== 3).map(([a, l]) => at(a, l)),
     at(YOGA_DECK[0], YOGA_DECK[1], groundAt(...fromStation(9, ...YOGA_DECK)) + 0.45),

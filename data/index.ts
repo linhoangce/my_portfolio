@@ -85,16 +85,14 @@ export const person = {
   url: "https://linh-hoang.vercel.app",
 };
 
-export const intro = {
-  kicker: "Portfolio",
-  lead: "Software developer building ML systems and LLM agents that are honest about their limits. The work sits at ten stops along the Expo Line through an imagined Vancouver, 2100, Waterfront to Patterson.",
-};
+/** The land the ride's city stands on: said in the menu, the text version and on the plaque at Waterfront. */
+export const landAcknowledgement =
+  "This ride's Vancouver stands on the unceded, traditional and ancestral territories of the xʷməθkʷəy̓əm (Musqueam), Sḵwx̱wú7mesh (Squamish) and səlilwətaɬ (Tsleil-Waututh) Nations.";
 
 export const depart = {
   title: "Linh Hoang",
   lead: "Software developer building ML systems and LLM agents that are honest about their limits: deterministic cores, models at the edges, and a human approving what goes out.",
   meta: ["BCIT Computer Systems Technology · 2026", "Now: Co-founder, Awdon · awdon.app"],
-  body: "Ten stops on this line: who I am, where I have worked, five projects with the numbers behind them, more I have built, and how to reach me.",
 };
 
 export const about = {
@@ -261,7 +259,7 @@ export const stations: Station[] = [
     id: "waterfront",
     code: "00",
     name: "Waterfront",
-    section: "Depart",
+    section: "Explore",
     km: [0, 0],
     panel: "depart",
     corpus:

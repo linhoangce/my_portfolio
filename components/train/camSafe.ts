@@ -1,11 +1,12 @@
 /**
  * Keeps cameras out of buildings: a 16-unit grid hash over the city's lot boxes (axis-aligned footprints with an
- * absolute top), queried for the highest roof under a point and for clear sight lines.
+ * absolute top), queried for the highest roof under a point and for clear sight lines. Until the scene's city stage
+ * has built the city there are no buildings to keep out of, so it does not build it early.
  */
 import type { Vector3 } from "three";
 
 import type { Lot } from "./buildings/city";
-import { getCityData } from "./cityData";
+import { cityBuilt, getCityData } from "./cityData";
 
 const CELL = 16;
 let grid: Map<number, Lot[]> | null = null;
@@ -13,8 +14,11 @@ let gridFor: boolean | null = null;
 
 const key = (i: number, j: number) => i * 4096 + j;
 
+const NONE = new Map<number, Lot[]>();
+
 function lotGrid(lowEnd: boolean): Map<number, Lot[]> {
   if (grid && gridFor === lowEnd) return grid;
+  if (!cityBuilt(lowEnd)) return NONE;
   const g = new Map<number, Lot[]>();
   for (const l of getCityData(lowEnd).lots) {
     const i0 = Math.floor((l.x - l.w / 2) / CELL);

@@ -1,6 +1,7 @@
 import { buildCity, type CityGeometry } from "./buildings/city";
 import { buildPeople, type Person, Rng } from "./cityModel";
 import { commonsGround } from "./commonsGround";
+import { accessPeople } from "./stationAccess";
 import { harbourfrontTrees } from "./harbourfront";
 import { squareTrees } from "./sets/squares";
 import { scienceWorldTrees } from "./sites";
@@ -18,6 +19,9 @@ const treeCache = new Map<boolean, TreeInst[]>();
 
 
 /** The city is built once per budget and shared by the building, house, tree and camera code. */
+/** Whether the city is built yet (the scene builds it with its city stage): what only consults it can wait. */
+export const cityBuilt = (lowEnd: boolean): boolean => cityCache.has(lowEnd);
+
 export function getCityData(lowEnd: boolean): CityGeometry {
   let data = cityCache.get(lowEnd);
   if (!data) {
@@ -45,7 +49,8 @@ export function getLifeData(lowEnd: boolean): LifeData {
   if (!data) {
     const t0 = performance.now();
     const traffic = new Traffic(lowEnd ? 420 : 900, new Rng(2), (i) => new Rng(1000 + i), lowEnd ? 12 : 28);
-    const { people, counts } = buildPeople(new Rng(3), lowEnd ? 340 : 620, commonsGround(getCityData(lowEnd), lowEnd).covered);
+    const city = getCityData(lowEnd);
+    const { people, counts } = buildPeople(new Rng(3), lowEnd ? 340 : 620, commonsGround(city, lowEnd).covered, accessPeople(lowEnd, city.lots));
     data = { traffic, people, counts };
     getCityData(lowEnd).phases.life = Math.round(performance.now() - t0);
     lifeCache.set(lowEnd, data);

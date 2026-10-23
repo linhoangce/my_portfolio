@@ -10,10 +10,8 @@ import {
   Color,
   InstancedMesh,
   Matrix4,
-  Mesh,
   MeshStandardMaterial,
   NormalBlending,
-  PlaneGeometry,
   Points,
   PointsMaterial,
   Quaternion,
@@ -22,12 +20,12 @@ import {
 } from "three";
 
 import { getTreeData } from "./cityData";
-import { junction, roads, WALK } from "./roadNetwork";
+import { roads } from "./roadNetwork";
 import { eventColour, tickEventLights } from "./eventLights";
 import { EVENT_META } from "./lookTypes";
-import { inLandmark, inPark, LANDMARKS } from "./sites";
+import { LANDMARKS } from "./sites";
 import { useTrain } from "./store";
-import { groundAt, inWater, surfaceAt } from "./terrain";
+import { groundAt } from "./terrain";
 import { frameAt, makeFrame, STATION_XZ, stationS, UP } from "./track";
 import { SPECIES } from "./trees/species";
 import { dotTexture } from "./textures";
@@ -52,7 +50,7 @@ function points(n: number, size: number, additive: boolean): { pts: Points; pos:
 
 /**
  * The event layer: every frame tick of the monuments' LED patterns, the tower crowns and the station accents, plus the
- * extras each event brings (Chinatown lanterns for Lunar New Year, rainbow crosswalks for Pride, fireworks over
+ * extras each event brings (Chinatown lanterns for Lunar New Year, fireworks over
  * English Bay for the Celebration of Light, string lights in the street trees for Bright Nights, diyas along the
  * station canopies for Diwali, marigold garlands for Vaisakhi).
  */
@@ -66,7 +64,7 @@ export function Events() {
   const extras = useMemo(() => {
     // lanterns strung along Chinatown's streets and the gate
     const lanternPts: Vector3[] = [];
-    const { nodes, edges } = roads();
+    const { edges } = roads();
     for (const e of edges) {
       const n = e.pts.length / 2;
       for (let i = 0; i + 1 < n; i++) {
@@ -94,49 +92,6 @@ export function Events() {
       lanterns.setMatrixAt(i, m4);
     });
     lanterns.visible = false;
-    // rainbow crosswalks: on every road into the junction nearest Davie & Bute, and the one nearest Main Street's
-    const rainbow: Mesh[] = [];
-    const onStreet = (x: number, z: number) => !inPark(x, z) && !inWater(x, z) && !inLandmark(x, z, 2);
-    const crossing = (tx: number, tz: number): number => {
-      let best = -1;
-      let bd = 1e9;
-      nodes.forEach((nd, i) => {
-        if (nd.deg < 3 || !onStreet(nd.x, nd.z)) return;
-        const d = Math.hypot(nd.x - tx, nd.z - tz);
-        if (d < bd && junction(i)) {
-          bd = d;
-          best = i;
-        }
-      });
-      return best;
-    };
-    for (const ni of [crossing(-171, 59), crossing(100, 150)]) {
-      const j = ni >= 0 ? junction(ni) : null;
-      if (!j) continue;
-      for (const [k, setback] of j.setback) {
-        const e = edges[k];
-        const atA = e.a === ni;
-        const n = e.pts.length / 2;
-        const [x0, z0, x1, z1] = atA ? [e.pts[0], e.pts[1], e.pts[2], e.pts[3]] : [e.pts[n * 2 - 2], e.pts[n * 2 - 1], e.pts[n * 2 - 4], e.pts[n * 2 - 3]];
-        const L = Math.hypot(x1 - x0, z1 - z0) || 1;
-        const ux = (x1 - x0) / L;
-        const uz = (z1 - z0) / L;
-        const across = 2 * (e.half - WALK[e.cls]);
-        // six bands along the road, each spanning it, over the zebra the road paints there
-        EVENT_META.pride.colours.forEach((c, b) => {
-          const w = 0.36;
-          const d = setback + 0.25 + w * (b + 0.5);
-          const x = j.x + ux * d;
-          const z = j.z + uz * d;
-          const m = new Mesh(new PlaneGeometry(across, w), new MeshStandardMaterial({ color: c, roughness: 0.6, emissive: c, emissiveIntensity: 0.15 }));
-          // laid flat, then turned so the band's length runs across the road (along its normal (-u.z, u.x))
-          m.rotation.set(-Math.PI / 2, Math.atan2(-ux, -uz), 0, "YXZ");
-          m.position.set(x, surfaceAt(x, z, lowEnd ? 2 : 1) + 0.12, z);
-          m.visible = false;
-          rainbow.push(m);
-        });
-      }
-    }
     // string lights in the street trees near the stations
     const trees = getTreeData(lowEnd).filter((t) => !SPECIES[t.sp].ever && t.s > 0.6 && STATION_XZ.some(([x, z]) => Math.hypot(t.x - x, t.z - z) < 140)).slice(0, lowEnd ? 300 : 700);
     const lights = points(trees.length * 6, 0.55, true);
@@ -181,13 +136,12 @@ export function Events() {
     const vel = new Float32Array(N * P * 3);
     const bursts = Array.from({ length: N }, (_, i) => ({ t: -i * 0.7, life: 2.6 }));
     for (const o of [lights, diyas, garlands, fw]) (o.pts.geometry.attributes.position as BufferAttribute).needsUpdate = true;
-    return { lanterns, lanternMat, rainbow, lights, diyas, garlands, fw, vel, bursts, N, P };
+    return { lanterns, lanternMat, lights, diyas, garlands, fw, vel, bursts, N, P };
   }, [lowEnd]);
 
   useEffect(
     () => () => {
       extras.lanterns.geometry.dispose();
-      for (const m of extras.rainbow) m.geometry.dispose();
       for (const o of [extras.lights, extras.diyas, extras.garlands, extras.fw]) o.pts.geometry.dispose();
     },
     [extras],
@@ -230,7 +184,6 @@ export function Events() {
     // extras
     extras.lanterns.visible = ev === "lunar";
     extras.lanternMat.emissiveIntensity = isNight ? 2.2 : 0.3;
-    for (const m of extras.rainbow) m.visible = ev === "pride";
     extras.lights.pts.visible = ev === "brightnights" && isNight;
     extras.diyas.pts.visible = ev === "diwali" && isNight;
     extras.garlands.pts.visible = ev === "vaisakhi";
@@ -282,9 +235,6 @@ export function Events() {
   return (
     <>
       <primitive object={extras.lanterns} />
-      {extras.rainbow.map((m) => (
-        <primitive key={m.uuid} object={m} />
-      ))}
       <primitive object={extras.lights.pts} />
       <primitive object={extras.diyas.pts} />
       <primitive object={extras.garlands.pts} />

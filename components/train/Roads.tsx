@@ -244,8 +244,12 @@ export function Roads() {
         const ea = sigA ? sv - sA : 999;
         const eb = sigB ? e.len - sB - sv : 999;
         // on a bridge the deck's height, unless the bank under it is higher (at its ends)
-        const yr = surfaceAt(rx, rz, stride) + LIFT;
-        const yl = surfaceAt(lx, lz, stride) + LIFT;
+        // over a crease of the drawn ground that bulges between the two edges, the strip rises by the bulge
+        const er = surfaceAt(rx, rz, stride);
+        const el = surfaceAt(lx, lz, stride);
+        const bulge = Math.max(0, surfaceAt(x, z, stride) - (er + el) / 2);
+        const yr = er + LIFT + bulge;
+        const yl = el + LIFT + bulge;
         const r0 = c.vert(rx, deck ? Math.max(yDeck, yr) : yr, rz, -1, sv, e.half, WALK[e.cls], lanes, code, ea, eb);
         c.vert(lx, deck ? Math.max(yDeck, yl) : yl, lz, 1, sv, e.half, WALK[e.cls], lanes, code, ea, eb);
         // wound to face up: right, ahead-right, left

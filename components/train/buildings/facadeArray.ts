@@ -43,6 +43,7 @@ export type FamilyId =
   | "metal"
   | "mullion"
   | "exo"
+  | "salish"
   | "roof"
   | "copper"
   | "garden"
@@ -86,15 +87,20 @@ export const FAMILY: Record<FamilyId, { layer: number; bay: number; floor: numbe
   mullion: { layer: 21, bay: 2.4, floor: 1.8, glass: true },
   /** A white exoskeleton of curving diagonals over warm-lit glass, after the approved lattice tower. */
   exo: { layer: 22, bay: 2.6, floor: 1.8, glass: true },
-  roof: { layer: 23, bay: 3, floor: 3, glass: false },
-  copper: { layer: 24, bay: 3, floor: 3, glass: false },
-  garden: { layer: 25, bay: 3, floor: 3, glass: false },
-  shingle: { layer: 26, bay: 3, floor: 3, glass: false },
-  tile: { layer: 27, bay: 3, floor: 3, glass: false },
-  pad: { layer: 28, bay: 3, floor: 3, glass: false },
+  /**
+   * After Coast Salish plank houses: vertical cedar boards (the building's tint is the cedar's), tall windows in dark
+   * frames, and under each a band of formline (an ovoid between two U-forms, trigons) in black, red and blue-green.
+   */
+  salish: { layer: 23, bay: 2.4, floor: 1.9, glass: false },
+  roof: { layer: 24, bay: 3, floor: 3, glass: false },
+  copper: { layer: 25, bay: 3, floor: 3, glass: false },
+  garden: { layer: 26, bay: 3, floor: 3, glass: false },
+  shingle: { layer: 27, bay: 3, floor: 3, glass: false },
+  tile: { layer: 28, bay: 3, floor: 3, glass: false },
+  pad: { layer: 29, bay: 3, floor: 3, glass: false },
 };
-const LAYERS = 29;
-const FACADE_LAYERS = 23;
+const LAYERS = 30;
+const FACADE_LAYERS = 24;
 
 /**
  * `wins` are the window rects of a bay-floor cell (256 px) that light at night; a façade whose windows differ from
@@ -166,6 +172,51 @@ function paintLayer(kind: FamilyId, P: Painter, R: Rng): void {
       rect(g, "#5b6a73", x + 60, y + 58, 60, 84);
       rect(g, "#5b6a73", x + 140, y + 58, 60, 84);
       P.wins.push([60, 58, 60, 84], [140, 58, 60, 84]);
+    });
+  } else if (kind === "salish") {
+    // boards: a light warm grain the tint turns to cedar, darker seams, each board its own shade
+    both("#f1e6d6", wall, 0, 0, 512, 512);
+    for (let x = 0; x < 512; x += 18) {
+      rect(g, `rgba(70,40,15,${0.04 + R.next() * 0.08})`, x, 0, 17, 512);
+      rect(g, "rgba(50,28,10,0.28)", x + 17, 0, 1.5, 512);
+    }
+    cells((x, y) => {
+      both("#3b2414", keep, x + 66, y + 34, 124, 146);
+      both("#2a3640", keep, x + 74, y + 42, 108, 130);
+      rect(g, "#3b2414", x + 126, y + 42, 4, 130);
+      P.wins.push([74, 42, 108, 130]);
+      // the formline band under the window: an ovoid between two U-forms, trigons below, a dark sill line
+      both("#3b2414", keep, x, y + 244, 256, 12);
+      const band = (ctx: CanvasRenderingContext2D, ink: (c: string) => string) => {
+        ctx.save();
+        ctx.scale(k, k);
+        ctx.translate(x + 128, y + 212);
+        ctx.fillStyle = ink("#15110e");
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 34, 15, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = ink("#1f7f7a");
+        ctx.beginPath();
+        ctx.ellipse(0, 1, 18, 7, 0, 0, Math.PI * 2);
+        ctx.fill();
+        for (const sx of [-1, 1]) {
+          ctx.strokeStyle = ink("#a3191b");
+          ctx.lineWidth = 7;
+          ctx.beginPath();
+          ctx.arc(sx * 76, -6, 20, 0.15, Math.PI - 0.15);
+          ctx.stroke();
+          ctx.fillStyle = ink("#15110e");
+          ctx.beginPath();
+          ctx.moveTo(sx * 46, 14);
+          ctx.lineTo(sx * 56, 26);
+          ctx.lineTo(sx * 36, 26);
+          ctx.closePath();
+          ctx.fill();
+        }
+        ctx.restore();
+      };
+      band(g, (c) => c);
+      band(m, () => keep);
     });
   } else if (kind === "wood") {
     both("#f2f0ea", wall, 0, 0, 512, 512);

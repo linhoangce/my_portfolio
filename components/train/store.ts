@@ -67,6 +67,8 @@ export type TrainState = {
   sim: Sim;
   env: Env;
   ready: boolean;
+  /** How many of the scene's loading stages are in (Scene.tsx); LOAD_STAGES when the whole ride is. */
+  loadStage: number;
   dockedIdx: number | null;
   /** The scene whose overlay the visitor hid (E or Esc); it stays hidden for this stay. */
   dismissed: number | null;
@@ -98,6 +100,10 @@ export type TrainState = {
 
   setEnv: (env: Partial<Env>) => void;
   setReady: (ready: boolean) => void;
+  /** Stage n is in: let the next one start. */
+  stageIn: (n: number) => void;
+  /** A fresh canvas starts from the first stage. */
+  resetStages: () => void;
   registerTrack: (stationS: number[], LEN: number) => void;
   driveTo: (i: number) => void;
   jump: (i: number) => void;
@@ -161,7 +167,7 @@ export const useTrain = create<TrainState>((set, get) => ({
     dragging: false,
     camSide: 1,
     camInit: false,
-    // the Waterfront shot holds behind the intro card
+    // the page opens on the Waterfront scene, held
     film: { phase: "hold", idx: 0, t: 0, cooldown: 0, startedAt: -10 },
     warp: 1,
     loopHold: 0,
@@ -173,6 +179,7 @@ export const useTrain = create<TrainState>((set, get) => ({
   },
   env: { lowEnd: false, phone: false, reduced: false, coarse: false },
   ready: false,
+  loadStage: 0,
   dockedIdx: null,
   dismissed: null,
   overlay: false,
@@ -187,7 +194,8 @@ export const useTrain = create<TrainState>((set, get) => ({
   kmh: 0,
   readout: { kind: "at", idx: 0 },
   cab: false,
-  introDone: false,
+  // no card over the first stop: the page opens on its scene
+  introDone: true,
   askOpen: false,
   textOpen: false,
   season: LOOK_CYCLE[0][0],
@@ -199,6 +207,8 @@ export const useTrain = create<TrainState>((set, get) => ({
 
   setEnv: (env) => set((st) => ({ env: { ...st.env, ...env } })),
   setReady: (ready) => set({ ready }),
+  stageIn: (n) => set((st) => ({ loadStage: Math.max(st.loadStage, n + 1) })),
+  resetStages: () => set({ loadStage: 0 }),
   registerTrack: (stationS, LEN) => {
     const { sim } = get();
     sim.stationS = stationS;

@@ -9,11 +9,16 @@ import {
   BufferAttribute,
   BufferGeometry,
   Color,
+  CubeUVReflectionMapping,
   DataTexture,
   DirectionalLight,
   FogExp2,
+  GLSL3,
+  HalfFloatType,
   HemisphereLight,
   LineBasicMaterial,
+  LinearFilter,
+  LinearSRGBColorSpace,
   LineSegments,
   Mesh,
   MeshBasicMaterial,
@@ -24,6 +29,7 @@ import {
   Points,
   PointsMaterial,
   RedFormat,
+  RGBAFormat,
   type Scene,
   ShaderMaterial,
   SphereGeometry,
@@ -33,9 +39,11 @@ import {
   Vector3,
   Vector4,
   type WebGLRenderer,
+  WebGLRenderTarget,
   type IUniform,
 } from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import { FullScreenQuad } from "three/examples/jsm/postprocessing/Pass.js";
 
 import { createBuildingMaterials, paintFacadeArrays, type BuildingMaterials } from "./buildings/facadeArray";
 import { Rng } from "./cityModel";
@@ -43,10 +51,10 @@ import { createEventLights, type EventLights } from "./eventLights";
 import { applyMirror } from "./waterMirror";
 import type { Season } from "./lookTypes";
 import type { LookTargets } from "./lookModel";
-import { groundTexture, hedgeTexture, interiorTextures, personTexture, sleeperTexture, streetLightTexture } from "./textures";
-import { paintTreeAtlas } from "./trees/atlas";
+import { groundTexture, hedgeTexture, interiorTextures, peopleAtlas, sleeperTexture, streetLightTexture } from "./textures";
+import { paintTreeAtlas, treeAtlasTexture } from "./trees/atlas";
 import { createTreeShading, type TreeShading } from "./trees/treeMaterial";
-import { PEOPLE_VARIANTS, SEA } from "./constants";
+import { SEA } from "./constants";
 import { lakeLevel } from "./terrain";
 
 /**
@@ -64,11 +72,27 @@ export type SkyUniforms = {
   time: IUniform<number>;
 };
 
+/** The people's atlas on one material: each instance's `aCell` (0–15) picks its quarter-by-quarter cell. */
+function peopleMaterial(): MeshStandardMaterial {
+  const m = new MeshStandardMaterial({ map: peopleAtlas(), alphaTest: 0.5, side: 2, roughness: 1 });
+  m.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader
+      .replace("#include <common>", "#include <common>\nattribute float aCell;")
+      .replace("#include <uv_vertex>", "#include <uv_vertex>\nvMapUv = (vMapUv + vec2(mod(aCell, 4.0), 3.0 - floor(aCell / 4.0))) * 0.25;");
+  };
+  m.customProgramCacheKey = () => "people-atlas";
+  return m;
+}
+
 export type World = {
   lowEnd: boolean;
   gl: WebGLRenderer;
   scene: Scene & { background: Color; fog: FogExp2 };
+  /** What metal and glass reflect: grey until fillEnvironment renders the room into it. */
   envTex: Texture;
+  fillEnvironment: () => void;
+  /** Paint the trees' atlas (once): the trees' own stage calls it. */
+  paintTrees: () => void;
   rng: Rng;
   mats: {
     concrete: MeshStandardMaterial;
@@ -112,9 +136,8 @@ export type World = {
     window: MeshStandardMaterial;
     head: MeshStandardMaterial;
     tail: MeshStandardMaterial;
-    car: MeshStandardMaterial;
-    carTrim: MeshStandardMaterial;
-    people: MeshStandardMaterial[];
+    /** Every pedestrian: one material over the people's atlas, its cell picked per instance (aCell). */
+    people: MeshStandardMaterial;
   };
   tex: { ground: { day: Texture; night: Texture } };
   lights: { hemi: HemisphereLight; sun: DirectionalLight; stationLight: PointLight; spots: SpotLight[] };
@@ -176,11 +199,58 @@ function mountainMaterial(): MeshStandardMaterial {
   return mat;
 }
 
+/**
+ * The environment metal and glass reflect, a PMREM of three's room, as its generator lays one out (768 × 1024, cube-UV,
+ * half float): every material takes this target from the start, so its shader is the one it keeps, and it is grey until
+ * fillEnvironment renders the room into it. That rendering (and its shaders) is a second or more the first stage need
+ * not wait for.
+ */
+function environmentTarget(gl: WebGLRenderer): WebGLRenderTarget {
+  const rt = new WebGLRenderTarget(3 * Math.max(256, 112), 4 * 256, { magFilter: LinearFilter, minFilter: LinearFilter, generateMipmaps: false, type: HalfFloatType, format: RGBAFormat, colorSpace: LinearSRGBColorSpace, depthBuffer: false });
+  rt.texture.mapping = CubeUVReflectionMapping;
+  rt.texture.name = "PMREM.cubeUv";
+  const prev = gl.getRenderTarget();
+  const clear = gl.getClearColor(new Color());
+  const alpha = gl.getClearAlpha();
+  gl.setRenderTarget(rt);
+  gl.setClearColor(new Color(0.42, 0.44, 0.47), 1);
+  gl.clear(true, false, false);
+  gl.setRenderTarget(prev);
+  gl.setClearColor(clear, alpha);
+  return rt;
+}
+
+/** Render the room's PMREM and copy it, texel for texel, into the target the materials hold. */
+function fillEnvironment(gl: WebGLRenderer, into: WebGLRenderTarget): void {
+  const pmrem = new PMREMGenerator(gl);
+  const room = pmrem.fromScene(new RoomEnvironment(), 0.04);
+  pmrem.dispose();
+  const copy = new FullScreenQuad(
+    new ShaderMaterial({
+      glslVersion: GLSL3,
+      uniforms: { src: { value: room.texture } },
+      vertexShader: "void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }",
+      fragmentShader: "uniform sampler2D src;\nout vec4 colour;\nvoid main() { colour = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }",
+      depthTest: false,
+      depthWrite: false,
+    }),
+  );
+  const prev = gl.getRenderTarget();
+  gl.setRenderTarget(into);
+  copy.render(gl);
+  gl.setRenderTarget(prev);
+  copy.material.dispose();
+  copy.dispose();
+  room.dispose();
+}
+
 export function createWorld(gl: WebGLRenderer, scene: Scene, lowEnd: boolean): World {
   const rng = new Rng(20261018);
-  const pmrem = new PMREMGenerator(gl);
-  const envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-  pmrem.dispose();
+  const env = environmentTarget(gl);
+  const envTex = env.texture;
+  let envFilled = false;
+  const treeAtlas = treeAtlasTexture();
+  let treesPainted = false;
 
   scene.background = new Color();
   scene.fog = new FogExp2(0x000000, 0.003);
@@ -316,9 +386,7 @@ export function createWorld(gl: WebGLRenderer, scene: Scene, lowEnd: boolean): W
     }),
     head: new MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff5e0, emissiveIntensity: 1.7 }),
     tail: new MeshStandardMaterial({ color: 0x330000, emissive: 0xff2a2a, emissiveIntensity: 2.5 }),
-    car: new MeshStandardMaterial({ color: 0xffffff, roughness: 0.45, metalness: 0.35, envMap: envTex, envMapIntensity: 0.5 }),
-    carTrim: new MeshStandardMaterial({ color: 0x1a1f26, roughness: 0.35, metalness: 0.2, envMap: envTex, envMapIntensity: 0.6 }),
-    people: Array.from({ length: PEOPLE_VARIANTS }, (_, v) => new MeshStandardMaterial({ map: personTexture(v + 1), alphaTest: 0.5, side: 2, roughness: 1 })),
+    people: peopleMaterial(),
   };
 
   // lights
@@ -443,7 +511,17 @@ export function createWorld(gl: WebGLRenderer, scene: Scene, lowEnd: boolean): W
     sky: { mesh: skyMesh, mat: skyMat, disc, stars },
     precip: { rain, rainPos, rainVel, RAIN_N, snow, snowPos, SNOW_N },
     refs: { mountain: null, mountainCols: null, bloom: null },
-    trees: createTreeShading(paintTreeAtlas(), lowEnd),
+    trees: createTreeShading(treeAtlas, lowEnd),
+    paintTrees: () => {
+      if (treesPainted) return;
+      treesPainted = true;
+      paintTreeAtlas(treeAtlas);
+    },
+    fillEnvironment: () => {
+      if (envFilled) return;
+      envFilled = true;
+      fillEnvironment(gl, env);
+    },
     buildings: createBuildingMaterials(paintFacadeArrays(lowEnd), envTex, skyMat.uniforms),
     events: createEventLights(),
     look: { cur: null, tgt: null, lastSeason: null },

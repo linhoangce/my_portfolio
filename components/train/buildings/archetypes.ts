@@ -18,6 +18,7 @@ import type { SpeciesId } from "../trees/species";
 import type { ArchId, Hood } from "./eras";
 import type { FamilyId } from "./facadeArray";
 import type { Tint, V3 } from "./meshBuilder";
+import { ART } from "../cultureArt";
 import { box, cap, fp, gable, hip, type Sink, slopedTop, solid, strut, tpl, walls, WHITE } from "./parts";
 
 export type Ctx = {
@@ -36,6 +37,11 @@ export type Ctx = {
   terrace: (x: number, y: number, z: number, s: number, sp: SpeciesId) => void;
   /** For the civic building: always crown it with a dome (heroes), else a coin toss. */
   dome?: boolean;
+  /**
+   * A blank side wall a mural could take (the city's murals, city.ts): its face at local x = lx (facing out along lx's
+   * sign), centred lz along z, len long, from y0 to y1.
+   */
+  wall?: (lx: number, lz: number, len: number, y0: number, y1: number, subject?: number, front?: boolean) => void;
 };
 
 const c = new Color();
@@ -123,6 +129,32 @@ const DT_SKINS: [{ pick: (rng: Rng) => [FamilyId, number[]] }, number][] = [
 ];
 
 export const BUILD: Record<Exclude<ArchId, "house">, (o: Ctx) => void> = {
+  /**
+   * After Coast Salish plank houses and the Indigenous-led building of today: cedar-clad walls with a formline band
+   * under every window, a broad low gable over the street front with deep eaves, two carved house posts at the door,
+   * a painted front under the gable and painted side walls (city.ts paints them, Coast Salish–inspired), two to six
+   * floors.
+   */
+  salishHall(o) {
+    const { rng, sink, x, z, w, d, yb, yt } = o;
+    const floors = Math.max(2, Math.min(6, Math.round(o.H / 1.9)));
+    const top = yt + 0.3 + floors * 1.9;
+    const t = tint(rng, [0xc98b55, 0xb8794a, 0xd09a68, 0xa96c43][Math.floor(rng.next() * 4)], 0.05);
+    walls(sink, "dark", fp.rect(w * 1.01, d * 1.01), x, z, yb, yt + 0.3, { yRef: yt });
+    walls(sink, "salish", fp.rect(w, d), x, z, yt + 0.3, top, { tint: t, yRef: yt });
+    const pitch = Math.min(3.4, w * 0.24);
+    gable(sink, "salish", "shingle", x, z, w, d, yt, top, pitch, t, T(0x6e4a2c), 0, 0.9);
+    // the house posts either side of the door, carved figures standing two floors, their faces painted
+    const postH = Math.min(top - yt, 4.4);
+    for (const s of [-1, 1]) {
+      const px = s * Math.min(2.4, w * 0.2);
+      box(sink, "timber", x + px, yt, z - d / 2 - 0.35, 0.6, postH, 0.55, T(0x8b4a2b));
+      o.wall?.(px, -d / 2 - 0.63, 0.6, yt + 0.05, yt + postH, s < 0 ? ART.welcome : ART.welcome2, true);
+    }
+    // the painted front over the door, the painted side walls
+    o.wall?.(0, -d / 2, w * 0.82, yt + 2.2, top - 0.2, -1, true);
+    for (const s of [-1, 1]) o.wall?.(s * w * 0.5, 0, d - 1, yt + 0.6, top - 0.2, -1);
+  },
   heritageBrick(o) {
     const { rng, sink, x, z, w, d, yb, yt } = o;
     const floors = Math.min(6, Math.max(2, Math.round(o.H / 2)));
@@ -133,6 +165,8 @@ export const BUILD: Record<Exclude<ArchId, "house">, (o: Ctx) => void> = {
     const ring = walls(sink, "brick", poly, x, z, yt + 2.0, top, { tint: t, yRef: yt, uOff: Math.floor(rng.next() * 4) * 0.5 });
     walls(sink, "concrete", poly.map(([a, b]) => [a * 1.06, b * 1.06] as [number, number]), x, z, top, top + 0.55, { tint: T(0xe9dcc4) });
     cap(sink, "roof", ring.map(([a, , b]) => [a, top + 0.5, b]));
+    // its side walls above the shop fronts, clear of a chamfer's cut corners
+    for (const s of [-1, 1]) o.wall?.(s * w * 0.5, 0, d - 0.5 * Math.min(w, d) - 0.4, yt + 2.1, top - 0.1);
     if (rng.next() < 0.3) box(sink, "roof", x + (rng.next() - 0.5) * w * 0.4, top, z + (rng.next() - 0.5) * d * 0.4, 1.6, 1.4, 1.6, T(0xc9bfae));
   },
   warehouse(o) {
@@ -142,6 +176,7 @@ export const BUILD: Record<Exclude<ArchId, "house">, (o: Ctx) => void> = {
     const ring = walls(sink, "warehouse", fp.rect(w, d), x, z, yb, top, { tint: tint(rng, PAL.brick[Math.floor(rng.next() * PAL.brick.length)], 0.12), yRef: yt, uOff: Math.floor(rng.next() * 4) * 0.5 });
     walls(sink, "concrete", fp.rect(w * 1.04, d * 1.04), x, z, top, top + 0.7, { tint: T(0xd9cbb3) });
     cap(sink, "roof", ring.map(([a, , b]) => [a, top + 0.65, b]));
+    for (const s of [-1, 1]) o.wall?.(s * w * 0.5, 0, d - 0.6, yt + 0.4, top - 0.1);
     // a 2100 rooftop greenhouse in glass
     if (rng.next() < 0.4) solid(sink, "dome", tpl("roofBox4", () => new CylinderGeometry(1, 1, 1, 4, 1).rotateY(Math.PI / 4).translate(0, 0.5, 0)), x, top + 0.6, z, w * 0.32, 2.2, d * 0.32);
   },
@@ -163,6 +198,9 @@ export const BUILD: Record<Exclude<ArchId, "house">, (o: Ctx) => void> = {
       const ring = walls(sink, "stucco", fp.rect(ww, dd), cx, cz, yt + 1.9, top, { tint: t, yRef: yt, uOff: Math.floor(rng.next() * 2) * 0.5 });
       walls(sink, "concrete", fp.rect(ww * 1.04, dd * 1.04), cx, cz, top, top + 0.4, { tint: [t[0] * 0.92, t[1] * 0.92, t[2] * 0.92] });
       cap(sink, "roof", ring.map(([a, , b]) => [a, top + 0.4, b]));
+      // the row's end walls, when it runs along the street
+      if (along && k === 0) o.wall?.(-(w / 2 - 0.075), 0, d - 0.4, yt + 2.0, top - 0.05);
+      if (along && k === n - 1) o.wall?.(w / 2 - 0.075, 0, d - 0.4, yt + 2.0, top - 0.05);
       if (rng.next() < 0.35) {
         box(sink, "roof", cx, top + 0.4, cz, ww * 0.45, 1.5, dd * 0.45, T(0xc0392b));
         hip(sink, "tile", cx, cz, ww * 0.5, dd * 0.5, top + 1.9, 1.2);
@@ -847,6 +885,8 @@ export const BUILD: Record<Exclude<ArchId, "house">, (o: Ctx) => void> = {
       cap(sink, "roof", pent);
     } else cap(sink, rng.next() < 0.35 ? "garden" : "roof", ring);
     box(sink, "roof", x + (rng.next() - 0.5) * w * 0.3, top, z + (rng.next() - 0.5) * d * 0.3, w * 0.22, 1.2, d * 0.2, T(0xb4b6ba));
+    // a plain block's side walls over its shop fronts
+    if (shape >= 0.4) for (const s of [-1, 1]) o.wall?.(s * w * 0.5, 0, d - 0.6, shop + 0.1, top - (setback ? fl : 0) - 0.1);
   },
   /**
    * A perimeter block round a courtyard garden, after the Olympic Village and the newer blocks in Mount Pleasant: four

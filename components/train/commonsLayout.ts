@@ -15,7 +15,8 @@
  *
  * Pure layout, in world coordinates (the market's from the Stadium set's frame).
  */
-import { fromStation, STATION_FRAMES } from "./sets/zones";
+import { ART, PLAQUE } from "./cultureArt";
+import { fromStation, SET_SHIFT, STATION_FRAMES } from "./sets/zones";
 import { groundAt } from "./terrain";
 import type { SpeciesId } from "./trees/species";
 
@@ -249,7 +250,17 @@ export type Kind =
   | "bench"
   | "bikes"
   | "board"
-  | "lanterns";
+  | "lanterns"
+  // the culture sites' pieces (cultureKit.ts, drawn by Culture.tsx)
+  | "welcome"
+  | "plaque"
+  | "flag"
+  | "whorl"
+  | "bighouse"
+  | "moongate"
+  | "taiko"
+  | "banner"
+  | "mural";
 /**
  * One thing standing in a place: where, its turn (as rotation.y: its local +z faces (sin ry, cos ry)), a colour, a
  * pavilion's name and size, a lantern string's ends (hung under the Stadium terrace).
@@ -267,6 +278,10 @@ export type Feature = {
   roof?: "dark" | "green" | "timber";
   r?: number;
   ends?: [XZ, XZ];
+  /** A culture piece's site (one mesh each, Culture.tsx), its atlas cell (cultureArt.ts) and a plaque's quarter of its cell. */
+  site?: string;
+  cell?: number;
+  quarter?: number;
 };
 /** rotation.y that turns a piece's front (local +z) toward (fx, fz). */
 const face = (fx: number, fz: number) => Math.atan2(fx, fz);
@@ -295,6 +310,48 @@ function xz([x, z]: XZ): { x: number; z: number } {
   return { x, z };
 }
 
+/**
+ * A point of a station's set frame (as the set lays it out: along from its origin, which SET_SHIFT may move along the
+ * platform, and lateral toward its side), and the turn that faces a piece there toward (da, dl) in that frame.
+ */
+const inSet = (i: number, a: number, l: number, da: number, dl: number): { x: number; z: number; ry: number } => {
+  const [x, z] = fromStation(i, a + SET_SHIFT[i], l);
+  const [x1, z1] = fromStation(i, a + SET_SHIFT[i] + da, l + dl);
+  return { x, z, ry: face(x1 - x, z1 - z) };
+};
+
+/**
+ * The culture sites, each drawn as one mesh (Culture.tsx):
+ * - Waterfront's plaza: two Coast Salish–inspired welcome figures facing the harbour either side of the land
+ *   acknowledgement, between the kiosks and the café, and the Progress Pride and trans flags at its east edge;
+ * - the Harbour Market at Burrard: a spindle whorl the height of two people;
+ * - Thornton Park, across from Main Street–Science World: a Coast Salish big house, its house posts at the door;
+ * - Chinatown: a moon gate in the Sun Yat-sen garden's park;
+ * - Hogan's Alley: a plaque at Main and Union;
+ * - Powell Street (Japantown): a taiko stage, festival banners and a plaque in Oppenheimer Park;
+ * - the Commercial–Broadway square: a mural of raised hands under a rainbow, the Progress Pride and trans flags.
+ */
+const CULTURE: Feature[] = [
+  { kind: "welcome", ...inSet(0, 5, 20.2, 0, 1), quarter: 0, site: "waterfront" },
+  { kind: "welcome", ...inSet(0, 17, 20.2, 0, 1), quarter: 1, site: "waterfront" },
+  { kind: "plaque", ...inSet(0, 11, 20.2, 0, 1), cell: ART.acknowledge, w: 1.6, site: "waterfront" },
+  { kind: "flag", ...inSet(0, 22.5, 18.5, 0, 1), cell: ART.pride, site: "waterfront" },
+  { kind: "flag", ...inSet(0, 22.5, 22.5, 0, 1), cell: ART.trans, site: "waterfront" },
+  { kind: "whorl", ...inSet(1, 26, 39.5, -1, 0.4), site: "harbour" },
+  { kind: "plaque", ...inSet(1, 30.5, 41.6, -1, 0.4), cell: ART.plaques, quarter: PLAQUE.whorl, w: 0.9, site: "harbour" },
+  { kind: "bighouse", x: 97.5, z: 147.3, ry: 0, w: 11, d: 6.5, site: "thornton" },
+  { kind: "plaque", x: 104.6, z: 151.6, ry: 0, cell: ART.plaques, quarter: PLAQUE.bighouse, w: 0.9, site: "thornton" },
+  { kind: "moongate", x: 69.8, z: 77.6, ry: 0, w: 4.4, site: "chinatown" },
+  { kind: "plaque", x: 93.6, z: 99.2, ry: 0, cell: ART.plaques, quarter: PLAQUE.hogan, w: 0.9, site: "hogan" },
+  { kind: "taiko", x: 142.5, z: 45, ry: Math.PI / 2, site: "powell" },
+  { kind: "banner", x: 138.4, z: 43.9, ry: Math.PI / 2, cell: ART.japantown, site: "powell" },
+  { kind: "banner", x: 138.4, z: 46.3, ry: Math.PI / 2, cell: ART.japantown, site: "powell" },
+  { kind: "plaque", x: 144.8, z: 43.2, ry: Math.PI / 2, cell: ART.plaques, quarter: PLAQUE.powell, w: 0.9, site: "powell" },
+  { kind: "mural", ...inSet(5, -19.2, 36, 1, 0), cell: ART.hands, w: 5.4, site: "commercial" },
+  { kind: "flag", ...inSet(5, -19.4, 46, 1, 0), cell: ART.pride, site: "commercial" },
+  { kind: "flag", ...inSet(5, -19.4, 50, 1, 0), cell: ART.trans, site: "commercial" },
+];
+
 const MARKET_HEX = [0xe4572e, 0xd2452f, 0xf3a712, 0x29a19c, 0xc8281e, 0xe84393];
 const market: Feature[] = [];
 // two rows of stalls facing each other across an aisle under the terrace, clear of its legs (±13, and 0 at its far side)
@@ -317,7 +374,7 @@ export const FEATURES: Feature[] = [
   // ------------------------------------------------ Coal Harbour Commons
   { kind: "laughing", x: -109, z: -35.5, ry: -Math.PI / 4, r: 7 },
   { kind: "arch", x: -104, z: -40.5, ry: face(0.989, 0.148), r: 6 },
-  { kind: "pavilion", x: -86.5, z: -31, w: 8, d: 5, ry: Math.PI, name: "Commons Café", hex: 0xe8663a, roof: "green" },
+  { kind: "pavilion", x: -86.5, z: -31, w: 8, d: 5, ry: Math.PI, name: "Filipino Panaderya", hex: 0xe8663a, roof: "green" },
   { kind: "playground", x: -76.5, z: -20 },
   { kind: "truck", x: -65, z: -29.3, ry: Math.PI, hex: 0xf2b632 },
   { kind: "picnic", x: -99, z: -33.5, ry: 0.3, hex: 0xd2452f },
@@ -338,7 +395,6 @@ export const FEATURES: Feature[] = [
   { kind: "pingpong", x: 0, z: 33.6, ry: 0.6 },
   { kind: "truck", x: -10, z: 16, ry: 0, hex: 0x2a9d8f },
   { kind: "picnic", x: -14, z: 20.5, ry: 0.5, hex: 0xd2452f },
-  { kind: "picnic", x: -11, z: 35, ry: -0.2, hex: 0x2d6cb0 },
   // ------------------------------------------------ Gastown
   ...[
     [11.5, 18.5],
@@ -377,6 +433,8 @@ export const FEATURES: Feature[] = [
   { kind: "picnic", x: -12.5, z: 66.5, ry: 0.4, hex: 0xd2452f },
   { kind: "picnic", x: 13, z: 93.2, ry: -0.3, hex: 0xf2b632 },
   { kind: "picnic", x: 5, z: 82.8, ry: 0.7, hex: 0x2a9d8f },
+  // ------------------------------------------------ the culture sites
+  ...CULTURE,
 ];
 
 /** A feature's footprint: circles ["c", x, z, r] and quads ["p", corners], for the checks and the crowd. */
@@ -439,15 +497,35 @@ export function footprint(f: Feature): Shape[] {
       return [["c", f.x, f.z, 1.0]];
     case "globeLamp":
       return [["c", f.x, f.z, 0.7]];
+    case "welcome":
+      return [rect(2.0, 1.4)];
+    case "plaque":
+      return [rect((f.w ?? 1.4) / 2 + 0.3, 0.4)];
+    case "flag":
+      return [["c", f.x, f.z, 0.4]];
+    case "whorl":
+      return [rect(2.1, 0.75)];
+    case "bighouse":
+      return [rect((f.w ?? 11) / 2 + 0.4, (f.d ?? 6.5) / 2 + 1.0, 0.6)];
+    case "moongate":
+      return [rect((f.w ?? 4.4) / 2 + 0.4, 0.5)];
+    case "taiko":
+      return [rect(2.3, 1.5)];
+    case "banner":
+      return [["c", f.x, f.z, 0.9]];
+    case "mural":
+      return [rect((f.w ?? 6) / 2 + 0.2, 0.3)];
     default:
       return [["c", f.x, f.z, 0.5]];
   }
 }
 
 const SHAPES = FEATURES.map((f) => footprint(f));
+/** Every feature's extent with room to spare (x0, x1, z0, z1), for onFeature's quick test. */
+const BOUNDS = FEATURES.reduce((b, f) => [Math.min(b[0], f.x - 14), Math.max(b[1], f.x + 14), Math.min(b[2], f.z - 14), Math.max(b[3], f.z + 14)], [Infinity, -Infinity, Infinity, -Infinity]);
 /** On (or within pad of) any feature's footprint. */
 export function onFeature(x: number, z: number, pad = 0): boolean {
-  if (x < -125 || x > 70 || z < -50 || z > 112) return false;
+  if (x < BOUNDS[0] || x > BOUNDS[1] || z < BOUNDS[2] || z > BOUNDS[3]) return false;
   for (const shapes of SHAPES) {
     for (const s of shapes) {
       if (s[0] === "c") {

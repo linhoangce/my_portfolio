@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useTheme } from "next-themes";
 import { useEffect, useRef } from "react";
 
+import { landAcknowledgement } from "@/data";
+
 import { EVENT_IDS, EVENT_META, type EventId, SEASONS, WEATHERS } from "../lookTypes";
 import { MONUMENTS } from "../monumentData";
 import { useTrain } from "../store";
@@ -110,6 +112,10 @@ export function Menu() {
             </button>
           ))}
         </div>
+      </section>
+      <section>
+        <h3>The land</h3>
+        <p className="land-ack">{landAcknowledgement}</p>
       </section>
       <section>
         <h3>Map data</h3>

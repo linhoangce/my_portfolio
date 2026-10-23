@@ -18,10 +18,11 @@ import {
 } from "three";
 
 import { getCityData } from "./cityData";
+import { useTrain } from "./store";
 import { commonsGround, commonsLawn } from "./commonsGround";
 import { landClass } from "./roadNetwork";
 import { district } from "./cityModel";
-import { SEA } from "./constants";
+import { CITY_STAGE, SEA } from "./constants";
 import { drape } from "./drape";
 import { merged, type Part } from "./merge";
 import { cutNear } from "./rail";
@@ -416,7 +417,9 @@ export function Ground() {
     };
   }, [mats, zone, basin]);
   const wall = useMemo(() => seawall(lowEnd ? 2 : 1), [lowEnd]);
-  // the lawns merged by 240-unit tile of their parks' centres: a few draw calls, each tile still culled when out of view
+  // the lawns merged by 240-unit tile of their parks' centres: a few draw calls, each tile still culled when out of view;
+  // downtown's open places (commonsGround.ts) join the middle tile once the city is in (they are the ground it left)
+  const cityIn = useTrain((s) => s.loadStage >= CITY_STAGE + 1);
   const lawns = useMemo(() => {
     const tiles = new Map<number, BufferGeometry[]>();
     for (const p of PARKS) {
@@ -431,17 +434,18 @@ export function Ground() {
       if (list) list.push(n);
       else tiles.set(key, [n]);
     }
-    // downtown's open places (commonsGround.ts) in the tile of the city's middle
-    const commons = commonsLawn(commonsGround(getCityData(lowEnd), lowEnd), (x, z) => surfaceAt(x, z, lowEnd ? 2 : 1)).toNonIndexed();
-    const mid = tiles.get(0) ?? [];
-    mid.push(commons);
-    tiles.set(0, mid);
+    if (cityIn) {
+      const commons = commonsLawn(commonsGround(getCityData(lowEnd), lowEnd), (x, z) => surfaceAt(x, z, lowEnd ? 2 : 1)).toNonIndexed();
+      const mid = tiles.get(0) ?? [];
+      mid.push(commons);
+      tiles.set(0, mid);
+    }
     return [...tiles.values()].map((list) => {
       const one = mergeGeometries(list, false);
       for (const g of list) g.dispose();
       return one;
     });
-  }, [lowEnd]);
+  }, [lowEnd, cityIn]);
   const walks = useMemo(() => {
     // the promenade where it runs on land; over the water it is the harbourfront's own deck
     const onLand: ParkPath[] = [];

@@ -158,9 +158,9 @@ const inDeck = (p: Pav, a: number, l: number, pad: number): boolean => {
 
 const CB_PAVILIONS: Pav[] = [
   // under the hall: toward the station, toward the market street, toward Broadway
-  { a: -8.5, l: 34.25, w: 9, d: 5.5, face: [0, -1], name: "Harbour Café", umbrella: 0xe8663a },
+  { a: -8.5, l: 34.25, w: 9, d: 5.5, face: [0, -1], name: "Punjabi Dhaba", umbrella: 0xe8663a },
   { a: -3.75, l: 50, w: 9, d: 5.5, face: [1, 0], name: "Pho Saigon", umbrella: 0xf2b632, roof: "timber" },
-  { a: -13, l: 49, w: 8, d: 5, face: [-1, 0], name: "Juice Bar", umbrella: 0x2a9d8f, front: 3.2 },
+  { a: -13, l: 49, w: 8, d: 5, face: [-1, 0], name: "Ethiopian Coffee", umbrella: 0x2a9d8f, front: 3.2 },
   // the south side of the square, facing the market street
   { a: 19.5, l: 32.5, w: 8, d: 5.5, face: [-1, 0], name: "Bistro on the Drive", umbrella: 0xd2452f, well: true, roof: "green", h: 3.6 },
   { a: 17.5, l: 50, w: 10, d: 6, face: [-1, 0], name: "Ramen Bar", umbrella: 0xf1e9da, well: true },
@@ -198,11 +198,11 @@ export const SQUARES: Square[] = [
     i: 1,
     pavilions: [
       // on the harbour's edge, facing the water
-      { a: -12, l: 44.75, w: 8, d: 5.5, face: [0, 1], name: "Harbour Kitchen", umbrella: 0xe8663a, well: true, h: 3.6 },
+      { a: -12, l: 44.75, w: 8, d: 5.5, face: [0, 1], name: "Bannock & Salmon", umbrella: 0xe8663a, well: true, h: 3.6 },
       // south of the cedar, toward its canopy
       { a: 17, l: 21, w: 10, d: 6, face: [-1, 0], name: "Cedar & Salt", umbrella: 0xd2452f, well: true, roof: "green" },
       { a: 26, l: 19, w: 8, d: 5, face: [1, 0], name: "Noodle House", umbrella: 0xf2b632, roof: "timber" },
-      { a: 24, l: 32, w: 5, d: 4, face: [0, -1], name: "Bakery", umbrella: 0xf1e9da, front: 2.8, roof: "green", h: 2.9 },
+      { a: 24, l: 32, w: 5, d: 4, face: [0, -1], name: "Persian Bakery", umbrella: 0xf1e9da, front: 2.8, roof: "green", h: 2.9 },
       // on the strip toward Waterfront, its deck out over the water
       { a: 5.5, l: 49.5, w: 5, d: 5, face: [-1, 0], name: "Oyster Bar", umbrella: 0x2a9d8f, front: 2.8 },
     ],

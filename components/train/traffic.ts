@@ -39,8 +39,10 @@ export type Car = {
   stall: number;
   /** In a junction's box this step. */
   inBox: boolean;
-  /** Its length bumper to bumper (a car's, or an articulated bus's). */
+  /** Its length bumper to bumper (its kind's, or an articulated bus's). */
   len: number;
+  /** Which of CAR_KINDS it is (a bus: -1). */
+  kind: number;
   /** A bus: its route, the step of it it is on, the stops on that step it has served, time at the current stop. */
   bus?: BusState;
   rng: Rng;
@@ -52,7 +54,27 @@ export type Car = {
   brake: boolean;
 };
 
-const LEN_CAR = 2.3;
+/**
+ * The city's cars in 2100 (vehicles.ts builds them), nose to tail, how briskly each drives against the street's
+ * speed, and its share of the traffic.
+ */
+export const CAR_KINDS = [
+  { name: "sedan", len: 2.5, speed: 1.05, share: 32 },
+  { name: "pod", len: 1.8, speed: 0.9, share: 22 },
+  { name: "crossover", len: 2.7, speed: 1.0, share: 22 },
+  { name: "van", len: 3.0, speed: 0.9, share: 14 },
+  { name: "truck", len: 2.9, speed: 1.0, share: 10 },
+] as const;
+const SHARES = CAR_KINDS.reduce((s, k) => s + k.share, 0);
+/** A kind for a draw in [0, 1), by share. */
+function kindAt(u: number): number {
+  let r = u * SHARES;
+  for (let k = 0; k < CAR_KINDS.length; k++) {
+    r -= CAR_KINDS[k].share;
+    if (r < 0) return k;
+  }
+  return 0;
+}
 /** An articulated bus: two sections of BUS_SECTION about the joint, bumper to bumper. */
 export const BUS_SECTION = 3;
 const LEN_BUS = 2 * BUS_SECTION + 0.4;
@@ -206,7 +228,9 @@ export class Traffic {
       this.weight.push(w);
     });
     for (let i = 0; i < n && this.pool.length; i++) {
-      // a clear spot: none on another car
+      // its kind (from its own seed, so the spots below are the ones they always were); a clear spot: none on another car
+      const kind = kindAt(seedRng(i).next());
+      const len = CAR_KINDS[kind].len;
       let k = 0;
       let dir: 1 | -1 = 1;
       let t = 0;
@@ -217,7 +241,7 @@ export class Traffic {
         dir = o.oneway ? (o.oneway as 1 | -1) : rng.next() < 0.5 ? 1 : -1;
         t = rng.next() * o.len;
         lane = Math.floor(rng.next() * lanesOf(o));
-        if (this.clear(k, dir, lane, t)) break;
+        if (this.clear(k, dir, lane, t, len)) break;
       }
       const e = edges[k];
       const car: Car = {
@@ -225,7 +249,7 @@ export class Traffic {
         dir,
         t,
         v: 0,
-        v0: V0[e.cls] * (0.85 + rng.next() * 0.3),
+        v0: V0[e.cls] * (0.85 + rng.next() * 0.3) * CAR_KINDS[kind].speed,
         lane,
         next: -1,
         nextDir: 1,
@@ -239,7 +263,8 @@ export class Traffic {
         outStraight: true,
         stall: 0,
         inBox: false,
-        len: LEN_CAR,
+        len,
+        kind,
         rng: seedRng(i),
         x: 0,
         y: 0,
@@ -286,6 +311,7 @@ export class Traffic {
           stall: 0,
           inBox: false,
           len: LEN_BUS,
+          kind: -1,
           bus: { r: ri, pi, served: 0, dwell: 0, trail: [], fx: 0, fz: 0, fyaw: 0, rx: 0, rz: 0, ryaw: 0 },
           rng: seedRng(5000 + made),
           x: 0,
@@ -314,18 +340,22 @@ export class Traffic {
   }
 
   private key = (c: { e: number; dir: 1 | -1 }) => c.e * 2 + (c.dir > 0 ? 0 : 1);
-  /** No car within a car's length and gap of t on this edge, direction and lane. */
-  private clear(k: number, dir: 1 | -1, lane: number, t: number): boolean {
-    return !(this.byLane.get(k * 2 + (dir > 0 ? 0 : 1)) ?? []).some((o) => o.lane === lane && Math.abs(o.t - t) < LEN_CAR + GAP0 + 0.5);
+  /** No car within half of each one's length, and the gap, of t on this edge, direction and lane. */
+  private clear(k: number, dir: 1 | -1, lane: number, t: number, len: number): boolean {
+    return !(this.byLane.get(k * 2 + (dir > 0 ? 0 : 1)) ?? []).some((o) => o.lane === lane && Math.abs(o.t - t) < (o.len + len) / 2 + GAP0 + 0.5);
   }
   /** Who is in each junction's box: the way each came in, its heading then, and whether it goes straight on. */
   private box = new Map<number, { from: number; x: number; z: number; straight: boolean }[]>();
-  /** How many cars in a junction are bound for each street (edge and direction). */
+  /** The room the cars in a junction will take on each street they are bound for (edge and direction): lengths and gaps. */
   private bound = new Map<number, number>();
   /** How far along an edge from its start a car is still in the junction it came out of. */
   private boxOut(k: number, dir: 1 | -1): number {
     const e = roads().edges[k];
     return Math.max(TURN, boxSetback(k, dir > 0 ? e.a : e.b) + 0.6);
+  }
+  /** A car's wish speed on its street: the street's, a driver's own, its kind's. */
+  private pace(c: Car): number {
+    return V0[roads().edges[c.e].cls] * (0.85 + c.rng.next() * 0.3) * CAR_KINDS[c.kind].speed;
   }
   /** Back in on one of the line's streets, on a clear spot, standing. */
   private respawn(c: Car): void {
@@ -335,7 +365,7 @@ export class Traffic {
       const o = edges[c.e];
       c.dir = o.oneway ? (o.oneway as 1 | -1) : c.rng.next() < 0.5 ? 1 : -1;
       c.t = c.rng.next() * o.len * 0.5;
-      if (this.clear(c.e, c.dir, Math.min(c.lane, lanesOf(o) - 1), c.t)) break;
+      if (this.clear(c.e, c.dir, Math.min(c.lane, lanesOf(o) - 1), c.t, c.len)) break;
     }
     c.v = 0;
     c.prev = -1;
@@ -464,7 +494,7 @@ export class Traffic {
       if (c.next >= 0 && nodes[end].deg >= 3 && c.t > this.holdAt(c, e)) {
         into(end, { from: this.key(c), x: c.inX, z: c.inZ, straight: c.straight });
         const k = c.next * 2 + (c.nextDir > 0 ? 0 : 1);
-        bound.set(k, (bound.get(k) ?? 0) + 1);
+        bound.set(k, (bound.get(k) ?? 0) + c.len + GAP0);
         c.inBox = true;
       } else if (c.prev >= 0 && nodes[start].deg >= 3 && c.t < this.boxOut(c.e, c.dir)) {
         into(start, { from: c.prev * 2 + (c.prevDir > 0 ? 0 : 1), x: c.outX, z: c.outZ, straight: c.outStraight });
@@ -527,7 +557,7 @@ export class Traffic {
           const lane = Math.min(c.lane, lanesOf(ne) - 1);
           // room for the whole car past the junction's far side
           const nk = c.next * 2 + (c.nextDir > 0 ? 0 : 1);
-          const room = this.boxOut(c.next, c.nextDir) + c.len + GAP0 + (LEN_CAR + GAP0) * (bound.get(nk) ?? 0);
+          const room = this.boxOut(c.next, c.nextDir) + c.len + GAP0 + (bound.get(nk) ?? 0);
           const full = (this.byLane.get(nk) ?? []).some((o) => o.lane === lane && o.t < room);
           if (crossed || full) {
             gap = Math.max(0, d);
@@ -578,8 +608,10 @@ export class Traffic {
       if (c.stall > (c.inBox ? GRIDLOCK_BOX : GRIDLOCK)) {
         this.leave(c);
         if (c.bus) this.respawnBus(c);
-        else this.respawn(c);
-        c.v0 = V0[edges[c.e].cls] * (0.85 + c.rng.next() * 0.3);
+        else {
+          this.respawn(c);
+          c.v0 = this.pace(c);
+        }
         c.lane = Math.min(c.lane, lanesOf(edges[c.e]) - 1);
         this.enter(c);
         continue;
@@ -608,7 +640,7 @@ export class Traffic {
         } else {
           // out of sight of the line: back in on one of its streets
           if (this.far[c.e]) this.respawn(c);
-          c.v0 = V0[edges[c.e].cls] * (0.85 + c.rng.next() * 0.3);
+          c.v0 = this.pace(c);
           c.lane = Math.min(c.lane, lanesOf(edges[c.e]) - 1);
         }
         this.enter(c);

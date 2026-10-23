@@ -13,15 +13,16 @@ import { inHarbourfront } from "../harbourfront";
 import { nearWce } from "../wce";
 import type { BufferGeometry } from "three";
 
-import type { Rng } from "../cityModel";
+import { Rng as CityRng, type Rng } from "../cityModel";
 import { railNear } from "../rail";
 import { landClass, nearestRoadDir, pointAt, roadDist, roads } from "../roadNetwork";
-import { onFeature } from "../commonsLayout";
+import { onFeature, placeAt } from "../commonsLayout";
 import { inSetZone } from "../sets/zones";
-import { inLandmark, inPark, nearBridge, seawallDist, streamDist } from "../sites";
-import { groundAt, inWater, RASTER } from "../terrain";
-import { PATH_SAMPLES, trackNearest } from "../track";
+import { inLandmark, inPark, LANDMARKS, nearBridge, seawallDist, streamDist } from "../sites";
+import { groundAt, inWater, RASTER, surfaceAt } from "../terrain";
+import { PATH_SAMPLES, STATION_XZ, trackDist, trackNearest } from "../track";
 import type { SpeciesId } from "../trees/species";
+import { ART } from "../cultureArt";
 import { BUILD, type Ctx, PAL } from "./archetypes";
 import { ARCH_BY_ERA, ARCH_DENSE, ARCH_LOWRISE, type ArchId, hood, type Hood, HOUSE_MIX, TOWERISH, ZONES } from "./eras";
 import { HEROES } from "./heroes";
@@ -34,6 +35,41 @@ import type { Sink } from "./parts";
  * footprint itself is fw × fd turned by ry to face its street. `arch` names what stands on it, for the debug probes.
  */
 export type Lot = { x: number; z: number; w: number; d: number; h: number; top: number; arch?: ArchId; ry?: number; fw?: number; fd?: number };
+/** A mural on a building's blank side wall: its centre, the turn that faces its plane out, its size, the atlas cell. */
+export type Mural = { x: number; y: number; z: number; ry: number; s: number; cell: number; w?: number };
+
+/**
+ * The murals' subjects by neighbourhood (cultureArt.ts cells): Chinatown's dragon, Hogan's Alley's faces round Main and
+ * Union, the rangoli on Commercial Drive and round Joyce, Coast Salish salmon and orca by the water, rainbow hands
+ * toward Davie, and faces of the community everywhere.
+ */
+const MURAL_SUBJECTS: Partial<Record<Hood, number[]>> = {
+  chinatown: [ART.dragon, ART.dragon, ART.faces, ART.salmon],
+  strathcona: [ART.hogan, ART.faces, ART.salmon, ART.japantown],
+  gastown: [ART.orca, ART.salmon, ART.faces, ART.hands],
+  downtown: [ART.orca, ART.hands, ART.faces, ART.salmon],
+  westend: [ART.hands, ART.hands, ART.orca, ART.faces],
+  yaletown: [ART.orca, ART.hands, ART.faces, ART.salmon],
+  mainst: [ART.hogan, ART.faces, ART.salmon, ART.rangoli],
+  mountpleasant: [ART.faces, ART.salmon, ART.hands, ART.rangoli],
+  flats: [ART.salmon, ART.orca, ART.faces, ART.hands],
+  commercial: [ART.rangoli, ART.faces, ART.hands, ART.salmon, ART.orca],
+  joyce: [ART.faces, ART.rangoli, ART.dragon, ART.hands],
+};
+const MURAL_ANY = [ART.orca, ART.salmon, ART.faces, ART.hands, ART.rangoli];
+/** Inside a lot's turned footprint (city.ts turns a lot's local (lx, lz) to (lx c + lz s, -lx s + lz c)). */
+function inFootprint(L: Lot, x: number, z: number): boolean {
+  const c = Math.cos(L.ry ?? 0);
+  const s = Math.sin(L.ry ?? 0);
+  const dx = x - L.x;
+  const dz = z - L.z;
+  return Math.abs(dx * c - dz * s) < (L.fw ?? L.w) / 2 && Math.abs(dx * s + dz * c) < (L.fd ?? L.d) / 2;
+}
+/** A hash of a point to [0, 1): the murals are chosen by place, so the city's own draws are untouched. */
+const hash01 = (x: number, z: number) => {
+  const n = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453;
+  return n - Math.floor(n);
+};
 /** A lot being laid out: centre, frontage width, depth into the block, and its turn (local +z points into the block). */
 type Plot = { x: number; z: number; w: number; d: number; ry: number };
 /** What a frontage holds, by land use: house, apartments, shopfronts, a tower, industry, historic brick. */
@@ -59,6 +95,7 @@ export type CityGeometry = {
   neon: BufferGeometry;
   houses: HouseInst[];
   lots: Lot[];
+  murals: Mural[];
   terrace: TerraceTree[];
   ms: number;
   /** Milliseconds per phase, for the budget checks. */
@@ -172,9 +209,45 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
   const houses: HouseInst[] = [];
   const terrace: TerraceTree[] = [];
   const addTerrace = (x: number, y: number, z: number, s: number, sp: SpeciesId) => terrace.push({ x, y, z, s, sp });
+  // the murals: about one blank side wall in two within sight of the line, as big as the wall allows (those that face a
+  // neighbour's wall are dropped once every lot stands)
+  const murals: Mural[] = [];
+  /** The low and mid-rise blocks a Coast Salish–inspired hall may stand for. */
+  const SALISH_FROM = new Set<ArchId>(["midrise", "courtyard", "townhouses", "timberTerraces", "colourPanels", "metalLoft", "stacked", "ziggurat", "biodome"]);
+  // one scratch sink for them all (a builder sets aside room for thousands of vertices): what goes in is never drawn
+  let scratch: Sink | null = null;
+  const scratchSink = (): Sink => (scratch ??= { solid: new GeoBuilder(), glass: new GeoBuilder(), crownA: new GeoBuilder(), crownB: new GeoBuilder(), dome: new GeoBuilder(), neon: new GeoBuilder() });
+  // a building's own paintings (subject given): -1 a Coast Salish–inspired building's, its front a painted house front
+  // and its sides formline; a cell, that cell (a carved post's face); a front's are as wide as the wall allows
+  const SALISH_SIDES = [ART.orca, ART.salmon, ART.whorl, ART.back];
+  const muralAt = (x: number, z: number, ry: number, name: Hood, dist: number, lx: number, lz: number, len: number, y0: number, y1: number, subject?: number, front = false) => {
+    const own = subject !== undefined;
+    if (dist > (own ? 260 : 150)) return;
+    const s = front ? Math.min(y1 - y0, 8) : Math.min(len, y1 - y0, 8);
+    if (s < (front ? 1.2 : 2.4)) return;
+    const u = hash01(x * 1.37 + lx, z * 0.71 + lz);
+    if (!own && u > 0.5) return;
+    const c = Math.cos(ry);
+    const sn = Math.sin(ry);
+    // the wall's face, a little out from it, and its outward normal: the side walls face along local x, the front -z
+    const side = front ? 0 : Math.sign(lx);
+    const ox = lx + side * 0.05;
+    const oz = front ? lz - 0.05 : lz;
+    const wx = x + ox * c + oz * sn;
+    const wz = z - ox * sn + oz * c;
+    const [nx, nz] = front ? [-sn, -c] : [side * c, -side * sn];
+    const subjects = own && subject >= 0 ? [subject] : own ? (front ? [ART.bighouse] : SALISH_SIDES) : Math.hypot(wx - 98, wz - 101) < 50 ? [ART.hogan, ART.hogan, ART.faces] : (MURAL_SUBJECTS[name] ?? MURAL_ANY);
+    const cell = subjects[Math.floor(hash01(wz, wx) * subjects.length)];
+    const w = front ? Math.min(len, 2 * s) : undefined;
+    murals.push({ x: wx, y: y0 + Math.min(0.4, (y1 - y0 - s) / 2) + s / 2, z: wz, ry: Math.atan2(nx, nz), s, cell, w });
+  };
+  // the ground drawn on low-end devices is coarser (12-unit cells), so on a slope it can stand above the true ground:
+  // floors stand on whichever is higher and walls reach down to whichever is lower, so the land never covers a wall
+  const floorAt = (x: number, z: number) => (lowEnd ? Math.max(groundAt(x, z), surfaceAt(x, z, 2)) : groundAt(x, z));
+  const footAt = (x: number, z: number) => (lowEnd ? Math.min(groundAt(x, z), surfaceAt(x, z, 2)) : groundAt(x, z));
   const ground = (x: number, z: number, w: number, d: number) => {
-    const gs = [[x - w / 2, z - d / 2], [x + w / 2, z - d / 2], [x - w / 2, z + d / 2], [x + w / 2, z + d / 2], [x, z]].map(([px, pz]) => groundAt(px, pz));
-    return { yb: Math.min(...gs) - 0.6, yt: Math.max(...gs) };
+    const pts = [[x - w / 2, z - d / 2], [x + w / 2, z - d / 2], [x - w / 2, z + d / 2], [x + w / 2, z + d / 2], [x, z]];
+    return { yb: Math.min(...pts.map(([px, pz]) => footAt(px, pz))) - 0.6, yt: Math.max(...pts.map(([px, pz]) => floorAt(px, pz))) };
   };
 
   // heroes, with their footprints reserved
@@ -193,7 +266,7 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
   /** Downtown's highest ground for towers, round Burrard and Georgia. */
   const CORE = { x: -55, z: 25 };
   /** Archetypes that keep under a low height limit by themselves. */
-  const LOW_OK = new Set<ArchId>(["midrise", "colourPanels", "heritageBrick", "warehouse", "chinatownBlock"]);
+  const LOW_OK = new Set<ArchId>(["midrise", "colourPanels", "heritageBrick", "warehouse", "chinatownBlock", "salishHall"]);
   let buildMs = 0;
   const archMs: Record<string, number> = {};
   const pickArch = (zone: NonNullable<(typeof ZONES)[Hood]>, name: Hood, big: boolean, cell: string, near: string[]): { era: 0 | 1 | 2; arch: ArchId } => {
@@ -250,9 +323,10 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
     const { x, z, w, d, ry } = l;
     const pts = samplePts(l);
     const gs = pts.map(([px, pz]) => groundAt(px, pz));
-    const yb = Math.min(...gs) - 0.6;
-    const yt = Math.max(...gs);
-    if (yt - yb > 0.42 * Math.max(w, d) + 0.6) return;
+    // too steep a lot by the true ground; its floor and foot by the ground as drawn (floorAt, footAt)
+    if (Math.max(...gs) - Math.min(...gs) > 0.42 * Math.max(w, d)) return;
+    const yb = Math.min(...pts.map(([px, pz]) => footAt(px, pz))) - 0.6;
+    const yt = Math.max(...pts.map(([px, pz]) => floorAt(px, pz)));
     const dist = Math.min(...pts.map(([px, pz]) => cor.dist(px, pz)));
     // the turned footprint's extent on the axes, for the city's box tests
     const aw = Math.abs(w * Math.cos(ry)) + Math.abs(d * Math.sin(ry));
@@ -307,9 +381,17 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
     const builders = [sink.solid, sink.glass, sink.crownA, sink.crownB, sink.dome, sink.neon];
     const starts = builders.map((b) => b.vertices);
     const t0 = terrace.length;
-    const ctx: Ctx = { rng, sink, x, z, w, d, yb, yt, H, hood: name, terrace: addTerrace };
+    const ctx: Ctx = { rng, sink, x, z, w, d, yb, yt, H, hood: name, terrace: addTerrace, wall: (lx, lz, len, y0, y1, subject, front) => muralAt(x, z, ry, name, dist, lx, lz, len, y0, y1, subject, front) };
     const tb = now();
-    BUILD[chosen as Exclude<ArchId, "house">](ctx);
+    // some of today's and 2100's low and mid-rise blocks are halls after Coast Salish plank houses, chosen by place;
+    // the block a hall stands for still draws its numbers (into a scratch sink), so the rest of the city is as it was
+    const hall = era > 0 && SALISH_FROM.has(chosen) && hash01(x * 0.73 + 5.1, z * 1.91 - 2.3) < 0.09;
+    if (hall) {
+      BUILD[chosen as Exclude<ArchId, "house">]({ ...ctx, sink: scratchSink(), terrace: () => undefined, wall: undefined });
+      H = Math.min(H, 6 * 1.9 + 3.7);
+      BUILD.salishHall({ ...ctx, H, rng: new CityRng(Math.floor(hash01(z, x) * 2 ** 31)) });
+      chosen = "salishHall";
+    } else BUILD[chosen as Exclude<ArchId, "house">](ctx);
     builders.forEach((b, i) => b.rotateFrom(starts[i], x, z, ry));
     const c = Math.cos(ry);
     const s = Math.sin(ry);
@@ -390,6 +472,9 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
   // the heroes' footprints are taken first
   for (const h of HEROES) take({ x: h.x, z: h.z, w: h.r * 2, d: h.r * 2, ry: 0 });
 
+  /** Parcels the passes took and left empty (the zone's share of open lots), for the last pass to build on. */
+  const vacant: { l: Plot; name: Hood; lu: number }[] = [];
+
   // lots along every street's frontage, the arterials' first (their shops and towers take the corners), each turned
   // square to its street and as deep as the block allows
   const { edges, nodes } = roads();
@@ -445,7 +530,10 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
         take(placed);
         // the low-end budget thins the city away from the line
         if (lowEnd && kind !== "tower" && cor.dist(placed.x, placed.z) > 120 && rng.next() < 0.3) continue;
-        if (rng.next() > zone.build) continue;
+        if (rng.next() > zone.build) {
+          vacant.push({ l: placed, name, lu });
+          continue;
+        }
         buildLot(placed, name, zone, lu, dense);
       }
     }
@@ -473,14 +561,112 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
         if (!free(l) || !parcelClear(l, dense ? DENSE_CLEAR : CLEAR)) continue;
         take(l);
         if (lowEnd && kind !== "tower" && cor.dist(gx, gz) > 120 && rng.next() < 0.3) break;
-        if (rng.next() > zone.build) break;
+        if (rng.next() > zone.build) {
+          vacant.push({ l, name, lu });
+          break;
+        }
         buildLot(l, name, zone, lu, dense);
         break;
       }
     }
   }
 
+  // last, the city packed tight where it should be: downtown and its neighbours, and the ground round Science World
+  // seen from the basin. Only adds: the open parcels in those districts are built, and every gap a lot still fits is
+  // filled, smaller lots where the room is smaller. A street drawn nowhere (under a set, a landmark, the guideway's
+  // clearance) no longer holds a lot back, since each of those keeps its own ground; the open places, the stations'
+  // ways in and the parks keep theirs.
+  {
+    const SW = LANDMARKS.find((l) => l.key === "scienceWorld");
+    const PACKED = new Set<Hood>(["downtown", "westend", "yaletown", "gastown", "chinatown", "mainst", "olympic", "flats"]);
+    const packed = (x: number, z: number, name: Hood) => PACKED.has(name) || (SW !== undefined && Math.hypot(x - SW.px, z - SW.pz) < 230 && name !== "park" && name !== "cut");
+    // the drawn streets only, by 16-unit cell
+    const cells = new Map<number, number[][]>();
+    for (const e of edges) {
+      for (let k = 0; k + 3 < e.pts.length; k += 2) {
+        if (!e.shown[k / 2]) continue;
+        const sg = [e.pts[k], e.pts[k + 1], e.pts[k + 2], e.pts[k + 3], e.half];
+        for (let a = Math.floor((Math.min(sg[0], sg[2]) - 6) / 16); a <= Math.floor((Math.max(sg[0], sg[2]) + 6) / 16); a++) {
+          for (let b = Math.floor((Math.min(sg[1], sg[3]) - 6) / 16); b <= Math.floor((Math.max(sg[1], sg[3]) + 6) / 16); b++) {
+            const key = a * 100000 + b;
+            const c = cells.get(key);
+            if (c) c.push(sg);
+            else cells.set(key, [sg]);
+          }
+        }
+      }
+    }
+    const shownDist = (x: number, z: number) => {
+      let best = 99;
+      for (const [ax, az, bx, bz, h] of cells.get(Math.floor(x / 16) * 100000 + Math.floor(z / 16)) ?? []) {
+        const ex = bx - ax;
+        const ez = bz - az;
+        const t = Math.max(0, Math.min(1, ((x - ax) * ex + (z - az) * ez) / (ex * ex + ez * ez || 1)));
+        best = Math.min(best, Math.hypot(x - ax - ex * t, z - az - ez * t) - h);
+      }
+      return best;
+    };
+    // the ground beside each station stays for its ways in (stationAccess.ts plans them round the city's lots): the
+    // strip along the track there, out to its stair towers
+    const byStation = (x: number, z: number) => STATION_XZ.some(([sx, sz]) => (x - sx) ** 2 + (z - sz) ** 2 < 38 * 38) && trackDist(x, z) < 19;
+    const fits = (l: Plot, clear: number) =>
+      !samplePts(l).some(
+        ([px, pz]) =>
+          inWater(px, pz) || inPark(px, pz) || inLandmark(px, pz, 2) || inHarbourfront(px, pz, 1.5) || nearBusStop(px, pz, 0.8) || nearWce(px, pz, 0.5) || inHero(px, pz) || cor.dist(px, pz) < clear || streamDist(px, pz) < 9 || inSetZone(px, pz, 2) || railNear(px, pz, 8) || shownDist(px, pz) < 0.6 || onFeature(px, pz, 1) || placeAt(px, pz) !== undefined || byStation(px, pz),
+      ) &&
+      !nearBridge(l.x, l.z, 2 + Math.hypot(l.w, l.d) / 2) &&
+      seawallDist(l.x, l.z) >= Math.min(l.w, l.d) / 2 + 0.8;
+    for (const v of vacant) {
+      const zone = ZONES[v.name];
+      if (!zone || !packed(v.l.x, v.l.z, v.name) || byStation(v.l.x, v.l.z)) continue;
+      buildLot(v.l, v.name, zone, v.lu, DENSE.has(v.name));
+    }
+    const STEP = lowEnd ? 4 : 3;
+    const SIZES: [number, number][] = [
+      [14, 12],
+      [12, 10],
+      [10, 9],
+      [8.5, 8],
+      [6.5, 6.5],
+      [5.2, 5.2],
+    ];
+    for (let gz = -120; gz < 420; gz += STEP) {
+      for (let gx = -260; gx < 360; gx += STEP) {
+        const oi = Math.floor((gx - ox0) / OCC);
+        const oj = Math.floor((gz - oz0) / OCC);
+        if (occ[oj * onx + oi] || shownDist(gx, gz) < 1.5) continue;
+        const name = hood(gx, gz);
+        const zone = ZONES[name];
+        if (!zone || !packed(gx, gz, name)) continue;
+        const lu = towerLand(name, landClass(gx, gz));
+        const dense = DENSE.has(name);
+        const dir = nearestRoadDir(gx, gz, 40);
+        const ry = dir ? Math.atan2(-dir[1], dir[0]) : 0;
+        for (const [w, d] of SIZES) {
+          const l: Plot = { x: gx, z: gz, w, d, ry };
+          // closer to the guideway than the other passes let a lot come (the height rule keeps these low under its deck)
+          if (!free(l) || !fits(l, dense ? 7.5 : CLEAR)) continue;
+          take(l);
+          buildLot(l, name, zone, lu, dense);
+          break;
+        }
+      }
+    }
+  }
+
   mark("lots");
+  // a mural only where the ground in front of its wall is open: none painted into a neighbour's wall
+  const open = murals.filter((m) => {
+    const nx = Math.sin(m.ry);
+    const nz = Math.cos(m.ry);
+    return [1.2, 3, 6].every((d) => {
+      const x = m.x + nx * d;
+      const z = m.z + nz * d;
+      return !lots.some((L) => Math.abs(L.x - x) < 20 && Math.abs(L.z - z) < 20 && inFootprint(L, x, z));
+    });
+  });
+  murals.length = 0;
+  murals.push(...open);
   phases.lotGeometry = Math.round(buildMs);
   for (const [k, v] of Object.entries(archMs)) if (v > 20) phases[`arch:${k}`] = Math.round(v);
   const out: CityGeometry = {
@@ -491,6 +677,7 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
     neon: shared.neon.build(),
     houses,
     lots,
+    murals,
     terrace,
     ms: 0,
     phases,

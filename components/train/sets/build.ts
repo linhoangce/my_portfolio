@@ -2216,11 +2216,36 @@ function more(c: Ctx): Partial<BuiltSet> {
   // the timber canopy along the front, on slim columns
   c.add(mats.timber, new BoxGeometry(3.4, 0.3, AW + 2), c.L(0, LF - 1.7, UP1 - 0.9));
   for (let a = A0; a <= A1 + 0.01; a += 6) c.add(mats.girder, new CylinderGeometry(0.12, 0.12, UP1 - 0.9 - base, 8), c.L(a, LF - 3.2, (base + UP1 - 0.9) / 2));
-  // the skybridge from the platform to the upper floor, glazed, with a planted rail
-  const bl = LF - 11.4;
-  c.add(mats.plat, new BoxGeometry(bl, 0.4, 4.2), c.L(-6, 11.4 + bl / 2, UP1 - 0.2));
-  for (const s of [-1, 1]) c.add(mats.pane, new BoxGeometry(bl, 2.8, 0.1), c.L(-6 + s * 2.05, 11.4 + bl / 2, UP1 + 1.4));
-  c.add(mats.canopy, new BoxGeometry(bl, 0.2, 4.4), c.L(-6, 11.4 + bl / 2, UP1 + 2.9));
+  // the skybridge from the platform to the upper floor: glazed walls and roof on timber frames, between two of the
+  // station gridshell's ribs (2.58 apart from the platform's end) and reaching in under its glass to meet it, fare gates
+  // where it comes into the hall (box sizes: lateral, up, along)
+  {
+    const BA = -6.46;
+    const BW = 2.0;
+    const l0 = 11.5;
+    const lIn = 9.7;
+    const roofY = Math.max(UP1, 1.4) + 2.55;
+    const deckL = LF - l0;
+    c.add(mats.plat, new BoxGeometry(deckL, 0.4, BW + 0.2), c.L(BA, l0 + deckL / 2, UP1 - 0.2));
+    const wallL = LF - lIn;
+    for (const sd of [-1, 1]) {
+      c.add(mats.pane, new BoxGeometry(wallL, roofY - UP1, 0.06), c.L(BA + (sd * BW) / 2, lIn + wallL / 2, (UP1 + roofY) / 2));
+      for (let l = lIn; l <= LF + 0.01; l += wallL / 5) c.add(mats.timber, new BoxGeometry(0.14, roofY - UP1, 0.14), c.L(BA + (sd * BW) / 2, l, (UP1 + roofY) / 2));
+      c.add(mats.timber, new BoxGeometry(wallL, 0.22, 0.2), c.L(BA + (sd * BW) / 2, lIn + wallL / 2, roofY));
+    }
+    c.add(mats.pane, new BoxGeometry(wallL, 0.06, BW), c.L(BA, lIn + wallL / 2, roofY + 0.08));
+    for (let l = lIn; l <= LF + 0.01; l += wallL / 5) c.add(mats.timber, new BoxGeometry(0.16, 0.18, BW + 0.2), c.L(BA, l, roofY + 0.02));
+    // the fare gates across it at the hall's door: cabinets along the way through, violet validators toward the platform
+    const gl = LF - 1.4;
+    const dark = new MeshStandardMaterial({ color: 0x2b2f36, roughness: 0.6 });
+    const val = glowMat(0xa78bfa, 1.6);
+    for (let k = 0; k < 4; k++) {
+      const a = BA - BW / 2 + 0.15 + (k * (BW - 0.3)) / 3;
+      c.add(dark, new BoxGeometry(1.3, 1.0, 0.22), c.L(a, gl, UP1 + 0.5));
+      c.add(val, new BoxGeometry(0.2, 0.05, 0.18), c.L(a, gl - 0.5, UP1 + 1.03));
+      if (k < 3) c.add(mats.pane, new BoxGeometry(0.04, 0.7, (BW - 0.3) / 3 - 0.3), c.L(a + (BW - 0.3) / 6, gl, UP1 + 0.65));
+    }
+  }
   // the plaza's planters and benches
   for (let a = A0 + 2; a <= A1 - 2; a += 8) {
     c.add(mats.planter, new BoxGeometry(2.2, 0.8, 2.2), c.L(a, LF - 5.5, base + 0.4));

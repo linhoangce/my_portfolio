@@ -28,7 +28,10 @@ import { PLATFORM_LEN } from "./constants";
 import { merged, type Part } from "./merge";
 import { canvasTexture, paint } from "./shapes";
 import { doorLabel, paintDoorLabel, signFonts } from "./textures";
+import { accessParts } from "./accessKit";
 import { inRailCut } from "./rail";
+import { getCityData } from "./cityData";
+import { stationAccess } from "./stationAccess";
 import { isRoad } from "./roadNetwork";
 import { frameAt, groundAt, makeFrame, stationS } from "./track";
 import { useWorld } from "./world";
@@ -226,32 +229,31 @@ export function Stations() {
         ribs.push({ geo: new BoxGeometry(0.3, 0.3, PL), position: at(0, 9.45, 0) });
         for (const side of [1, -1]) lamps.push({ geo: new BoxGeometry(0.12, 0.08, 25), position: at(side * 8.2, 4.9, 0) });
       }
-      // the glass lift and a bridge down to the street on the left, behind the platform (the interchange has its own)
-      const lx = canopy === "hub" ? 0 : 13.4;
-      // behind the platform, unless that end stands over the Millennium's trench (Commercial–Broadway): then ahead
-      const lz = (() => {
-        const w = local(13.4, -10);
-        return inRailCut(w.x, w.z, 3) ? 10 : -10;
-      })();
-      if (lx) {
-        const drop = dropTo(lx, lz) + 1.4;
-        pane.push({ geo: new BoxGeometry(3, drop, 3), position: at(lx, 1.4 - drop / 2, lz) });
-        for (const [dx, dz] of [
-          [-1.5, -1.5],
-          [1.5, -1.5],
-          [-1.5, 1.5],
-          [1.5, 1.5],
-        ])
-          steel.push({ geo: new BoxGeometry(0.12, drop, 0.12), position: at(lx + dx, 1.4 - drop / 2, lz + dz) });
-        white.push({ geo: new BoxGeometry(3.4, 0.25, 3.4), position: at(lx, 1.45, lz) });
-        white.push({ geo: new BoxGeometry(2.2, 0.2, 5), position: at(lx - 1, 1.3, lz - Math.sign(lz) * 3.5) });
-        white.push({ geo: new BoxGeometry(3.6, 0.3, 3.6), position: at(lx, 1.4 - drop + 0.15, lz) });
-
-        // a pair of small wind turbines by the lift, turning in the wind off the inlet
+      // the ways in: fare gates at the ground, stairs and lifts up to each platform (stationAccess.ts)
+      const access = stationAccess(lowEnd, getCityData(lowEnd).lots).filter((e) => e.i === i);
+      const painted: Part[] = [];
+      for (const e of access) {
+        const p = accessParts(e, (x, z) => -dropTo(x, z));
+        painted.push(...p.painted);
+        pane.push(...p.glass);
+        steel.push(...p.steel);
+        edgeP.push(...p.glow);
+      }
+      // a pair of small wind turbines on masts beside the left platform, turning in the wind off the inlet, clear of
+      // the ways in (the interchange has none)
+      if (canopy !== "hub") {
+        const lz = (() => {
+          const w = local(15, -10);
+          return inRailCut(w.x, w.z, 3) ? 10 : -10;
+        })();
+        const tower = access.find((e) => e.side > 0 && e.kind === "tower");
         for (const dz of [-3.2, 3.2]) {
-          const tx = lx + 1.6;
-          const tz = lz + dz;
-          steel.push({ geo: new CylinderGeometry(0.09, 0.12, 4.2, 6), position: at(tx, 3.5, tz) });
+          const tx = 15.2;
+          const tz = (tower && Math.abs(tower.zTop - lz) < 7 ? -lz : lz) + dz;
+          const gy = -dropTo(tx, tz);
+          const w = local(tx, tz);
+          if (isRoad(w.x, w.z, 1) || inRailCut(w.x, w.z, 1)) continue;
+          steel.push({ geo: new CylinderGeometry(0.09, 0.14, 5.4 - gy, 6), position: at(tx, (5.4 + gy) / 2, tz) });
           g.updateMatrixWorld();
           rotors.push({ p: new Vector3(tx, 5.4, tz).applyMatrix4(g.matrixWorld), q: g.quaternion.clone(), a: i + dz });
         }
@@ -262,7 +264,7 @@ export function Stations() {
         [white, mats.plat, true],
         [edgeP, edgeMat, false],
         [[...steel, ...ribs], mats.canopy, ribs.length > 0],
-        [[...timber.map((p) => ({ ...p, geo: paint(p.geo, 0xb98a5a) })), ...green.map((p) => ({ ...p, geo: paint(p.geo, 0x5b8a45) }))], wood, true],
+        [[...timber.map((p) => ({ ...p, geo: paint(p.geo, 0xb98a5a) })), ...green.map((p) => ({ ...p, geo: paint(p.geo, 0x5b8a45) })), ...painted], wood, true],
         [solar, solarMat, false],
         [lamps, mats.lamp, false],
         [bannerA, mats.bannerA, false],
