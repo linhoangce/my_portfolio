@@ -66,6 +66,7 @@ import type { World } from "../world";
 import { bench, bollard, festoon, foodTruck, lit, type Pieces, pavilion, planter, shopGlow, stall, umbrellaTable, warmLights } from "../pavilion";
 import { inLandmark } from "../sites";
 import { COURTS, type FrameBox, GYM, MATS, PERGOLA, RUN_PATH, YOGA_DECK } from "./wellness";
+import { type BannerArt, boardsAtlas, galleryAtlas, PLAQUE_RATIO, screenTextures } from "./galleryArt";
 import { along, inCbSquare, lineLength, MARKET_HALF, MARKET_STREET, OCEAN_HALL, type Square, SQUARES, WOODLAND_LANE } from "./squares";
 import { fromStation, MAIN_COLUMN, SET_RECT, SET_SHIFT, SET_SIDE, SET_TREES, STATION_FRAMES, toStation } from "./zones";
 
@@ -2178,12 +2179,23 @@ function abckidz(c: Ctx): Partial<BuiltSet> {
 }
 
 // ------------------------------------------------------------------ 08 More projects · Joyce–Collingwood: the Project Gallery
+/** The Project Gallery's cloth banners, five on the arcade toward the line and five toward the street (galleryArt.ts). */
+const GALLERY_ART: { front: BannerArt[]; back: BannerArt[] } = {
+  front: ["jianzhi", "parol", "phulkari", "dongson", "salmon"],
+  back: ["rangoli", "bojagi", "girih", "asanoha", "papel"],
+};
+
 /**
- * The Project Gallery, an exhibition hall by the station: two storeys of timber and glass, the ground floor a skylit
- * gallery where each of the other projects is an exhibit (a model on a white plinth under its spotlight, a lit panel
- * with its name and what it is, its banner on the front and the back), the name of the gallery on all four sides; the
- * upper floor, a workshop reached by a glazed skybridge from the platform; a saw-tooth roof with solar panels on its
- * slopes and north lights between, a green wall at one end, a timber canopy along the front and a plaza of planters.
+ * Joyce–Collingwood's Project Gallery, one hall of the neighbourhood's cultures on the old footprint:
+ * - a Chinese two-tier roof: green glazed tiles over a hip-and-gable upper roof with upturned eaves and a gold ridge
+ *   curling at its ends, and a lower pent roof wrapping the hall at the upper floor, its sunny slope laid in solar tiles;
+ * - a shophouse arcade: red lacquered columns with bracket sets under the pent eave, the stalls behind warm glass, red
+ *   lanterns at every column, ten community artworks hung as cloth banners between them;
+ * - the upper floor screened in Filipino capiz windows and South Asian jali in turn, glowing after dark, parol stars in
+ *   its windows;
+ * - two sandstone chhatri kiosks flanking the way in, and the hall's name on a lacquered plaque on every side.
+ * Inside, a stall for each of the other projects (data moreProjects), and upstairs a workshop; the skybridge comes in
+ * from the platform at the upper floor.
  */
 function more(c: Ctx): Partial<BuiltSet> {
   const { mats } = c.world;
@@ -2200,217 +2212,459 @@ function more(c: Ctx): Partial<BuiltSet> {
   const LM = (LF + LB) / 2;
   const LW = LB - LF;
   const AW = A1 - A0;
+  const H1 = UP1 - base;
+  const zs = Math.sign(c.L(1, 0, 0)[2]) || 1;
+  // the painted parts, some glowing after dark (the lanterns, the parols): one vertex-coloured material
+  const vc = shopGlow(new MeshStandardMaterial({ vertexColors: true, roughness: 0.6 }), c.world);
+  const part = (geo: BufferGeometry, hex: number, a: number, l: number, u: number, glow = 0) => {
+    const g = paint(geo, hex);
+    c.add(vc, glow ? lit(g, glow) : g, c.L(a, l, u));
+  };
+  const RED = 0xb3261e;
+  const GOLD = 0xd4a641;
+  const GREEN = 0x2f7d5a;
+  const SANDSTONE = 0xd8b98a;
   // the plinth and the plaza in front, down to the ground
   c.add(mats.plat, new BoxGeometry(LW + 8, 3, AW + 6), c.L(0, LM - 3, base - 1.5));
-  // the market floor: glass between timber columns all round
-  c.add(mats.pane, new BoxGeometry(LW, UP1 - base, AW), c.L(0, LM, (base + UP1) / 2));
+  // the market floor: warm glass shopfronts between timber posts, set back behind the arcade
+  c.add(mats.pane, new BoxGeometry(LW, H1, AW), c.L(0, LM, (base + UP1) / 2));
   for (let a = A0; a <= A1 + 0.01; a += 4) {
-    for (const l of [LF, LB]) c.add(mats.timber, new BoxGeometry(0.5, UP1 - base, 0.5), c.L(a, l, (base + UP1) / 2));
+    for (const l of [LF, LB]) c.add(mats.timber, new BoxGeometry(0.4, H1, 0.4), c.L(a, l, (base + UP1) / 2));
   }
-  for (const a of [A0, A1]) for (let l = LF; l <= LB + 0.01; l += 4) c.add(mats.timber, new BoxGeometry(0.5, UP1 - base, 0.5), c.L(a, l, (base + UP1) / 2));
-  // a stall for each of the other projects (data moreProjects), side by side along the hall: a counter in the stall's
-  // colour, a lit board behind it with the project's name and what it is, and over its bay on the hall's front a
-  // shop sign with the name, reading from the train and the plaza
+  for (const a of [A0, A1]) for (let l = LF; l <= LB + 0.01; l += 4) c.add(mats.timber, new BoxGeometry(0.4, H1, 0.4), c.L(a, l, (base + UP1) / 2));
+
+  // a stall for each of the other projects (data moreProjects), side by side along the hall: a white plinth with a
+  // band of the project's colour, the model on it, a lit board behind it with the project's name and what it is (all
+  // the boards one atlas, galleryArt.ts)
   const fonts = fontOf();
   const STALL_COLS = [0xef4444, 0xf59e0b, 0x6366f1, 0x10b981, 0xec4899, 0x06b6d4, 0xfacc15];
-  const hex = (n: number) => `#${n.toString(16).padStart(6, "0")}`;
+  const hex = (k: number) => `#${k.toString(16).padStart(6, "0")}`;
   const n = moreProjects.length;
   const bay = AW / n;
-  const shopMats: MeshStandardMaterial[] = [];
   const anchors: Vector3[] = [];
-  const H1 = UP1 - base;
-  // wrap a line of copy into at most `max` lines of `width` px
-  const wrap = (g: CanvasRenderingContext2D, text: string, width: number, max: number) => {
-    const out: string[] = [];
-    let line = "";
-    for (const w of text.split(" ")) {
-      const t = line ? `${line} ${w}` : w;
-      if (g.measureText(t).width > width && line) {
-        out.push(line);
-        line = w;
-      } else line = t;
-    }
-    if (line) out.push(line);
-    if (out.length > max) out[max - 1] = `${out.slice(max - 1).join(" ").slice(0, 34)}…`;
-    return out.slice(0, max);
-  };
   const facing = -Math.PI / 2;
   const stallLight = glowMat(0xffe2b0, 0.6);
+  const boards = boardsAtlas(moreProjects, moreProjects.map((_, j) => hex(STALL_COLS[j % STALL_COLS.length])), fonts);
+  const boardMat = new MeshBasicMaterial({ map: boards.tex, toneMapped: false });
+  // a plane w × h showing the rectangle r of an atlas
+  const atlasPlane = (w: number, h: number, r: [number, number, number, number]) => {
+    const g = new PlaneGeometry(w, h);
+    const uv = g.attributes.uv;
+    for (let k = 0; k < uv.count; k++) uv.setXY(k, r[0] + uv.getX(k) * (r[2] - r[0]), r[1] + uv.getY(k) * (r[3] - r[1]));
+    return g;
+  };
   // the exhibits' models, each painted its project's colour, in one mesh
   const modelMat = new MeshStandardMaterial({ vertexColors: true, roughness: 0.35, metalness: 0.3 });
-  moreProjects.forEach((pr, j) => {
+  moreProjects.forEach((_, j) => {
     const col = STALL_COLS[j % STALL_COLS.length];
     const a = A0 + bay * (j + 0.5);
-    const accent = new MeshStandardMaterial({ color: 0x1b1d22, emissive: col, emissiveIntensity: 0.5, roughness: 0.5 });
-    shopMats.push(accent);
-    // the exhibit: a white plinth with a lit band at its foot, the model on it in the project's colour (each a shape of
-    // its own), its spotlight over it, and a white wall between bays
+    // the exhibit: a white plinth with a lit band of its colour at its foot, the model on it (each a shape of its own),
+    // its spotlight over it, and a white wall between bays
     c.add(mats.plat, new BoxGeometry(1.6, 1.0, 1.6), c.L(a, LM - 1, base + 0.5));
-    c.add(accent, new BoxGeometry(1.64, 0.08, 1.64), c.L(a, LM - 1, base + 0.06));
+    const band = new BoxGeometry(1.64, 0.08, 1.64);
+    const [su, sv] = boards.swatch[j];
+    for (let k = 0; k < band.attributes.uv.count; k++) band.attributes.uv.setXY(k, su, sv);
+    c.add(boardMat, band, c.L(a, LM - 1, base + 0.06));
     const model = [new IcosahedronGeometry(0.55, 0), new TorusGeometry(0.45, 0.16, 8, 20), new OctahedronGeometry(0.6, 0), new ConeGeometry(0.5, 1.1, 6), new BoxGeometry(0.75, 0.75, 0.75).rotateY(0.6).rotateX(0.5)][j % 5];
     c.add(modelMat, paint(model, col), c.L(a, LM - 1, base + 1.65));
     c.add(stallLight, new CylinderGeometry(0.25, 0.4, 0.3, 10), c.L(a, LM - 1, UP1 - 0.35));
     if (j > 0) c.add(mats.plat, new BoxGeometry(LW - 4, Math.min(3, H1 - 0.4), 0.2), c.L(A0 + bay * j, LM + 1, base + Math.min(3, H1 - 0.4) / 2));
-    // the panel on the wall behind it: the name and the line about it, lit, in a white frame
-    const board = canvasTex(512, 256, (g) => {
-      g.fillStyle = "#14161b";
-      g.fillRect(0, 0, 512, 256);
-      g.fillStyle = hex(col);
-      g.fillRect(0, 0, 512, 14);
-      g.fillStyle = "#f4f2ec";
-      g.font = `500 64px ${fonts.serif}`;
-      g.textBaseline = "top";
-      g.fillText(pr.title, 28, 40, 456);
-      g.fillStyle = "#b9bcc4";
-      g.font = `400 26px ${fonts.sans}`;
-      wrap(g, pr.copy, 456, 3).forEach((ln, k) => g.fillText(ln, 28, 130 + k * 34));
-    });
-    const boardMat = new MeshBasicMaterial({ map: board, toneMapped: false });
+    // the board on the wall behind it, two faces back to back: it reads from the counter and through the glass behind
     const bh = Math.min(2.6, H1 - 1.2);
-    // two faces back to back: the board reads from the counter and through the glass from behind
     for (const [ry, dl] of [
       [facing, 0],
       [-facing, 0.03],
-    ]) {
-      const bm = new Mesh(new PlaneGeometry(bay - 1.6, bh), boardMat);
-      bm.position.set(...c.L(a, LB - 4 + dl, base + 1.2 + bh / 2));
-      bm.rotation.y = ry;
-      c.group.add(bm);
-    }
+    ])
+      c.add(boardMat, atlasPlane(bay - 1.6, bh, boards.board[j]), c.L(a, LB - 4 + dl, base + 1.2 + bh / 2), [0, ry, 0]);
     // a warm lamp over the stall, under the upper floor
     c.add(stallLight, new BoxGeometry(LW - 6, 0.12, 0.5), c.L(a, LM, UP1 - 0.4));
-    // the shop sign over the bay on the front, facing out
-    const sign = canvasTex(512, 128, (g) => {
-      g.fillStyle = "#101216";
-      g.fillRect(0, 0, 512, 128);
-      g.fillStyle = hex(col);
-      g.fillRect(0, 110, 512, 18);
-      g.fillStyle = "#ffffff";
-      g.font = `500 62px ${fonts.serif}`;
-      g.textAlign = "center";
-      g.textBaseline = "middle";
-      g.fillText(pr.title, 256, 56, 480);
-    });
-    // over the bay on the front (toward the line) and again on the back (toward the street)
-    const signMat = new MeshBasicMaterial({ map: sign, toneMapped: false });
-    for (const [l, ry] of [
-      [LF - 0.3, facing],
-      [LB + 0.3, -facing],
-    ]) {
-      const sm = new Mesh(new PlaneGeometry(bay - 0.8, (bay - 0.8) / 4), signMat);
-      sm.position.set(...c.L(a, l, UP1 - 0.6));
-      sm.rotation.y = ry;
-      c.group.add(sm);
-    }
     anchors.push(new Vector3(...c.L(a, LF - 0.4, UP1 + 0.4)));
   });
-  // the floor between the storeys, and the upper floor: timber fins over glass
+
+  // the floor between the storeys
   c.add(mats.plat, new BoxGeometry(LW + 0.6, 0.5, AW + 0.6), c.L(0, LM, UP1));
-  c.add(mats.pane, new BoxGeometry(LW - 0.4, TOP - UP1, AW - 0.4), c.L(0, LM, (UP1 + TOP) / 2));
-  for (let a = A0 + 1; a < A1; a += 1.5) for (const l of [LF + 0.2, LB - 0.2]) c.add(mats.timber, new BoxGeometry(0.25, TOP - UP1, 0.25), c.L(a, l, (UP1 + TOP) / 2));
-  // what the building is, on all four sides of the upper floor, lit: its name, and what it holds
-  const nameTex = (w: number) =>
-    canvasTex(w, 256, (g) => {
-      g.fillStyle = "#101216";
-      g.fillRect(0, 0, w, 256);
-      g.fillStyle = "#a78bfa";
-      g.fillRect(0, 236, w, 20);
-      g.textBaseline = "middle";
-      g.fillStyle = "#ffffff";
-      g.font = `400 150px ${fonts.serif}`;
-      g.textAlign = w > 1500 ? "left" : "center";
-      g.fillText("Project Gallery", w > 1500 ? 60 : w / 2, w > 1500 ? 122 : 100, w - 80);
-      g.fillStyle = "#c9c4f2";
-      g.font = `500 44px ${fonts.mono}`;
-      if (w > 1500) {
-        g.textAlign = "right";
-        g.fillText(`SIDE PROJECTS · ${n} EXHIBITS`, w - 60, 122);
-      } else g.fillText("SIDE PROJECTS", w / 2, 200, w - 60);
-    });
-  const longName = new MeshBasicMaterial({ map: nameTex(2048), toneMapped: false });
-  const endName = new MeshBasicMaterial({ map: nameTex(1024), toneMapped: false });
-  const bandY = UP1 + 2.2;
-  // on the front it stands clear of the skybridge's doorway (along -8 to -4); on the back it runs the whole hall
-  for (const [l, ry, a, w] of [
-    [LF - 0.15, facing, 6.5, 19],
-    [LB + 0.15, -facing, 0, AW - 8],
-  ]) {
-    const m = new Mesh(new PlaneGeometry(w, w / 8), longName);
-    m.position.set(...c.L(a, l, bandY));
-    m.rotation.y = ry;
-    c.group.add(m);
+  // the upper floor's screens, capiz and jali in turn (a bay each, 3 wide), a gap on the front for the skybridge's door
+  const screens = screenTextures(c.lowEnd);
+  const screenMat = new MeshStandardMaterial({ map: screens.map, emissiveMap: screens.glow, emissive: 0xffffff, emissiveIntensity: 0.1, roughness: 0.75 });
+  const DOOR: [number, number] = [-7.75, -5.15];
+  const wallPos: number[] = [];
+  const wallNor: number[] = [];
+  const wallUv: number[] = [];
+  const y0 = UP1 + 0.25;
+  // a wall from p to q (along, lateral), facing out along (na, nl); u counts 6 to a tile from `u0`
+  const screen = (p: [number, number], q: [number, number], na: number, nl: number, u0: number) => {
+    const [pa, pl] = p;
+    const [qa, ql] = q;
+    const len = Math.hypot(qa - pa, ql - pl);
+    const corners: [number, number, number, number][] = [
+      [pa, pl, y0, 0],
+      [qa, ql, y0, 0],
+      [qa, ql, TOP + 0.35, 1],
+      [pa, pl, TOP + 0.35, 1],
+    ];
+    const P = corners.map(([a, l, u]) => c.L(a, l, u));
+    const N = c.L(na, nl, 0);
+    // wound to face out: (p0, p1, p2) faces along (p1 - p0) × (p2 - p0)
+    const e1 = [P[1][0] - P[0][0], P[1][1] - P[0][1], P[1][2] - P[0][2]];
+    const e2 = [P[2][0] - P[0][0], P[2][1] - P[0][1], P[2][2] - P[0][2]];
+    const fx = e1[1] * e2[2] - e1[2] * e2[1];
+    const fz = e1[0] * e2[1] - e1[1] * e2[0];
+    const out = fx * N[0] + fz * N[2] > 0;
+    for (const k of out ? [0, 1, 2, 0, 2, 3] : [0, 2, 1, 0, 3, 2]) {
+      wallPos.push(...P[k]);
+      wallNor.push(N[0], 0, N[2]);
+      wallUv.push((u0 + (k === 1 || k === 2 ? len : 0)) / 6, corners[k][3]);
+    }
+  };
+  screen([A0 + 0.2, LF + 0.2], [DOOR[0], LF + 0.2], 0, -1, 0);
+  screen([DOOR[1], LF + 0.2], [A1 - 0.2, LF + 0.2], 0, -1, DOOR[1] - A0);
+  screen([A0 + 0.2, LB - 0.2], [A1 - 0.2, LB - 0.2], 0, 1, 0);
+  for (const [a, s] of [
+    [A0 + 0.2, -1],
+    [A1 - 0.2, 1],
+  ] as const)
+    screen([a, LF + 0.2], [a, LB - 0.2], s, 0, 0);
+  const wallGeo = new BG();
+  wallGeo.setAttribute("position", new Float32BufferAttribute(wallPos, 3));
+  wallGeo.setAttribute("normal", new Float32BufferAttribute(wallNor, 3));
+  wallGeo.setAttribute("uv", new Float32BufferAttribute(wallUv, 2));
+  c.add(screenMat, wallGeo);
+  // the door's red frame where the skybridge comes in
+  for (const a of DOOR) part(new BoxGeometry(0.3, TOP - y0 - 1.2, 0.3), RED, a, LF + 0.1, y0 + (TOP - y0 - 1.2) / 2);
+  part(new BoxGeometry(0.34, 0.4, DOOR[1] - DOOR[0] + 0.3), RED, (DOOR[0] + DOOR[1]) / 2, LF + 0.1, TOP - 1.2);
+  // parol stars hung in the capiz windows, front and back, lit after dark
+  const PAROL = [0xd4342c, 0xf2b632, 0x2f6bd0, 0x2e9b5f, 0xe2559a];
+  const starShape = new Shape();
+  for (let k = 0; k < 10; k++) {
+    const ang = Math.PI / 2 + (k / 10) * Math.PI * 2;
+    const r = k % 2 ? 0.24 : 0.58;
+    if (k) starShape.lineTo(Math.cos(ang) * r, Math.sin(ang) * r);
+    else starShape.moveTo(Math.cos(ang) * r, Math.sin(ang) * r);
   }
-  const zs = Math.sign(c.L(1, 0, 0)[2]) || 1;
-  for (const [a, out] of [
-    [A0 - 0.3, -1],
-    [A1 + 0.85, 1],
-  ]) {
-    const m = new Mesh(new PlaneGeometry(LW - 3, (LW - 3) / 4), endName);
-    m.position.set(...c.L(a, LM, bandY));
-    // facing out along the hall (local z is along × zs)
-    m.rotation.y = out * zs > 0 ? 0 : Math.PI;
-    c.group.add(m);
+  let pk = 0;
+  for (let a = A0 + 1.5; a < A1; a += 6) {
+    for (const [l, s] of [
+      [LF + 0.2, -1],
+      [LB - 0.2, 1],
+    ] as const) {
+      // clear of the skybridge's door and of the name plaques
+      if (s < 0 && ((a > DOOR[0] - 1 && a < DOOR[1] + 1) || (a > 0 && a < 13))) continue;
+      if (s > 0 && a > -6.6 && a < 6.6) continue;
+      const col = PAROL[pk++ % PAROL.length];
+      const y = UP1 + 2.9;
+      const lo = l + s * 0.3;
+      c.add(vc, lit(paint(new ExtrudeGeometry(starShape, { depth: 0.1, bevelEnabled: false }).rotateY(Math.PI / 2), col), 1.1), c.L(a, lo, y));
+      c.add(vc, lit(paint(new TorusGeometry(0.62, 0.035, 4, 20).rotateY(Math.PI / 2), 0xf2e2b0), 0.8), c.L(a, lo, y));
+      for (const dt of [-0.18, 0.18]) part(new BoxGeometry(0.04, 1.0, 0.06), 0xf2b632, a + dt * zs, lo, y - 1.05, 0.8);
+    }
   }
-  // upstairs, a workshop for whoever builds the next one: long tables under lamps, a screen at the end
+  // upstairs, a workshop for whoever builds the next one: long tables under lamps
   for (let a = A0 + 4; a <= A1 - 4; a += 7) {
     c.add(mats.timber, new BoxGeometry(LW - 7, 0.15, 1.6), c.L(a, LM, UP1 + 1.05));
     for (const s of [-1, 1]) c.add(mats.timber, new BoxGeometry(LW - 7, 0.12, 0.4), c.L(a + s * 1.3, LM, UP1 + 0.7));
     c.add(stallLight, new BoxGeometry(LW - 8, 0.1, 0.3), c.L(a, LM, TOP - 0.5));
   }
-  // the saw-tooth roof: across the hall, each tooth a slope of solar panels facing the sun and a north light
-  const solar = new MeshStandardMaterial({ color: 0x23365c, roughness: 0.3, metalness: 0.5, envMap: c.world.envTex, envMapIntensity: 0.6 });
-  const TEETH = 6;
-  const tw = AW / TEETH;
-  const rise = 2.4;
-  const slope = Math.hypot(tw, rise);
-  const ang = Math.atan2(rise, tw);
-  for (let k = 0; k < TEETH; k++) {
-    const a = A0 + tw * (k + 0.5);
-    // tilted so its high edge meets the north light at the tooth's far side (a turn about x lowers +z)
-    c.add(solar, new BoxGeometry(LW + 0.8, 0.18, slope), c.L(a, LM, TOP + rise / 2), [-ang * Math.sign(c.L(1, 0, 0)[2]), 0, 0]);
-    c.add(mats.pane, new BoxGeometry(LW + 0.8, rise, 0.12), c.L(a + tw / 2, LM, TOP + rise / 2));
+
+  // the roofs: surfaces over the plan (along, lateral), each quad flat in its own colour, faced up, a dark timber
+  // soffit under it and a red fascia round its eave
+  const roofPos: number[] = [];
+  const roofCol: number[] = [];
+  const lin = (hx: number) => {
+    const f = (v: number) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+    return [f(((hx >> 16) & 255) / 255), f(((hx >> 8) & 255) / 255), f((hx & 255) / 255)];
+  };
+  const tri = (p: V3[], col: number[], up: boolean) => {
+    const e1 = [p[1][0] - p[0][0], p[1][1] - p[0][1], p[1][2] - p[0][2]];
+    const e2 = [p[2][0] - p[0][0], p[2][1] - p[0][1], p[2][2] - p[0][2]];
+    const ny = e1[2] * e2[0] - e1[0] * e2[2];
+    const order = ny > 0 === up ? [0, 1, 2] : [0, 2, 1];
+    for (const k of order) {
+      roofPos.push(...p[k]);
+      roofCol.push(...col);
+    }
+  };
+  const quad = (p: V3[], hx: number, up = true) => {
+    const col = lin(hx);
+    tri([p[0], p[1], p[2]], col, up);
+    tri([p[0], p[2], p[3]], col, up);
+  };
+  const SOFFIT = 0x5a3a24;
+  /** Lay a roof: its height h(a, l) over [a0, a1] × [l0, l1] in steps, each quad's colour by tone(a, l, i, j) (its middle
+   * and its place in the grid), skipping quads where skip(a, l); the soffit `thick` below it, and the fascia along the
+   * outer edges. */
+  const roof = (as: number[], ls: number[], h: (a: number, l: number) => number, tone: (a: number, l: number, i: number, j: number) => number, skip: (a: number, l: number) => boolean, thick: number) => {
+    for (let i = 0; i + 1 < as.length; i++) {
+      for (let j = 0; j + 1 < ls.length; j++) {
+        const am = (as[i] + as[i + 1]) / 2;
+        const lm = (ls[j] + ls[j + 1]) / 2;
+        if (skip(am, lm)) continue;
+        const pts: [number, number][] = [
+          [as[i], ls[j]],
+          [as[i + 1], ls[j]],
+          [as[i + 1], ls[j + 1]],
+          [as[i], ls[j + 1]],
+        ];
+        quad(
+          pts.map(([a, l]) => c.L(a, l, h(a, l))),
+          tone(am, lm, i, j),
+        );
+        quad(
+          pts.map(([a, l]) => c.L(a, l, h(a, l) - thick)),
+          SOFFIT,
+          false,
+        );
+        // the fascia on an outer edge (or one beside a skipped quad)
+        const edges: [number, number, boolean][] = [
+          [0, 1, j === 0 || skip(am, ls[j] - 0.01 - (ls[j + 1] - ls[j]) / 2)],
+          [1, 2, i + 2 === as.length || skip(as[i + 1] + 0.01 + (as[i + 1] - as[i]) / 2, lm)],
+          [2, 3, j + 2 === ls.length || skip(am, ls[j + 1] + 0.01 + (ls[j + 1] - ls[j]) / 2)],
+          [3, 0, i === 0 || skip(as[i] - 0.01 - (as[i + 1] - as[i]) / 2, lm)],
+        ];
+        for (const [x, y, open] of edges) {
+          if (!open) continue;
+          const [pa, pl] = pts[x];
+          const [qa, ql] = pts[y];
+          const f = [c.L(pa, pl, h(pa, pl)), c.L(qa, ql, h(qa, ql)), c.L(qa, ql, h(qa, ql) - thick), c.L(pa, pl, h(pa, pl) - thick)];
+          const col = lin(RED);
+          // faced away from the quad's middle
+          const mid = c.L(am, lm, 0);
+          const e1 = [f[1][0] - f[0][0], f[1][2] - f[0][2]];
+          const nx = e1[1];
+          const nz = -e1[0];
+          const outward = nx * (f[0][0] - mid[0]) + nz * (f[0][2] - mid[2]) > 0;
+          const o = outward ? [0, 1, 2, 0, 2, 3] : [0, 2, 1, 0, 3, 2];
+          // (a, b, c) faces along (b - a) × (c - a): its horizontal part is (e1.z, -e1.x) for the first winding
+          for (const k of o) {
+            roofPos.push(...f[k]);
+            roofCol.push(...col);
+          }
+        }
+      }
+    }
+  };
+  const steps = (from: number, to: number, step: number, keep: number[] = []) => {
+    const out: number[] = [];
+    const k = Math.max(1, Math.round((to - from) / step));
+    for (let i = 0; i <= k; i++) out.push(from + ((to - from) * i) / k);
+    for (const v of keep) if (v > from && v < to && !out.some((o) => Math.abs(o - v) < 1e-3)) out.push(v);
+    return out.sort((x, y) => x - y);
+  };
+  // the tiles' ribs a quad wide, in two greens close together
+  const step = c.lowEnd ? 1.0 : 0.5;
+  const GREEN2 = 0x286c4e;
+  // the lower tier: a pent roof round the hall from the upper floor's foot out over the arcade, mitred at the corners,
+  // its corners turned up; the slope facing the sun laid in dark solar tiles; open over the skybridge
+  const PO = 1.6;
+  const lift = (a: number, l: number, a0: number, a1: number, l0: number, l1: number, r: number, up: number) => {
+    const d = Math.hypot(Math.min(a - a0, a1 - a), Math.min(l - l0, l1 - l));
+    return up * Math.max(0, 1 - d / r) ** 2;
+  };
+  const pentD = (a: number, l: number) => Math.max(A0 - a, a - A1, LF - l, l - LB, 0);
+  const pentH = (a: number, l: number) => UP1 + 0.8 - (pentD(a, l) / PO) * 0.95 + lift(a, l, A0 - PO, A1 + PO, LF - PO, LB + PO, 3, 0.45);
+  // which way each of the pent's four slopes faces in the world: the sunniest (most southerly, +z) takes the solar tiles
+  const sideOf = (a: number, l: number) => {
+    const da = Math.max(A0 - a, a - A1);
+    const dl = Math.max(LF - l, l - LB);
+    return dl >= da ? (l < LM ? 0 : 1) : a < 0 ? 2 : 3;
+  };
+  const outwardZ = [
+    [0, -1],
+    [0, 1],
+    [-1, 0],
+    [1, 0],
+  ].map(([da, dl]) => fromStation(c.i, da, LM + dl)[1] - fromStation(c.i, 0, LM)[1]);
+  const sunny = outwardZ.indexOf(Math.max(...outwardZ));
+  roof(
+    steps(A0 - PO, A1 + PO, step, [A0, A1, DOOR[0], DOOR[1]]),
+    steps(LF - PO, LB + PO, step, [LF, LB]),
+    pentH,
+    (a, l, i, j) => (sideOf(a, l) === sunny ? ((i + j) % 2 ? 0x1c2a44 : 0x24365a) : (sideOf(a, l) < 2 ? i : j) % 2 ? GREEN : GREEN2),
+    (a, l) => pentD(a, l) <= 0 || (l < LF && a > DOOR[0] && a < DOOR[1]),
+    0.2,
+  );
+  // the upper tier: hip-and-gable (xieshan), its eaves 1.5 out; the ends hipped up to the gables, set back 3.4 from
+  // them, the long slopes rising to a gold ridge between; every slope sagging a little, its corners turned up
+  const EO = 1.5;
+  const ea0 = A0 - EO;
+  const ea1 = A1 + EO;
+  const el0 = LF - EO;
+  const el1 = LB + EO;
+  const W2 = (el1 - el0) / 2;
+  const RISE = 2.4;
+  const GABLE = 3.4;
+  const eaveY = TOP + 0.3;
+  const longH = (l: number) => eaveY + RISE * (Math.min(l - el0, el1 - l, W2) / W2) ** 1.6;
+  const hipH = (a: number) => eaveY + RISE * 0.45 * Math.min(1, Math.min(a - ea0, ea1 - a) / GABLE) ** 1.4;
+  const upturn = (a: number, l: number) => lift(a, l, ea0, ea1, el0, el1, 3.5, 0.6);
+  const ends = [ea0 + GABLE, ea1 - GABLE];
+  const ls = steps(el0, el1, step, [LM]);
+  const tiles = (a: number, l: number, i: number, j: number) => {
+    const da = Math.min(a - ea0, ea1 - a);
+    const dl = Math.min(l - el0, el1 - l);
+    // the tiles' ribs run down each slope: across the long slopes along the hall, across the hips along the ends
+    return (da < GABLE && da < dl ? j : i) % 2 ? GREEN : GREEN2;
+  };
+  // the two hipped ends, then the gabled middle (separate, so the gables stand sheer between them)
+  roof(steps(ea0, ends[0], step), ls, (a, l) => Math.min(longH(l), hipH(a)) + upturn(a, l), tiles, () => false, 0.22);
+  roof(steps(ends[1], ea1, step), ls, (a, l) => Math.min(longH(l), hipH(a)) + upturn(a, l), tiles, () => false, 0.22);
+  roof(steps(ends[0], ends[1], step), ls, (a, l) => longH(l) + upturn(a, l), tiles, () => false, 0.22);
+  // the gables: red boards between the hip's top and the gable's slopes, a gold fish hanging at each peak
+  for (const a of ends) {
+    for (let j = 0; j + 1 < ls.length; j++) {
+      const [l0, l1] = [ls[j], ls[j + 1]];
+      const lo0 = Math.min(longH(l0), eaveY + RISE * 0.45);
+      const lo1 = Math.min(longH(l1), eaveY + RISE * 0.45);
+      if (longH(l0) - lo0 < 0.01 && longH(l1) - lo1 < 0.01) continue;
+      const f = [c.L(a, l0, lo0), c.L(a, l1, lo1), c.L(a, l1, longH(l1) - 0.05), c.L(a, l0, longH(l0) - 0.05)];
+      for (const s of [1, -1]) {
+        // both faces, the outer one toward its end
+        const o = s > 0 ? [0, 1, 2, 0, 2, 3] : [0, 2, 1, 0, 3, 2];
+        for (const k of o) {
+          roofPos.push(...f[k]);
+          roofCol.push(...lin(0x9e2a1f));
+        }
+      }
+    }
+    part(new BoxGeometry(0.12, 0.7, 0.3), GOLD, a + Math.sign(a) * 0.05, LM, longH(LM) - 0.45);
   }
-  // a green wall at the end facing the street, and a planted strip along the roof's edge
-  c.add(mats.roofGreen, new BoxGeometry(LW - 2, TOP - base - 1, 0.5), c.L(A1 + 0.5, LM, (base + TOP - 1) / 2));
-  c.add(mats.roofGreen, new BoxGeometry(1, 0.6, AW), c.L(0, LB + 0.6, TOP + 0.3));
-  // the timber canopy along the front, on slim columns
-  c.add(mats.timber, new BoxGeometry(3.4, 0.3, AW + 2), c.L(0, LF - 1.7, UP1 - 0.9));
-  for (let a = A0; a <= A1 + 0.01; a += 6) c.add(mats.girder, new CylinderGeometry(0.12, 0.12, UP1 - 0.9 - base, 8), c.L(a, LF - 3.2, (base + UP1 - 0.9) / 2));
+  const roofGeo = new BG();
+  roofGeo.setAttribute("position", new Float32BufferAttribute(roofPos, 3));
+  roofGeo.setAttribute("color", new Float32BufferAttribute(roofCol, 3));
+  roofGeo.setAttribute("uv", new Float32BufferAttribute(new Float32Array((roofPos.length / 3) * 2), 2));
+  roofGeo.computeVertexNormals();
+  c.add(vc, roofGeo);
+  // the gold ridge between the gables, curling up at both ends
+  const ridgeY = longH(LM);
+  part(new BoxGeometry(0.34, 0.3, ends[1] - ends[0] + 0.4), GOLD, 0, LM, ridgeY + 0.1);
+  for (const [a, s] of [
+    [ends[0], -1],
+    [ends[1], 1],
+  ] as const) {
+    const curl = new TorusGeometry(0.3, 0.09, 6, 12, Math.PI * 1.4).rotateZ(s > 0 ? -0.2 : Math.PI - 1.2);
+    // the curl stands in the along-up plane: torus in x-y, turned so its x runs along the hall
+    c.add(vc, paint(curl.rotateY(zs > 0 ? -Math.PI / 2 : Math.PI / 2), GOLD), c.L(a - s * 0.1, LM, ridgeY + 0.5));
+  }
+
+  // the arcade: red lacquered columns on stone bases round the hall under the pent eave, a bracket set on each (stacked
+  // blocks in red, green and gold under a red beam), a red lantern hung from each
+  const COL_A = [-18, -13.5, -9, -4.5, 0, 4.5, 9, 13.5, 18];
+  const colTop = UP1 - 0.95;
+  const column = (a: number, l: number, alongA: boolean) => {
+    part(new CylinderGeometry(0.34, 0.38, 0.28, 10), 0x8d8a83, a, l, base + 0.14);
+    part(new CylinderGeometry(0.2, 0.23, colTop - base - 0.28, 10), RED, a, l, (base + 0.28 + colTop) / 2);
+    // the brackets: each tier longer along the beam than the one under it
+    const along = (len: number, w: number) => (alongA ? new BoxGeometry(w, 0.18, len) : new BoxGeometry(len, 0.18, w));
+    part(new BoxGeometry(0.5, 0.18, 0.5), RED, a, l, colTop + 0.09);
+    part(along(1.0, 0.42), GREEN, a, l, colTop + 0.27);
+    part(along(1.5, 0.36), RED, a, l, colTop + 0.45);
+    part(along(1.5, 0.38), GOLD, a, l, colTop + 0.36);
+    // the lantern, on the column's outer face
+    const [la, ll] = alongA ? [a, l + (l < LM ? -0.42 : 0.42)] : [a + (a < 0 ? -0.42 : 0.42), l];
+    part(new CylinderGeometry(0.015, 0.015, 0.35, 3), 0x24272c, la, ll, colTop - 0.1);
+    part(new SphereGeometry(0.3, 10, 7).scale(1, 1.25, 1), 0xd8261e, la, ll, colTop - 0.6, 0.9);
+    for (const dy of [-0.38, 0.38]) part(new CylinderGeometry(0.16, 0.16, 0.08, 8), GOLD, la, ll, colTop - 0.6 + dy);
+    part(new CylinderGeometry(0.03, 0.06, 0.4, 5), 0xf2b632, la, ll, colTop - 1.18);
+  };
+  for (const a of COL_A) {
+    column(a, LF - 1.3, true);
+    column(a, LB + 1.3, true);
+  }
+  for (let l = LF; l <= LB + 0.01; l += 4) {
+    column(A0 - 1.3, l, false);
+    column(A1 + 1.3, l, false);
+  }
+  // the beams over the columns, round the arcade
+  const beamY = colTop + 0.66;
+  for (const l of [LF - 1.3, LB + 1.3]) part(new BoxGeometry(0.3, 0.25, AW + 2.9), RED, 0, l, beamY);
+  for (const a of [A0 - 1.3, A1 + 1.3]) part(new BoxGeometry(LW + 2.9, 0.25, 0.3), RED, a, LM, beamY);
+
+  // the banners between the columns, five toward the line and five toward the street, on gold rods (the skybridge's
+  // bay and the doors left open)
+  const arts = [...GALLERY_ART.front, ...GALLERY_ART.back];
+  const atlas = galleryAtlas(c.lowEnd, arts, n, fonts);
+  const artMat = new MeshStandardMaterial({ map: atlas.tex, emissiveMap: atlas.tex, emissive: 0xffffff, emissiveIntensity: 0.05, roughness: 0.85 });
+  const BW = 3.2;
+  const BH = Math.min(3.0, H1 - 1.6);
+  const BAYS = { front: [-15.75, -11.25, 6.75, 11.25, 15.75], back: [-15.75, -11.25, -2.25, 11.25, 15.75] };
+  arts.forEach((_, k) => {
+    const front = k < 5;
+    const a = (front ? BAYS.front : BAYS.back)[k % 5];
+    const l = front ? LF - 1.3 : LB + 1.3;
+    const top = beamY - 0.2;
+    c.add(artMat, atlasPlane(BW, BH, atlas.banner[k]), c.L(a, l, top - 0.1 - BH / 2), [0, front ? facing : -facing, 0]);
+    part(new CylinderGeometry(0.04, 0.04, BW + 0.4, 6).rotateX(Math.PI / 2), GOLD, a, l, top - 0.05);
+    part(new CylinderGeometry(0.03, 0.03, BW + 0.1, 5).rotateX(Math.PI / 2), 0x3b2416, a, l, top - 0.15 - BH);
+  });
+  // the name plaque on all four sides of the upper floor, in black lacquer framed red and gold (the atlas's plaque)
+  const plaqueAt: [number, number, number, number][] = [
+    [6.5, LF + 0.2, -1, 12],
+    [0, LB - 0.2, 1, 12],
+    [A0 + 0.2, LM, -1, 9],
+    [A1 - 0.2, LM, 1, 9],
+  ];
+  plaqueAt.forEach(([a, l, s, w], k) => {
+    const h = w / PLAQUE_RATIO;
+    const y = UP1 + 2.55;
+    const onLong = k < 2;
+    const [fa, fl] = onLong ? [a, l + s * 0.2] : [a + s * 0.2, l];
+    part(onLong ? new BoxGeometry(0.16, h + 0.3, w + 0.3) : new BoxGeometry(w + 0.3, h + 0.3, 0.16), RED, onLong ? a : a + s * 0.1, onLong ? l + s * 0.1 : l, y);
+    const ry = onLong ? (s < 0 ? facing : -facing) : s * zs > 0 ? 0 : Math.PI;
+    c.add(artMat, atlasPlane(w, h, atlas.plaque), c.L(fa, fl, y), [0, ry, 0]);
+  });
+
+  // the plaza: two chhatri kiosks of sandstone flanking the way in (four columns, a deep eave, a dome and a gold
+  // finial), planters and benches either side
+  for (const a of [-3, 3]) {
+    const l = LF - 4.3;
+    part(new BoxGeometry(2.4, 0.4, 2.4), SANDSTONE, a, l, base + 0.2);
+    for (const [da, dl] of [
+      [-0.85, -0.85],
+      [0.85, -0.85],
+      [-0.85, 0.85],
+      [0.85, 0.85],
+    ])
+      part(new CylinderGeometry(0.13, 0.16, 2.2, 8), SANDSTONE, a + da, l + dl, base + 1.5);
+    part(new BoxGeometry(2.7, 0.14, 2.7), 0xc9a878, a, l, base + 2.65);
+    part(new CylinderGeometry(0.85, 0.9, 0.3, 14), SANDSTONE, a, l, base + 2.87);
+    part(new SphereGeometry(0.9, 14, 7, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 1.15, 1), 0xe3c9a0, a, l, base + 3.0);
+    part(new ConeGeometry(0.12, 0.6, 8), GOLD, a, l, base + 4.35);
+    part(new SphereGeometry(0.1, 8, 6), GOLD, a, l, base + 4.1);
+  }
+  for (const a of [-16, -8, 8, 16]) {
+    c.add(mats.planter, new BoxGeometry(2.2, 0.8, 2.2), c.L(a, LF - 5.5, base + 0.4));
+    c.add(mats.roofGreen, new SphereGeometry(1.2, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), c.L(a, LF - 5.5, base + 0.8));
+  }
+  for (const a of [-12, 12]) c.add(mats.timber, new BoxGeometry(0.6, 0.45, 2.6), c.L(a, LF - 5.5, base + 0.25));
   // the skybridge from the platform to the upper floor: glazed walls and roof on timber frames, between two of the
-  // station gridshell's ribs (2.58 apart from the platform's end) and reaching in under its glass to meet it, fare gates
-  // where it comes into the hall (box sizes: lateral, up, along)
+  // station gridshell's ribs (2.58 apart from the platform's end) and reaching in under its glass to meet it (box sizes:
+  // lateral, up, along)
   {
     const BA = -6.46;
-    const BW = 2.0;
+    const BWD = 2.0;
     const l0 = 11.5;
     const lIn = 9.7;
     const roofY = Math.max(UP1, 1.4) + 2.55;
     const deckL = LF - l0;
-    c.add(mats.plat, new BoxGeometry(deckL, 0.4, BW + 0.2), c.L(BA, l0 + deckL / 2, UP1 - 0.2));
+    c.add(mats.plat, new BoxGeometry(deckL, 0.4, BWD + 0.2), c.L(BA, l0 + deckL / 2, UP1 - 0.2));
     const wallL = LF - lIn;
     for (const sd of [-1, 1]) {
-      c.add(mats.pane, new BoxGeometry(wallL, roofY - UP1, 0.06), c.L(BA + (sd * BW) / 2, lIn + wallL / 2, (UP1 + roofY) / 2));
-      for (let l = lIn; l <= LF + 0.01; l += wallL / 5) c.add(mats.timber, new BoxGeometry(0.14, roofY - UP1, 0.14), c.L(BA + (sd * BW) / 2, l, (UP1 + roofY) / 2));
-      c.add(mats.timber, new BoxGeometry(wallL, 0.22, 0.2), c.L(BA + (sd * BW) / 2, lIn + wallL / 2, roofY));
+      c.add(mats.pane, new BoxGeometry(wallL, roofY - UP1, 0.06), c.L(BA + (sd * BWD) / 2, lIn + wallL / 2, (UP1 + roofY) / 2));
+      for (let l = lIn; l <= LF + 0.01; l += wallL / 5) c.add(mats.timber, new BoxGeometry(0.14, roofY - UP1, 0.14), c.L(BA + (sd * BWD) / 2, l, (UP1 + roofY) / 2));
+      c.add(mats.timber, new BoxGeometry(wallL, 0.22, 0.2), c.L(BA + (sd * BWD) / 2, lIn + wallL / 2, roofY));
     }
-    c.add(mats.pane, new BoxGeometry(wallL, 0.06, BW), c.L(BA, lIn + wallL / 2, roofY + 0.08));
-    for (let l = lIn; l <= LF + 0.01; l += wallL / 5) c.add(mats.timber, new BoxGeometry(0.16, 0.18, BW + 0.2), c.L(BA, l, roofY + 0.02));
-  }
-  // the plaza's planters and benches
-  for (let a = A0 + 2; a <= A1 - 2; a += 8) {
-    c.add(mats.planter, new BoxGeometry(2.2, 0.8, 2.2), c.L(a, LF - 5.5, base + 0.4));
-    c.add(mats.roofGreen, new SphereGeometry(1.2, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), c.L(a, LF - 5.5, base + 0.8));
-    c.add(mats.timber, new BoxGeometry(0.6, 0.45, 2.6), c.L(a + 4, LF - 5.5, base + 0.25));
+    c.add(mats.pane, new BoxGeometry(wallL, 0.06, BWD), c.L(BA, lIn + wallL / 2, roofY + 0.08));
+    for (let l = lIn; l <= LF + 0.01; l += wallL / 5) c.add(mats.timber, new BoxGeometry(0.16, 0.18, BWD + 0.2), c.L(BA, l, roofY + 0.02));
   }
   const city = c.world.buildings.solid;
   return {
     anchors,
     focus: new Vector3(...c.L(0, LM - 2, (base + TOP) / 2)),
     update: () => {
-      // the shopfronts glow brighter after dark
-      const n = Math.min(1, city.emissiveIntensity * 1.2);
-      for (const m of shopMats) m.emissiveIntensity = 0.5 + 1.3 * n;
-      stallLight.emissiveIntensity = 0.4 + 1.6 * n;
+      // after dark the banners and plaques glow in their own colours, the capiz and the jali light up from within
+      const night = Math.min(1, city.emissiveIntensity * 1.2);
+      artMat.emissiveIntensity = 0.05 + 0.55 * night;
+      screenMat.emissiveIntensity = 0.1 + 1.3 * night;
+      stallLight.emissiveIntensity = 0.4 + 1.6 * night;
     },
     // from across the line, looking over the station at the hall's lit front
     shot: { from: [-10, -34, 36], to: [-6, -26, 30], look: [0, 23, 0] },
