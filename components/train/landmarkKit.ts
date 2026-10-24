@@ -534,15 +534,19 @@ export function buildCanadaPlace(l: PlacedLandmark, world: World): Built {
   }
   const solidMesh = new Mesh(merge([...solid, ...mastGeo]), cityToned(world, new MeshStandardMaterial({ vertexColors: true, roughness: 0.7 })));
   solidMesh.receiveShadow = true;
-  // the cruise ship berthed on the east side, on the open inlet (the west side faces Coal Harbour's island and Stanley
-  // Park: no room to come and go), bow to the sea, toward the pier's end so its stern keeps off the bank at the
-  // pier's root (the bow reaches a little past the end)
+  // the cruise ship berthed on the east side, on the open inlet, bow to the sea, toward the pier's end so its stern
+  // keeps off the bank at the pier's root; and a second, three quarters its size, on the west side along its straight
+  // part and on past the prow (Coal Harbour's water there now open; nearer the shore it is too shallow), bow to the sea
+  // too; both in the same two meshes
   const BERTH = -shore * 16;
   const shipX = 15.5 + 4.4 + 0.4;
+  const WEST = { x: -(15.5 + 3.3 + 0.4), z: Z(0), s: 0.75 };
   const ship = cruiseShip(lowEnd);
+  const small = cruiseShip(lowEnd);
   const berth = (geo: BufferGeometry) => geo.rotateY(shore > 0 ? Math.PI : 0).translate(shipX, water + 0.05, BERTH);
-  const shipSolidGeo = berth(ship.solid);
-  const shipCabinGeo = berth(ship.cabins);
+  const westBerth = (geo: BufferGeometry) => geo.scale(WEST.s, WEST.s, WEST.s).rotateY(shore > 0 ? Math.PI : 0).translate(WEST.x, water + 0.05, WEST.z);
+  const shipSolidGeo = merge([berth(ship.solid), westBerth(small.solid)]);
+  const shipCabinGeo = merge([berth(ship.cabins), westBerth(small.cabins)]);
   const shipSolid = new Mesh(shipSolidGeo, cityToned(world, new MeshStandardMaterial({ vertexColors: true, roughness: 0.5, envMap: envTex, envMapIntensity: 0.4 })));
   const ct = cabinTexture();
   const shipCabins = new Mesh(shipCabinGeo, cityToned(world, new MeshStandardMaterial({ map: ct.map, emissiveMap: ct.glow, emissive: 0xffffff, roughness: 0.4, envMap: envTex, envMapIntensity: 0.5 }), 1.2));
@@ -563,6 +567,10 @@ export function buildCanadaPlace(l: PlacedLandmark, world: World): Built {
     ...[-24, -8, 8, 24].map((z) => {
       const [x, wz] = toWorld(shipX, z + BERTH);
       return { x, z: wz, y: l.padY + water, h: 16, w: 14, col: warm, gain: 0.5 };
+    }),
+    ...[-16, -5, 5, 16].map((z) => {
+      const [x, wz] = toWorld(WEST.x, z + WEST.z);
+      return { x, z: wz, y: l.padY + water, h: 12, w: 11, col: warm, gain: 0.45 };
     }),
   ]);
   events.followers.push((level, ev) => {
