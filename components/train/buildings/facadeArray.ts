@@ -1,5 +1,5 @@
 /**
- * Façades as one texture array: twenty-three families and five roofs, each a layer of a DataArrayTexture. RGB is the
+ * Façades as one texture array: twenty-six families and six roofs, each a layer of a DataArrayTexture. RGB is the
  * painted colour and alpha a tint mask (walls take the building's tint, glass and window frames keep their own
  * colour); a second array holds the lit windows for the night, eight floors by eight bays per layer. Two materials
  * (solid and glass) read both arrays through a small shader patch, so every building in a chunk is one draw call.
@@ -45,6 +45,7 @@ export type FamilyId =
   | "exo"
   | "salish"
   | "senakw"
+  | "jali"
   | "roof"
   | "copper"
   | "garden"
@@ -68,7 +69,7 @@ export const FAMILY: Record<FamilyId, { layer: number; bay: number; floor: numbe
   solar: { layer: 11, bay: 2.4, floor: 1.7, glass: true },
   /** Vancouverism: blue-green glass, a white slab edge at every floor, glass balconies. */
   vancouver: { layer: 12, bay: 2.4, floor: 1.7, glass: true },
-  /** Vancouver House's staggered white balcony frames over dark glass. */
+  /** Vancouver House's staggered white balcony frames over glass (the building's tint is the glass's). */
   pixel: { layer: 13, bay: 2.6, floor: 1.7, glass: true },
   /** Mass timber: warm vertical fins over glass, a white balcony band at every floor. */
   fins: { layer: 14, bay: 2.2, floor: 1.8, glass: false },
@@ -80,11 +81,11 @@ export const FAMILY: Record<FamilyId, { layer: number; bay: number; floor: numbe
   rainscreen: { layer: 17, bay: 2.4, floor: 1.8, glass: false },
   /** A deep precast concrete grid over recessed windows: the modernism of the sixties and seventies. */
   grid: { layer: 18, bay: 2.6, floor: 1.9, glass: false },
-  /** Ribbon windows between white slab bands that run unbroken round the building. */
+  /** Ribbon windows (the building's tint is the glass's) between white slab bands that run unbroken round it. */
   ribbon: { layer: 19, bay: 2.6, floor: 1.8, glass: false },
   /** Standing-seam metal with tall windows in timber reveals: the Flats' studios and lofts. */
   metal: { layer: 20, bay: 2.2, floor: 1.8, glass: false },
-  /** An office tower's vertical fins, bronze or champagne, over dark glass. */
+  /** An office tower's champagne fins and spandrels over glass (the building's tint is the glass's). */
   mullion: { layer: 21, bay: 2.4, floor: 1.8, glass: true },
   /** A white exoskeleton of curving diagonals over warm-lit glass, after the approved lattice tower. */
   exo: { layer: 22, bay: 2.6, floor: 1.8, glass: true },
@@ -98,15 +99,20 @@ export const FAMILY: Record<FamilyId, { layer: number; bay: number; floor: numbe
    * rails over them, a planter here and there; each bay its own, so the pattern does not read as a grid.
    */
   senakw: { layer: 24, bay: 2.4, floor: 1.9, glass: true },
-  roof: { layer: 25, bay: 3, floor: 3, glass: false },
-  copper: { layer: 26, bay: 3, floor: 3, glass: false },
-  garden: { layer: 27, bay: 3, floor: 3, glass: false },
-  shingle: { layer: 28, bay: 3, floor: 3, glass: false },
-  tile: { layer: 29, bay: 3, floor: 3, glass: false },
-  pad: { layer: 30, bay: 3, floor: 3, glass: false },
+  /**
+   * A South Asian jali: a pale sandstone screen (the tower's tint is the stone's) pierced in a lattice of eight-pointed
+   * stars, the rooms behind showing through it, lit through it after dark.
+   */
+  jali: { layer: 25, bay: 2.4, floor: 1.9, glass: false },
+  roof: { layer: 26, bay: 3, floor: 3, glass: false },
+  copper: { layer: 27, bay: 3, floor: 3, glass: false },
+  garden: { layer: 28, bay: 3, floor: 3, glass: false },
+  shingle: { layer: 29, bay: 3, floor: 3, glass: false },
+  tile: { layer: 30, bay: 3, floor: 3, glass: false },
+  pad: { layer: 31, bay: 3, floor: 3, glass: false },
 };
-const LAYERS = 31;
-const FACADE_LAYERS = 25;
+const LAYERS = 32;
+const FACADE_LAYERS = 26;
 
 /**
  * `wins` are the window rects of a bay-floor cell (256 px) that light at night; a façade whose windows differ from
@@ -224,6 +230,35 @@ function paintLayer(kind: FamilyId, P: Painter, R: Rng): void {
         }
       }
     }
+  } else if (kind === "jali") {
+    // the stone screen, a fine joint at every floor, and its stars cut through it in rows, each row half a star along
+    both("#ece0c8", wall, 0, 0, 512, 512);
+    P.cellWins = [];
+    cells((x, y) => {
+      rect(g, "#d9c9aa", x, y + 250, 256, 6);
+      const holes: [number, number, number, number][] = [];
+      for (let j = 0; j < 4; j++) {
+        for (let i = 0; i < 4; i++) {
+          const cx = 32 + i * 64 + (j % 2 ? 32 : 0);
+          const cy = 34 + j * 60;
+          if (cx > 240) continue;
+          for (const ctx of [g, m]) {
+            ctx.fillStyle = ctx === g ? "#2b2622" : keep;
+            ctx.beginPath();
+            for (let q = 0; q < 16; q++) {
+              const a = (q / 16) * Math.PI * 2;
+              const r = (q % 2 ? 11 : 22) * k;
+              ctx[q ? "lineTo" : "moveTo"]((x + cx) * k + Math.cos(a) * r, (y + cy) * k + Math.sin(a) * r);
+            }
+            ctx.closePath();
+            ctx.fill();
+          }
+          holes.push([cx - 14, cy - 14, 28, 28]);
+        }
+      }
+      P.cellWins?.push(holes);
+      P.wins.push(...holes.slice(0, 4));
+    });
   } else if (kind === "salish") {
     // boards: a light warm grain the tint turns to cedar, darker seams, each board its own shade
     both("#f1e6d6", wall, 0, 0, 512, 512);
@@ -288,13 +323,14 @@ function paintLayer(kind: FamilyId, P: Painter, R: Rng): void {
       P.wins.push([40, 50, 176, 130]);
     });
   } else if (kind === "balcony") {
-    both("#3d5568", keep, 0, 0, 512, 512);
+    // neutral glass the building's tint colours (bronze, smoke, emerald, cobalt...), white slab bands that keep theirs
+    both("#3a4047", keep, 0, 0, 512, 512);
     cells((x, y) => {
-      rect(g, "#5f8399", x, y + 30, 256, 150);
-      rect(g, "rgba(200,228,240,0.4)", x, y + 120, 256, 60);
-      both("#f4f2ec", wall, x, y + 180, 256, 30);
-      both("#d4d0c6", wall, x, y + 210, 256, 10);
-      rect(g, "#25313d", x + 126, y + 30, 4, 150);
+      both("#8d979e", wall, x, y + 30, 256, 150);
+      rect(g, "rgba(225,236,242,0.32)", x, y + 120, 256, 60);
+      both("#f4f2ec", keep, x, y + 180, 256, 30);
+      both("#d4d0c6", keep, x, y + 210, 256, 10);
+      both("#25313d", keep, x + 126, y + 30, 4, 150);
       P.wins.push([0, 30, 126, 150], [130, 30, 126, 150]);
     });
   } else if (kind === "glass") {
@@ -398,16 +434,16 @@ function paintLayer(kind: FamilyId, P: Painter, R: Rng): void {
       P.wins.push([6, 10, 118, 210], [134, 10, 118, 210]);
     });
   } else if (kind === "pixel") {
-    both("#2a3846", keep, 0, 0, 512, 512);
-    // floor-high boxes, white frames over dark glass, each floor shifted half a bay from the one below
+    both("#2c3238", keep, 0, 0, 512, 512);
+    // floor-high boxes, white frames over glass (the building's tint is the glass's), each floor shifted half a bay
     for (let row = 0; row < 2; row++) {
       const y = row * 256;
       const off = row ? 128 : 0;
       for (let q = -1; q < 2; q++) {
         const x = off + q * 256;
-        both("#eeeeea", wall, x + 8, y + 14, 240, 228);
+        both("#eeeeea", keep, x + 8, y + 14, 240, 228);
         rect(g, "rgba(0,0,0,0.28)", x + 8, y + 214, 240, 28);
-        both("#2f4152", keep, x + 30, y + 34, 196, 170);
+        both("#5d676f", wall, x + 30, y + 34, 196, 170);
         rect(g, "rgba(170,200,220,0.28)", x + 30, y + 34, 196, 46);
         rect(g, "#d9d8d2", x + 8, y + 14, 240, 6);
       }
@@ -501,10 +537,11 @@ function paintLayer(kind: FamilyId, P: Painter, R: Rng): void {
       P.wins.push([60, 58, 140, 140]);
     });
   } else if (kind === "ribbon") {
-    both("#f2f1ed", wall, 0, 0, 512, 512);
+    // white slab bands that keep their colour, the ribbon of glass between them the building's tint
+    both("#f2f1ed", keep, 0, 0, 512, 512);
     cells((x, y) => {
-      both("#4a6a80", keep, x, y + 18, 256, 156);
-      rect(g, "rgba(185,215,232,0.38)", x, y + 18, 256, 60);
+      both("#86919a", wall, x, y + 18, 256, 156);
+      rect(g, "rgba(225,236,242,0.3)", x, y + 18, 256, 60);
       for (let q = 0; q < 4; q++) both("#4d5d6c", keep, x + q * 64, y + 18, 3, 156);
       // the slab edge above casts a line of shadow on the glass
       rect(g, "rgba(0,0,0,0.25)", x, y + 18, 256, 8);
@@ -529,19 +566,21 @@ function paintLayer(kind: FamilyId, P: Painter, R: Rng): void {
     });
     P.wins.push([36, 26, 70, 198]);
   } else if (kind === "mullion") {
+    // neutral dark glass the building's tint colours, champagne fins and spandrels that keep theirs
     const gr = g.createLinearGradient(0, 0, 0, S);
-    gr.addColorStop(0, "#33414e");
-    gr.addColorStop(0.5, "#24303c");
-    gr.addColorStop(1, "#2d3a47");
+    gr.addColorStop(0, "#666d74");
+    gr.addColorStop(0.5, "#50575e");
+    gr.addColorStop(1, "#5c636a");
     g.fillStyle = gr;
     g.fillRect(0, 0, S, S);
+    rect(m, wall, 0, 0, 512, 512);
     for (let y = 0; y < 512; y += 256) {
-      rect(g, "rgba(160,195,220,0.16)", 0, y + 10, 512, 70);
-      both("#d9cdb8", wall, 0, y + 226, 512, 30);
+      rect(g, "rgba(200,215,228,0.16)", 0, y + 10, 512, 70);
+      both("#d9cdb8", keep, 0, y + 226, 512, 30);
       rect(g, "rgba(0,0,0,0.25)", 0, y + 222, 512, 4);
     }
     for (let x = 0; x < 512; x += 64) {
-      both("#e6dccb", wall, x, 0, 10, 512);
+      both("#e6dccb", keep, x, 0, 10, 512);
       rect(g, "rgba(0,0,0,0.3)", x + 10, 0, 5, 512);
     }
     cells(() => P.wins.push([16, 10, 44, 212], [80, 10, 44, 212], [144, 10, 44, 212], [208, 10, 44, 212]));
@@ -670,7 +709,7 @@ export function paintFacadeArrays(lowEnd: boolean): FacadeArrays {
     e.fillStyle = "#000";
     e.fillRect(0, 0, E, E);
     if (L < FACADE_LAYERS) {
-      const share = kind === "exo" ? 0.6 : kind === "dark" || kind === "mullion" ? 0.4 : kind === "warehouse" ? 0.45 : kind === "pixel" || kind === "vancouver" || kind === "ribbon" ? 0.38 : 0.32;
+      const share = kind === "jali" ? 0.7 : kind === "exo" ? 0.6 : kind === "dark" || kind === "mullion" ? 0.4 : kind === "warehouse" ? 0.45 : kind === "pixel" || kind === "vancouver" || kind === "ribbon" ? 0.38 : 0.32;
       const ke = E / 1024;
       for (let cy = 0; cy < 8; cy++) {
         for (let cx = 0; cx < 8; cx++) {
