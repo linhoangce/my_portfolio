@@ -20,6 +20,7 @@ import type { FamilyId } from "./facadeArray";
 import type { Tint, V3 } from "./meshBuilder";
 import { ART } from "../cultureArt";
 import { box, cap, fp, gable, hip, type Sink, slopedTop, solid, strut, tpl, walls, WHITE } from "./parts";
+import { BANDED, sibling, squarePlan } from "./variants";
 
 export type Ctx = {
   rng: Rng;
@@ -33,6 +34,10 @@ export type Ctx = {
   yt: number;
   H: number;
   hood: Hood;
+  /** A round, banded tower stands near (city.ts): a point or downtown tower that rolls a round plan takes another. */
+  avoidRound?: boolean;
+  /** Told what a tower turned out to be: its round banded form (if it is one) and its look (skin, glass, plan). */
+  report?: (look: string, round?: string) => void;
   /** A small tree on a terrace or planted balcony. */
   terrace: (x: number, y: number, z: number, s: number, sp: SpeciesId) => void;
   /** For the civic building: always crown it with a dome (heroes), else a coin toss. */
@@ -63,7 +68,8 @@ export const PAL = {
   colourPanel: [0xf1c84b, 0x8fc28a, 0x6fa3d6, 0xe98a5c, 0xc7d36a, 0xf2f0e8],
   brick: [0xc4664c, 0xa94e3c, 0x8f6448, 0xdcc59a, 0xeae2d0, 0x8fa394, 0x6d7a8f, 0xb8735a],
   concrete: [0xffffff, 0xeee6d8, 0xe2e6ea, 0xf3ede0],
-  glass: [0xc4dcff, 0xb8e4ff, 0xc0f0e4, 0xb0c8ff, 0xeef4fa, 0xffeccc],
+  /** Glass as it is made: bronze, smoke, emerald, cobalt, teal, champagne, near-black, copper-rose. */
+  glass: [0xd9b48a, 0xa7adb3, 0x8fdcb4, 0x8fb0f0, 0x88d0d0, 0xf5e2bc, 0x5c6470, 0xeab49c],
   wood: [0x5f8f8b, 0xc9a447, 0x8f3b3b, 0x7f9a6a, 0xe7dcc4, 0x4f6c8f, 0xc4775a, 0x9a8bb5, 0xd9c08a],
   stone: [0xf3ede0, 0xe9dcc4, 0xd8c8a8, 0xf1e6d2, 0xcfc3b0],
   terracotta: [0xe6c9a2, 0xd9b48e, 0xcfa27e, 0xe8d6bc],
@@ -71,8 +77,8 @@ export const PAL = {
   panel: [0xd98e6a, 0xc77a58, 0xe8d6bc, 0xbdb6ab, 0x5d6064, 0xf4f2ee, 0xa9b8a2, 0x8c97a6],
   /** Standing-seam metal: charcoal, black, weathering steel, forest green, silver, navy. */
   metal: [0x4a4d52, 0x2e3034, 0x9a5634, 0x4f6652, 0xb8bcc2, 0x34465c],
-  /** Office fins: bronze, champagne, black, silver. */
-  mullion: [0xb08a55, 0xd6c08a, 0x3a3a3c, 0xc9ced4],
+  /** The glass between an office tower's champagne fins: bronze, champagne, near-black, smoke. */
+  mullion: [0xd9b48a, 0xf5e2bc, 0x5c6470, 0xa7adb3],
 };
 const pick = <T>(rng: Rng, list: readonly T[]): T => list[Math.floor(rng.next() * list.length)];
 const pickW = <T>(rng: Rng, list: readonly [T, number][]): T => {
@@ -126,8 +132,8 @@ const DT_SKINS: [{ pick: (rng: Rng) => [FamilyId, number[]] }, number][] = [
   [{ pick: () => ["dark", [0x8aa0c0, 0x7a8ca8, 0x98a8c4]] }, 1.2],
   [{ pick: () => ["glass", [0xf2f4f6, 0xe4e8ec, 0xfaf6ee]] }, 0.6],
   [{ pick: (rng) => [rng.next() < 0.35 ? "stone" : "grid", [0xe9dcc4, 0xd8c8a8, 0xe8c8b8, 0xc9c4bc, 0xf1e6d2, 0xd4b8a8]] }, 1.0],
-  [{ pick: () => ["balcony", [0xffffff, 0xf3ede0, 0xe2e6ea, 0xeee6d8, 0xe8e0d0]] }, 0.8],
-  [{ pick: () => ["ribbon", PAL.concrete] }, 0.4],
+  [{ pick: () => ["balcony", PAL.glass] }, 0.8],
+  [{ pick: () => ["ribbon", PAL.glass] }, 0.4],
   [{ pick: () => ["mullion", PAL.mullion] }, 0.6],
   [{ pick: () => ["brick", PAL.brick] }, 0.4],
   [{ pick: () => ["rainscreen", PAL.panel] }, 0.4],
@@ -243,12 +249,16 @@ export const BUILD: Record<Exclude<ArchId, "house">, (o: Ctx) => void> = {
     const kind = roll < 0.46 ? "vancouver" : roll < 0.62 ? "glass" : roll < 0.74 ? "balcony" : roll < 0.82 ? "ribbon" : roll < 0.92 ? "mullion" : "grid";
     const shape = rng.next();
     const poly = shape < 0.4 ? fp.rounded(tw, td, Math.min(tw, td) * 0.2) : shape < 0.55 ? fp.chamfer(tw, td, Math.min(tw, td) * 0.3) : shape < 0.65 ? fp.ellipse(tw, td, 18) : fp.rect(tw, td);
-    const t = kind === "mullion" ? tint(rng, pick(rng, PAL.mullion), 0.04) : kind === "ribbon" || kind === "grid" ? tint(rng, pick(rng, PAL.concrete), 0.03) : tint(rng, PAL.glass[Math.floor(rng.next() * PAL.glass.length)], 0.04);
+    const base = kind === "mullion" ? pick(rng, PAL.mullion) : kind === "grid" ? pick(rng, PAL.concrete) : kind === "ribbon" ? pick(rng, PAL.glass) : PAL.glass[Math.floor(rng.next() * PAL.glass.length)];
+    const t = tint(rng, base, kind === "ribbon" || kind === "grid" ? 0.03 : 0.04);
+    const round = shape < 0.4 || (shape >= 0.55 && shape < 0.65);
+    const plan = round && o.avoidRound ? squarePlan(tw, td, x, z) : poly;
+    o.report?.(`${kind}|${base.toString(16)}|${round && !o.avoidRound ? (shape < 0.4 ? "rounded" : "ellipse") : "square"}`, round && !o.avoidRound && BANDED.has(kind) ? "pointTower" : undefined);
     // the tower, then a setback penthouse of two floors in the same skin
     const pent = Math.min(3.4, H * 0.08);
-    const ring = walls(sink, kind, poly, x + ox, z + oz, yt + ph, yt + H - pent, { tint: t, yRef: yt, uOff: rng.next() });
+    const ring = walls(sink, kind, plan, x + ox, z + oz, yt + ph, yt + H - pent, { tint: t, yRef: yt, uOff: rng.next() });
     cap(sink, "garden", ring);
-    const top = walls(sink, kind, poly.map(([a, b]) => [a * 0.78, b * 0.78] as [number, number]), x + ox, z + oz, yt + H - pent, yt + H, { tint: t, yRef: yt });
+    const top = walls(sink, kind, plan.map(([a, b]) => [a * 0.78, b * 0.78] as [number, number]), x + ox, z + oz, yt + H - pent, yt + H, { tint: t, yRef: yt });
     cap(sink, "roof", top);
     box(sink, "roof", x + ox, yt + H, z + oz, tw * 0.3, 1.4, td * 0.3, T(0xa9adb3));
     if (rng.next() < 0.3) box(sink, crown(rng), x + ox, yt + H - pent - 0.25, z + oz, tw * 1.02, 0.3, td * 1.02);
@@ -392,7 +402,8 @@ export const BUILD: Record<Exclude<ArchId, "house">, (o: Ctx) => void> = {
     const { rng, sink, x, z, w, d, yb, yt, H } = o;
     const sw = w > d ? w * 0.92 : w * 0.55;
     const sd = w > d ? d * 0.55 : d * 0.92;
-    const ring = walls(sink, rng.next() < 0.5 ? "balcony" : "concrete", fp.rect(sw, sd), x, z, yb, yt + H, { tint: tint(rng, PAL.concrete[Math.floor(rng.next() * 4)], 0.05), yRef: yt, uOff: rng.next() });
+    const fam = rng.next() < 0.5 ? "balcony" : "concrete";
+    const ring = walls(sink, fam, fp.rect(sw, sd), x, z, yb, yt + H, { tint: tint(rng, (fam === "balcony" ? PAL.glass : PAL.concrete)[Math.floor(rng.next() * 4)], 0.05), yRef: yt, uOff: rng.next() });
     cap(sink, rng.next() < 0.6 ? "garden" : "roof", ring);
     box(sink, "concrete", x, yt + H, z, sw * 0.35, 1.8, sd * 0.6, T(0xd8d2c4));
   },
@@ -440,6 +451,7 @@ export const BUILD: Record<Exclude<ArchId, "house">, (o: Ctx) => void> = {
     const kind = rng.next() < 0.3 ? "diagrid" : "glass";
     walls(sink, "dark", fp.rect(w, d), x, z, yb, yt + 3, { yRef: yt });
     cap(sink, "garden", fp.rect(w, d).map(([a, b]) => [x + a, yt + 3, z + b]));
+    o.report?.(`${kind}|helix`, "helix");
     const ring = walls(sink, kind, fp.rounded(s, s, s * 0.22, 3), x, z, yt + 3, yt + H, { segs: 26, r1: (0.6 + rng.next() * 0.8) * (rng.next() < 0.5 ? 1 : -1), s1: 0.62 + rng.next() * 0.2, tint: tint(rng, PAL.glass[Math.floor(rng.next() * PAL.glass.length)], 0.04), yRef: yt });
     cap(sink, "roof", ring);
     box(sink, crown(rng), x, yt + H - 0.6, z, s * 0.55, 0.6, s * 0.55, WHITE, 0.5);
@@ -509,14 +521,20 @@ export const BUILD: Record<Exclude<ArchId, "house">, (o: Ctx) => void> = {
     const gap = (along ? w : d) * 0.5;
     const kind = rng.next() < 0.2 ? "diagrid" : rng.next() < 0.5 ? "vancouver" : "glass";
     const t = tint(rng, PAL.glass[Math.floor(rng.next() * PAL.glass.length)], 0.04);
+    // the second shaft a sibling, not a copy (its choices by place, so the city's numbers are untouched)
+    const sib = sibling(x, z, kind, t);
     for (const sgn of [-1, 1]) {
       const cx = along ? x + sgn * gap * 0.5 : x;
       const cz = along ? z : z + sgn * gap * 0.5;
-      const h = H * (sgn < 0 ? 1 : 0.86);
-      const ring = walls(sink, kind, fp.rounded(s * 0.8, s, s * 0.3, 3), cx, cz, yb, yt + h, { tint: t, yRef: yt, s1: 0.9 });
-      cap(sink, "roof", ring);
-      box(sink, sgn < 0 ? "crownA" : "crownB", cx, yt + h - 0.5, cz, s * 0.6, 0.5, s * 0.75);
+      const first = sgn < 0;
+      const h = first ? H : H * sib.ratio;
+      const ring = walls(sink, first ? kind : sib.fam, first ? fp.rounded(s * 0.8, s, s * 0.3, 3) : sib.plan(s * 0.8, s), cx, cz, yb, yt + h, { tint: first ? t : sib.tint, yRef: yt, s1: first ? 0.9 : sib.taper });
+      if (first) {
+        cap(sink, "roof", ring);
+        box(sink, "crownA", cx, yt + h - 0.5, cz, s * 0.6, 0.5, s * 0.75);
+      } else sib.crown(sink, ring, cx, cz, yt + h, yt);
     }
+    o.report?.(`${kind}|twins`, "twins");
     // the sky bridge, at least 22 above the street
     const by = yt + Math.max(22, H * 0.62);
     box(sink, "dark", x, by, z, along ? gap : s * 0.4, 2.2, along ? s * 0.4 : gap);
@@ -597,7 +615,7 @@ export const BUILD: Record<Exclude<ArchId, "house">, (o: Ctx) => void> = {
       ["ellipse", 0.5],
       ["cross", 0.4],
     ] as [string, number][]);
-    const poly =
+    let poly =
       shape === "rounded"
         ? fp.rounded(tw, td, m * 0.22)
         : shape === "chamfer"
@@ -613,6 +631,9 @@ export const BUILD: Record<Exclude<ArchId, "house">, (o: Ctx) => void> = {
                   : shape === "cross"
                     ? fp.cross(tw, td, 0.58)
                     : fp.rect(tw, td);
+    const round = shape === "rounded" || shape === "ellipse";
+    if (round && o.avoidRound) poly = squarePlan(tw, td, x, z);
+    o.report?.(`${fam}|${t.map((v) => Math.round(v * 8)).join("")}|${round && !o.avoidRound ? shape : "square"}`, round && !o.avoidRound && BANDED.has(fam) ? "dtTower" : undefined);
     const ox = (rng.next() - 0.5) * (w - tw) * 0.5;
     const oz = (rng.next() - 0.5) * (d - td) * 0.5;
     const cx = x + ox;
@@ -746,7 +767,7 @@ export const BUILD: Record<Exclude<ArchId, "house">, (o: Ctx) => void> = {
   boxTower(o) {
     const { rng, sink, x, z, w, d, yb, yt, H } = o;
     const gold = rng.next() < 0.35;
-    const t = gold ? tint(rng, 0xffd27a, 0.04) : tint(rng, pick(rng, [0xffffff, 0xf4f1ea, 0xeef2f6]), 0.02);
+    const t = gold ? tint(rng, 0xffd27a, 0.04) : tint(rng, pick(rng, PAL.glass), 0.02);
     const tw = w * (0.74 + rng.next() * 0.14);
     const td = d * (0.74 + rng.next() * 0.14);
     walls(sink, "dark", fp.rect(w * 0.9, d * 0.9), x, z, yb, yt + 3, { yRef: yt });
@@ -800,7 +821,7 @@ export const BUILD: Record<Exclude<ArchId, "house">, (o: Ctx) => void> = {
       if (deep && rng.next() < 0.3) o.terrace(x + side * (tw / 2 + 0.9), y, z, 0.42, "smaple");
     }
   },
-  /** After the Butterfly: two oval towers grown together, wrapped in unbroken white balcony bands, one a little taller. */
+  /** After the Butterfly: two oval towers grown together, the first wrapped in unbroken white balcony bands, the second its own. */
   butterfly(o) {
     const { rng, sink, x, z, w, d, yb, yt, H } = o;
     const along = w >= d;
@@ -808,16 +829,25 @@ export const BUILD: Record<Exclude<ArchId, "house">, (o: Ctx) => void> = {
     const S = (along ? d : w) * 0.66;
     const pod = walls(sink, "glass", fp.rect(w * 0.92, d * 0.92), x, z, yb, yt + 3.4, { yRef: yt, tint: T(0xfff1dc) });
     cap(sink, "garden", pod);
-    const t = tint(rng, pick(rng, [0xffffff, 0xf6f3ee]), 0.02);
+    const t = tint(rng, pick(rng, PAL.glass), 0.02);
+    const sib = sibling(x, z, "ribbon", t);
     for (const sgn of [-1, 1]) {
       const cx = along ? x + sgn * L * 0.34 : x;
       const cz = along ? z : z + sgn * L * 0.34;
-      const h = H * (sgn < 0 ? 1 : 0.93);
-      const ring = walls(sink, "ribbon", fp.ellipse(along ? L : S, along ? S : L, 22), cx, cz, yt + 3.4, yt + h - 2, { tint: t, yRef: yt, uOff: rng.next() });
-      const cr = walls(sink, "ribbon", fp.ellipse(along ? L : S, along ? S : L, 22), cx, cz, yt + h - 2, yt + h, { s0: 1, s1: 0.82, tint: t, yRef: yt });
-      cap(sink, "roof", cr);
+      const first = sgn < 0;
+      const h = first ? H : H * sib.ratio;
+      const plan = fp.ellipse(along ? L : S, along ? S : L, 22);
+      const ring = walls(sink, first ? "ribbon" : sib.fam, plan, cx, cz, yt + 3.4, yt + h - 2, { tint: first ? t : sib.tint, yRef: yt, uOff: rng.next() });
+      if (first) {
+        const cr = walls(sink, "ribbon", plan, cx, cz, yt + h - 2, yt + h, { s0: 1, s1: 0.82, tint: t, yRef: yt });
+        cap(sink, "roof", cr);
+      } else {
+        const cr = walls(sink, sib.fam, plan, cx, cz, yt + h - 2, yt + h, { tint: sib.tint, yRef: yt });
+        sib.crown(sink, cr, cx, cz, yt + h, yt);
+      }
       void ring;
     }
+    o.report?.("ribbon|butterfly", "butterfly");
   },
   /**
    * A dark glass tower on an oval plan (after the Shangri-La and its neighbours): deep blue-black glass reflecting the
@@ -831,6 +861,7 @@ export const BUILD: Record<Exclude<ArchId, "house">, (o: Ctx) => void> = {
     cap(sink, "garden", pod);
     const t = tint(rng, pick(rng, [0x9db8e0, 0x8fa8c8, 0xa6c0d8]), 0.03);
     const poly = fp.ellipse(s, sd, 24);
+    o.report?.("dark|darkEllipse", "darkEllipse");
     const ring = walls(sink, "dark", poly, x, z, yt + 4, yt + H, { tint: t, yRef: yt });
     for (const f of [0.36, 0.68]) walls(sink, "concrete", poly.map(([a, b]) => [a * 1.03, b * 1.03] as [number, number]), x, z, yt + H * f, yt + H * f + 0.45, { tint: T(0xf2f3f4) });
     const a = rng.next() * Math.PI * 2;
@@ -879,7 +910,7 @@ export const BUILD: Record<Exclude<ArchId, "house">, (o: Ctx) => void> = {
     const shape = rng.next();
     const poly = shape < 0.22 ? fp.L(w, d, 0.62) : shape < 0.4 ? fp.chamfer(w, d, Math.min(w, d) * 0.25) : fp.rect(w, d);
     const fam = pick(rng, ["rainscreen", "rainscreen", "brick", "metal", "ribbon", "grid", "stucco", "wood"] as const);
-    const pal = fam === "rainscreen" ? PAL.panel : fam === "metal" ? PAL.metal : fam === "brick" ? PAL.brick : fam === "wood" ? PAL.wood : fam === "stucco" ? PAL.chinatown : PAL.concrete;
+    const pal = fam === "rainscreen" ? PAL.panel : fam === "metal" ? PAL.metal : fam === "brick" ? PAL.brick : fam === "wood" ? PAL.wood : fam === "stucco" ? PAL.chinatown : fam === "ribbon" ? PAL.glass : PAL.concrete;
     const t = tint(rng, pick(rng, pal), 0.06);
     const scaled = (k: number) => poly.map(([a, b]) => [a * k, b * k] as [number, number]);
     walls(sink, "dark", scaled(0.97), x, z, yb, shop, { yRef: yt });
@@ -905,7 +936,7 @@ export const BUILD: Record<Exclude<ArchId, "house">, (o: Ctx) => void> = {
     const floors = Math.max(3, Math.min(8, Math.round(Math.min(o.H, 16) / fl)));
     const th = Math.min(w, d) * 0.3;
     const fam = pick(rng, ["rainscreen", "brick", "grid", "ribbon", "wood", "timber"] as const);
-    const pal = fam === "rainscreen" ? PAL.panel : fam === "brick" ? PAL.brick : fam === "wood" ? PAL.wood : PAL.concrete;
+    const pal = fam === "rainscreen" ? PAL.panel : fam === "brick" ? PAL.brick : fam === "wood" ? PAL.wood : fam === "ribbon" ? PAL.glass : PAL.concrete;
     const t = tint(rng, pick(rng, pal), 0.05);
     const open = rng.next() < 0.4 ? 1 : -1;
     const wings: [number, number, number, number, number][] = [
@@ -924,7 +955,7 @@ export const BUILD: Record<Exclude<ArchId, "house">, (o: Ctx) => void> = {
     o.terrace(x - (w - 2 * th) * 0.22, yt, z, 0.75, "smaple");
     o.terrace(x + (w - 2 * th) * 0.2, yt, z + (d - 2 * th) * 0.15, 0.7, "cherry");
   },
-  /** An office tower in fins, bronze or champagne over dark glass, on a glass lobby, its top floors stepping in. */
+  /** An office tower in champagne fins over bronze, smoke or near-black glass, on a glass lobby, its top floors stepping in. */
   officeMullion(o) {
     const { rng, sink, x, z, w, d, yb, yt, H } = o;
     const t = tint(rng, pick(rng, PAL.mullion), 0.04);
@@ -982,10 +1013,11 @@ export const BUILD: Record<Exclude<ArchId, "house">, (o: Ctx) => void> = {
       s1: 1,
       r1: (rng.next() - 0.5) * 0.5,
       curve: (u) => Math.sin(u * Math.PI) * 0.9 + u * 0.1,
-      tint: tint(rng, pick(rng, [0xffffff, 0xf4efe6, 0xeef3f6]), 0.02),
+      tint: tint(rng, pick(rng, PAL.glass), 0.02),
       yRef: yt,
     });
     cap(sink, "garden", ring);
+    o.report?.("ribbon|curvedBands", "curvedBands");
   },
   /**
    * A studio and loft building of the Flats and Mount Pleasant: three or four storeys in standing-seam metal with tall
@@ -1012,5 +1044,6 @@ export const BUILD: Record<Exclude<ArchId, "house">, (o: Ctx) => void> = {
     const ring = walls(sink, "diagrid", fp.ellipse(s, s * 0.8, 24), x, z, yb, yt + H, { segs: 18, r1: 0.4 + rng.next() * 0.3, s1: 0.8, curve: (t) => 0.5 - 0.5 * Math.cos(t * Math.PI * 1.5), yRef: yt });
     cap(sink, "garden", ring);
     box(sink, "crownA", x, yt + H - 0.4, z, s * 0.6, 0.4, s * 0.5);
+    o.report?.("diagrid|wave", "wave");
   },
 };
