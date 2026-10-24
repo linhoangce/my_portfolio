@@ -694,7 +694,7 @@ function dragonMural(g: CanvasRenderingContext2D): void {
 }
 
 /** A rangoli: petals and dots in rings, marigold, magenta, teal and white. */
-function rangoliMural(g: CanvasRenderingContext2D): void {
+export function rangoliMural(g: CanvasRenderingContext2D): void {
   g.fillStyle = "#1e3a5f";
   g.fillRect(0, 0, 1, 1);
   const rings: [number, number, number, string][] = [
