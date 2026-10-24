@@ -8,12 +8,11 @@ import { useCallback, useEffect, useState } from "react";
 import { AskPanel } from "@/components/ask/AskPanel";
 
 import { PHONE_MAX_WIDTH } from "./constants";
-import { DriveButtons } from "./controls/DriveButtons";
 import { Keyboard } from "./controls/Keyboard";
 import { Pointer } from "./controls/Pointer";
 import { Wheel } from "./controls/Wheel";
 import { useTrain } from "./store";
-import { FilmFx } from "./ui/FilmFx";
+import { LineMap } from "./ui/LineMap";
 import { LoadBar } from "./ui/LoadBar";
 import { Help, Menu } from "./ui/Menu";
 import { MonumentCard } from "./ui/MonumentCard";
@@ -46,7 +45,8 @@ function canRide(): boolean {
 
 /**
  * Client gate for the home page: checks capabilities, redirects to /text when the ride would be a bad experience,
- * otherwise lazy-loads the scene chunk under the DOM shell (top bar, the stop buttons, the scene's column, attendant).
+ * otherwise lazy-loads the scene chunk under the DOM shell (top bar, the stop buttons and the line map, the scene's
+ * column, attendant).
  */
 export function TrainGate() {
   const router = useRouter();
@@ -125,15 +125,14 @@ export function TrainGate() {
       </Pointer>
       <Keyboard />
       <Wheel />
-      <FilmFx />
       <TopBar />
       <LoadBar />
       <Readout />
       <MapCredit />
-      <DriveButtons />
       <SceneCaptions />
       <SceneOverlay />
       <StopNav />
+      <LineMap />
       <MonumentCard />
       <Menu />
       <Help />

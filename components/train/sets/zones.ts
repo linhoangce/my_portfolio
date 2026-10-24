@@ -30,7 +30,7 @@ const swSide = (() => {
 })();
 
 /**
- * The open side of each stop (1 right of travel, -1 left), where its set stands and its shot looks back from.
+ * The open side of each stop (1 right of travel, -1 left), where its set stands.
  * Commercial–Broadway's opens to the west, past Commercial Drive: the Millennium Line's trench runs east under the north
  * end of its platforms.
  */
@@ -118,7 +118,7 @@ export function fromStation(i: number, a: number, l: number): [number, number] {
 }
 
 /**
- * Trees a set stands among, built in three dimensions by the set (the shot comes close): Contact's lookout sits in a
+ * Trees a set stands among, built in three dimensions by the set (a view comes close): Contact's lookout sits in a
  * stand of cedar, fir and hemlock at the edge of Central Park. Heights are in world units.
  */
 export const SET_TREES: { i: number; a: number; l: number; h: number; sp: "cedar" | "fir" | "hemlock" }[] = [

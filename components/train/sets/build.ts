@@ -1,8 +1,7 @@
 /**
  * The ten set pieces, one built around each station's section. Each is made in its station's frame (x = lateral
  * toward the set side, y = up from the deck, z = along the track toward the set's "ahead") and merged per material,
- * so a set costs a handful of draw calls. Anchors are where the captions pin; `shot` is the establishing shot in the
- * station frame (along, lateral toward the set, up) that shots.ts checks against the city.
+ * so a set costs a handful of draw calls. Anchors are where the captions pin.
  */
 import {
   AdditiveBlending,
@@ -71,8 +70,7 @@ import { along, inCbSquare, lineLength, MARKET_HALF, MARKET_STREET, OCEAN_HALL, 
 import { fromStation, MAIN_COLUMN, SET_RECT, SET_SHIFT, SET_SIDE, SET_TREES, STATION_FRAMES, toStation } from "./zones";
 
 type V3 = [number, number, number];
-export type ShotSpec = { from: V3; to: V3; look: V3; fromLook?: V3; free?: boolean };
-export type BuiltSet = { group: Group; anchors: Vector3[]; focus: Vector3; update?: (t: number) => void; shot: ShotSpec };
+export type BuiltSet = { group: Group; anchors: Vector3[]; focus: Vector3; update?: (t: number) => void };
 
 type Ctx = {
   i: number;
@@ -88,8 +86,6 @@ type Ctx = {
   S: (a: number, l: number) => number;
   add: (mat: Material, geo: BufferGeometry, pos?: V3, rot?: V3, scale?: V3) => void;
 };
-
-const DEFAULT_SHOT: ShotSpec = { from: [-58, 82, 15], to: [-22, 62, 24], look: [0, 14, 5] };
 
 function canvasTex(w: number, h: number, paint: (g: CanvasRenderingContext2D) => void, repeat = false): CanvasTexture {
   const c = document.createElement("canvas");
@@ -657,14 +653,13 @@ function depart(c: Ctx): Partial<BuiltSet> {
       hall(t);
       busy(t);
     },
-    shot: { from: [-74, 92, 22], to: [0, -46, 17], look: [0, 16, 6] },
   };
 }
 
 export type StandTree = { a: number; l: number; h: number; sp: Conifer; base?: number; crownFrom?: number };
 
 /**
- * A stand of conifers in three dimensions, for the trees a shot comes close to (trees/conifer.ts describes them). One
+ * A stand of conifers in three dimensions, for the trees a view comes close to (trees/conifer.ts describes them). One
  * merged bark mesh per bark, one instanced mesh of sprays per species, sharing the forest's snow so they whiten with it.
  */
 function stand(c: Ctx, trees: StandTree[]): void {
@@ -855,7 +850,6 @@ function about(c: Ctx): Partial<BuiltSet> {
   return {
     focus: new Vector3(...c.L(0, L0 - 6, deckY + 6)),
     update: dress,
-    shot: { from: [-30, 64, 6], to: [-22, 56, 30], look: [0, 22, 16], fromLook: [0, 26, 8] },
   };
 }
 
@@ -981,7 +975,6 @@ function experience(c: Ctx, world: World): Partial<BuiltSet> {
   return {
     anchors,
     focus: anchors[order[n >> 1]].clone().setY(anchors[order[n >> 1]].y - 6),
-    shot: { from: [-14, -3, 6.5], to: [42, -64, 26], look: [42, 0, 6], fromLook: [60, 0, 5.5], free: true },
   };
 }
 
@@ -1277,7 +1270,6 @@ function awdon(c: Ctx): Partial<BuiltSet> {
       flow.offset.x = -t * 0.25;
       board.tick(t);
     },
-    shot: { from: [-56, 66, 8], to: [-24, 58, 22], look: [0, 20, 4] },
   };
 }
 
@@ -1354,7 +1346,6 @@ function planktoneer(c: Ctx): Partial<BuiltSet> {
       }
       pa.needsUpdate = true;
     },
-    shot: { from: [0, 0, 0], to: [0, 0, 0], look: [0, 0, 0] },
   };
 }
 
@@ -1706,7 +1697,6 @@ function vessel(c: Ctx): Partial<BuiltSet> {
       });
       jets.instanceMatrix.needsUpdate = true;
     },
-    shot: { from: [38, 74, 34], to: [26, 64, 24], look: [-6, 42, 0] },
   };
 }
 
@@ -1945,7 +1935,6 @@ function weed(c: Ctx): Partial<BuiltSet> {
         m.scale.setScalar(u < 0.03 ? 0 : s);
       });
     },
-    shot: { from: [-40, 50, 6], to: [-12, 58, 20], look: [0, 22, 2], fromLook: [0, 26, 2] },
   };
 }
 
@@ -2173,8 +2162,6 @@ function abckidz(c: Ctx): Partial<BuiltSet> {
       bulbMat.color.setScalar(0.35 + 1.4 * night);
       for (const m of colMats) m.emissiveIntensity = 0.12 + 0.45 * night;
     },
-    // high over the far corner of the park, the wheel and the tower to either side of the line of sight
-    shot: { from: [40, 84, 46], to: [24, 70, 41], look: [0, 27, 6] },
   };
 }
 
@@ -2668,8 +2655,6 @@ function more(c: Ctx): Partial<BuiltSet> {
       screenMat.emissiveIntensity = 0.1 + 1.3 * night;
       stallLight.emissiveIntensity = 0.4 + 1.6 * night;
     },
-    // from across the line, looking over the station at the hall's lit front
-    shot: { from: [-10, -34, 36], to: [-6, -26, 30], look: [0, 23, 0] },
   };
 }
 
@@ -2935,7 +2920,7 @@ function contactSet(c: Ctx): Partial<BuiltSet> {
     [6, L0 + 5],
   ], deck - 0.25, 0.3);
   for (const s of [-1, 1]) c.add(mats.timber, new BoxGeometry(0.15, 1, 16), c.L(0, L0 + s * 5.9, deck + 0.75), [0, 0, 0]);
-  // a stand of cedar, fir and hemlock round the deck, in three dimensions since the shot comes close; none on a street
+  // a stand of cedar, fir and hemlock round the deck, in three dimensions since a view comes close; none on a street
   stand(
     c,
     SET_TREES.filter((t) => t.i === c.i && !isRoad(...fromStation(t.i, t.a, t.l), 2.5)),
@@ -2970,7 +2955,7 @@ function contactSet(c: Ctx): Partial<BuiltSet> {
     c.add(post, new BoxGeometry(0.15, 0.5, 1.6), c.L(a, L0 - 5, deck + h + 0.1));
     anchors.push(new Vector3(...c.L(a, L0 - 5, deck + h + 0.9)));
   });
-  return { anchors, focus: new Vector3(...c.L(0, L0 - 2, deck + 3)), shot: { from: [-12, 46, 4], to: [0, 50, 11], look: [0, 22, 5], fromLook: [0, 30, 6] } };
+  return { anchors, focus: new Vector3(...c.L(0, L0 - 2, deck + 3)) };
 }
 
 const BUILDERS = [depart, about, null, awdon, planktoneer, vessel, weed, abckidz, more, contactSet] as const;
@@ -3042,7 +3027,6 @@ export function buildSets(world: World): BuiltSet[] {
       anchors: (b.anchors ?? []).map(toWorld),
       focus: b.focus ? toWorld(b.focus) : new Vector3(fr.x, fr.y + 4, fr.z),
       update: b.update,
-      shot: b.shot ?? DEFAULT_SHOT,
     };
   });
 }

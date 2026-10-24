@@ -10,9 +10,9 @@ import { useTrain } from "../store";
 type Drag = { x: number; y: number; x0: number; y0: number; t0: number; axis: "drive" | "look" | "pinch" | null; pinch: number };
 
 /**
- * Wraps the canvas. A drag orbits the current view a full 360° (the chase, a scene's set, a monument); two fingers
- * pinch to zoom; on touch screens a vertical swipe in the chase drives the train instead. A short tap or click on a
- * monument opens its view, and hovering one shows a pointer cursor.
+ * Wraps the canvas. A drag orbits the current view a full 360° (the chase or a monument); two fingers pinch to zoom; on
+ * touch screens a vertical swipe in the chase drives the train instead. A short tap or click on a monument opens its
+ * view, and hovering one shows a pointer cursor.
  */
 export function Pointer({ children }: { children: ReactNode }) {
   const pts = useRef(new Map<number, [number, number]>());
@@ -67,8 +67,7 @@ export function Pointer({ children }: { children: ReactNode }) {
     g.y = e.clientY;
     const travel = Math.hypot(e.clientX - g.x0, e.clientY - g.y0);
     if (!g.axis && travel > (e.pointerType === "touch" ? 10 : 6)) {
-      const chase = st.sim.film.phase !== "hold" && st.sim.film.phase !== "establish" && !st.monument;
-      g.axis = st.env.coarse && chase && Math.abs(dy) > Math.abs(dx) ? "drive" : "look";
+      g.axis = st.env.coarse && !st.monument && Math.abs(dy) > Math.abs(dx) ? "drive" : "look";
     }
     if (g.axis === "drive") st.nudgeTarget(-dy * SWIPE_GAIN);
     else if (g.axis === "look") orbitBy(st, -dx * ((Math.PI * 2) / Math.max(600, window.innerWidth)) * 1.2, dy * 0.004);

@@ -8,9 +8,9 @@ import { hasSidebar } from "../scene/copy";
 import { useTrain } from "../store";
 
 /**
- * The stop buttons, bottom left and always there: Previous and Next stop, and the scene's details shown or hidden
- * (E). They stand where the scene's column ends, so the column opens round them and hides without taking them along.
- * At a stop they step from it; between stops, from the stop ahead.
+ * The stop buttons, bottom left and always there: Previous and Next stop (none at the end of the line), and the scene's
+ * details shown or hidden (E). They stand where the scene's column ends, so the column opens round them and hides
+ * without taking them along. At a stop they step from it; between stops, from the stop ahead.
  */
 export function StopNav() {
   const overlay = useTrain((s) => s.overlay);
@@ -53,10 +53,12 @@ export function StopNav() {
         <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
         Previous
       </button>
-      <button type="button" className="btn-primary" disabled={here === last} onClick={() => go(1)}>
-        {here === last ? "End of the line" : "Next stop"}
-        <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-      </button>
+      {here !== last ? (
+        <button type="button" className="btn-primary" onClick={() => go(1)}>
+          Next stop
+          <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+        </button>
+      ) : null}
       {canDetails ? (
         <button type="button" className="btn details" onClick={toggleOverlay} aria-pressed={overlay}>
           {overlay ? <EyeOff className="h-3.5 w-3.5" aria-hidden="true" /> : <Eye className="h-3.5 w-3.5" aria-hidden="true" />}

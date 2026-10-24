@@ -13,7 +13,7 @@ const sizes = new WeakMap<HTMLElement, { w: number; h: number }>();
 
 /**
  * Whether Contact's pinned chips would overlap one another (within `pad` px) or one of them would be lost behind the
- * camera, off screen or under the bars. Chip sizes are measured once per element.
+ * camera, off screen or under the top bar or the controls along the bottom. Chip sizes are measured once per element.
  */
 function contactCrowded(anchors: Vector3[], camera: Camera, W: number, H: number, left: number, top: number, bottom: number, pad: number): boolean {
   const boxes: [number, number, number, number][] = [];
@@ -61,11 +61,12 @@ export function CaptionProjector() {
     const H = state.size.height;
     const phone = st.env.phone;
     const left = st.overlay && !phone ? Math.min(560, W * 0.46) * 0.8 : 0;
-    const bottom = phone ? H * (st.overlay ? 0.58 : 0.86) : H - Math.max(64, Math.min(110, H * 0.1)) - 12;
-    const top = phone ? 70 : Math.max(64, Math.min(110, H * 0.1)) + 8;
+    // clear of the top bar, and on a desktop of the stop buttons and the line map along the bottom
+    const bottom = phone ? H * (st.overlay ? 0.58 : 0.86) : H - 96;
+    const top = phone ? 70 : 72;
     const order = captionBus.prio.map((p, k) => [p, k]).sort((a, b) => a[0] - b[0]);
     // Contact's links must stay readable and reachable: on a desktop, when the view crowds their chips together or
-    // loses one off screen, they line up in a row above the lower bar instead (with some slack before going back)
+    // loses one off screen, they line up in a row above the line map instead (with some slack before going back)
     const box = captionBus.els[0]?.parentElement;
     if (box && captionBus.all && !captionBus.docked) {
       const crowded = show && contactCrowded(anchors, state.camera, W, H, left, top, bottom, box.classList.contains("docked") ? 40 : 6);

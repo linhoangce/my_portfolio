@@ -11,7 +11,6 @@ import { type Round, track, type Track } from "./airspace";
 import { airTaxis } from "./airways";
 import { deliveryDrones } from "./droneways";
 import { skipToHold } from "./scene/director";
-import { shotFor } from "./scene/shots";
 import { orbitBy, zoomBy } from "./scene/view";
 import type { MonumentKey } from "./monumentData";
 import { useTrain } from "./store";
@@ -43,10 +42,8 @@ export type TrainDebug = {
   /** Orbit the current view (yaw, pitch in radians) and zoom (log). */
   orbit: (yaw: number, pitch: number, zoom?: number) => void;
   monument: (key: MonumentKey | null) => void;
-  /** Skip an establishing shot to its hold. */
+  /** Show a scene's copy all at once. */
   skip: () => void;
-  /** The current scene's shot plan (positions only), for the frame checks. */
-  shot: (i: number) => { from: number[]; to: number[]; focus: number[]; owns?: string };
   /** Kept for the headless checks: the page opens on the first stop's scene, so there is no card to drop. */
   dismiss: () => void;
   /** Where the camera is and what it looks at, this frame. */
@@ -205,10 +202,6 @@ export function Debug() {
       },
       monument: (key) => (key ? st().openMonument(key) : st().closeMonument()),
       skip: () => skipToHold(st()),
-      shot: (i) => {
-        const p = shotFor(i, st().env.lowEnd);
-        return { from: p.from.pos.toArray(), to: p.to.pos.toArray(), focus: p.focus.toArray(), owns: p.owns };
-      },
       dismiss: () => st().dismissIntro(),
       cam: () => {
         const d = camera.getWorldDirection(new Vector3());

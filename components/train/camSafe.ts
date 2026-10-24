@@ -1,10 +1,8 @@
 /**
  * Keeps cameras out of buildings: a 16-unit grid hash over the city's lot boxes (axis-aligned footprints with an
- * absolute top), queried for the highest roof under a point and for clear sight lines. Until the scene's city stage
- * has built the city there are no buildings to keep out of, so it does not build it early.
+ * absolute top), queried for the highest roof under a point. Until the scene's city stage has built the city there are
+ * no buildings to keep out of, so it does not build it early.
  */
-import type { Vector3 } from "three";
-
 import type { Lot } from "./buildings/city";
 import { cityBuilt, getCityData } from "./cityData";
 
@@ -46,17 +44,4 @@ export function roofAt(x: number, z: number, margin: number, lowEnd: boolean): n
   if (!list) return top;
   for (const l of list) if (Math.abs(x - l.x) < l.w / 2 + margin && Math.abs(z - l.z) < l.d / 2 + margin && l.top > top) top = l.top;
   return top;
-}
-
-/** How many of `steps` samples along a → b fall inside a building box. */
-export function blockedSamples(a: Vector3, b: Vector3, steps: number, lowEnd: boolean): number {
-  let n = 0;
-  for (let k = 1; k < steps; k++) {
-    const u = k / steps;
-    const x = a.x + (b.x - a.x) * u;
-    const y = a.y + (b.y - a.y) * u;
-    const z = a.z + (b.z - a.z) * u;
-    if (y < roofAt(x, z, 0.5, lowEnd)) n++;
-  }
-  return n;
 }
