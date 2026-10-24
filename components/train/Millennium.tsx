@@ -4,7 +4,7 @@ import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo } from "react";
 import { BoxGeometry, BufferGeometry, CatmullRomCurve3, Color, CylinderGeometry, Float32BufferAttribute, Group, InstancedMesh, Matrix4, Mesh, MeshStandardMaterial, Quaternion, TubeGeometry, Vector3 } from "three";
 
-import { BALLAST, CAR, GAP, LANE, TRENCH } from "./constants";
+import { BALLAST, CAR, GAP, LANE, PLATFORM_LEN, TRENCH } from "./constants";
 import { mirror, ribbon } from "./Guideway";
 import { bedProfile, clearHeights, resample } from "./bedLift";
 import { merged, type Part } from "./merge";
@@ -273,14 +273,62 @@ export function Millennium() {
           put(pane, new BoxGeometry(0.05, 2.2, 23), side * 11.4, 2.5, 0);
         }
       }
-      if (grand) {
-        // VCC–Clark and the platform in the cut: a glass vault on white ribs over both tracks, as the Expo's stations
-        const v = vault(23, 7, 25, 1.4);
-        put(pane, v, 0, 0, 0);
-        for (let z = -12; z <= 12.01; z += 2.4) {
-          const r = rib(23, 7, 1.42, 0, 0.14);
-          put(ribs, r, 0, 0, z);
+      // at Commercial–Broadway the Expo's platforms reach out over the Millennium's right-hand platform in the cut: a
+      // glass lift rises from it straight up through the floor of each Expo platform crossing it with room for one
+      // (the one: the other crosses only the platform's very end), its cab a storey over it as the Expo's own lifts
+      // (accessKit.ts), squared to the Expo's platform
+      const ex = STATION_FRAMES[5];
+      const LIFT_W = 2.6;
+      const lifts: Vector3[] = [];
+      // the vault's ends, short of a lift
+      let z0 = -12.5;
+      let z1 = 12.5;
+      // along this platform, how far across the Expo (right of its travel) a step takes it
+      const run = tH.x * ex.rx + tH.z * ex.rz;
+      if (/Commercial/.test(st.name) && Math.abs(run) > 0.3) {
+        // the lift's half-extent along this platform, turned to the Expo
+        const half = (LIFT_W / 2) * (Math.abs(tH.x * ex.tx + tH.z * ex.tz) + Math.abs(run));
+        for (const side of [1, -1]) {
+          const mid = W(side * 8.9, 1.4, 0);
+          const l0 = (mid.x - ex.x) * ex.rx + (mid.z - ex.z) * ex.rz;
+          for (const l of [8.9, -8.9]) {
+            // where the two platforms' middles cross, if there is room for the lift on both
+            const z = (l - l0) / run;
+            const p = W(side * 8.9, 1.4, z);
+            const a = (p.x - ex.x) * ex.tx + (p.z - ex.z) * ex.tz;
+            if (Math.abs(z) + half > 11.6 || Math.abs(a) + LIFT_W / 2 > PLATFORM_LEN / 2 - 0.4) continue;
+            lifts.push(p);
+            if (z < 0) z0 = Math.max(z0, z + half + 0.5);
+            else z1 = Math.min(z1, z - half - 0.5);
+          }
         }
+      }
+      if (grand && z1 - z0 > 4) {
+        // VCC–Clark and the platform in the cut: a glass vault on white ribs over both tracks, as the Expo's stations
+        // (at Commercial–Broadway stopping short of the lift, where the Expo's platform overhead roofs the one under it)
+        put(pane, vault(23, 7, z1 - z0, 1.4), 0, 0, (z0 + z1) / 2);
+        const n = Math.max(1, Math.round((z1 - z0 - 1) / 2.4));
+        for (let j = 0; j <= n; j++) put(ribs, rib(23, 7, 1.42, 0, 0.14), 0, 0, z0 + 0.5 + ((z1 - z0 - 1) * j) / n);
+      }
+      for (const p of lifts) {
+        const top = ex.y + 1.4;
+        const h = top + 2.6 - p.y;
+        const ry = Math.atan2(ex.tx, ex.tz);
+        // a point on the lift's plan, squared to the Expo
+        const on = (dl: number, da: number): [number, number] => [p.x + ex.rx * dl + ex.tx * da, p.z + ex.rz * dl + ex.tz * da];
+        pane.push({ geo: new BoxGeometry(LIFT_W, h, LIFT_W).rotateY(ry), position: at(p.x, p.y + h / 2, p.z) });
+        for (const [dl, da] of [
+          [-1, -1],
+          [1, -1],
+          [-1, 1],
+          [1, 1],
+        ]) {
+          const [x, z] = on((dl * LIFT_W) / 2, (da * LIFT_W) / 2);
+          canopy.push({ geo: new BoxGeometry(0.12, h, 0.12).rotateY(ry), position: at(x, p.y + h / 2, z) });
+        }
+        white.push({ geo: new BoxGeometry(LIFT_W + 0.3, 0.25, LIFT_W + 0.3).rotateY(ry), position: at(p.x, top + 2.72, p.z) });
+        // the car, part way up
+        plat.push({ geo: new BoxGeometry(LIFT_W - 0.3, 2.2, LIFT_W - 0.3).rotateY(ry), position: at(p.x, p.y + (top - p.y) * 0.4 + 1.1, p.z) });
       }
       // a lift down to the street on the outside of the right-hand platform
       const d = drop(-13.4, 9);
@@ -290,43 +338,6 @@ export function Millennium() {
         put(white, new CylinderGeometry(0.06, 0.06, 3.2, 6), -11.4, 3.0, z);
         const disc = new CylinderGeometry(0.75, 0.75, 0.08, 20).rotateX(Math.PI / 2);
         put(blue, disc, -11.4, 4.4, z);
-      }
-      // at Commercial–Broadway the Expo's platforms reach out over the Millennium's in the cut: a glass lift rises from
-      // the Millennium platform straight up into the Expo platform above it, where one lies over the other (else a
-      // bridge carries it across at the Expo's level to the nearer platform's outer edge)
-      if (/Commercial/.test(st.name)) {
-        const ex = STATION_FRAMES[5];
-        const inEx = (w: Vector3) => [(w.x - ex.x) * ex.tx + (w.z - ex.z) * ex.tz, (w.x - ex.x) * ex.rx + (w.z - ex.z) * ex.rz];
-        let best = { z: 0, side: 1, err: Infinity };
-        for (const side of [1, -1]) {
-          for (let z = -10; z <= 10; z += 0.5) {
-            const [a, l] = inEx(W(side * 8.9, 1.4, z));
-            const err = Math.abs(Math.abs(l) - 8.9) + (Math.abs(a) > 11 ? 99 : 0);
-            if (err < best.err) best = { z, side, err };
-          }
-        }
-        const base = W(best.side * 8.9, 1.4, best.z);
-        const top = ex.y + 1.4;
-        const h = top - base.y;
-        pane.push({ geo: new BoxGeometry(3, h, 3), position: at(base.x, base.y + h / 2, base.z) });
-        for (const [dx, dz] of [
-          [-1.5, -1.5],
-          [1.5, -1.5],
-          [-1.5, 1.5],
-          [1.5, 1.5],
-        ])
-          white.push({ geo: new BoxGeometry(0.16, h, 0.16), position: at(base.x + dx, base.y + h / 2, base.z + dz) });
-        if (best.err > 1.5) {
-          const [a, l] = inEx(base);
-          const edge = Math.sign(l || 1) * 11.4;
-          const len = Math.max(0.5, Math.abs(l) - 11.4);
-          const mid = (l + edge) / 2;
-          const ry = Math.atan2(ex.rx, ex.rz);
-          const bx = ex.x + ex.tx * a + ex.rx * mid;
-          const bz = ex.z + ex.tz * a + ex.rz * mid;
-          plat.push({ geo: new BoxGeometry(2.6, 0.4, len + 1.6).rotateY(ry), position: at(bx, top - 0.2, bz) });
-          pane.push({ geo: new BoxGeometry(2.8, 2.6, len + 1.6).rotateY(ry), position: at(bx, top + 1.3, bz) });
-        }
       }
     });
 
