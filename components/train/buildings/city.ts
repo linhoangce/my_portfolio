@@ -19,7 +19,7 @@ import { landClass, nearestRoadDir, pointAt, roadDist, roads } from "../roadNetw
 import { onFeature, placeAt } from "../commonsLayout";
 import { inSetZone } from "../sets/zones";
 import { inLandmark, inPark, LANDMARKS, nearBridge, seawallDist, streamDist } from "../sites";
-import { groundAt, inWater, RASTER, surfaceAt } from "../terrain";
+import { asBaked, groundAt, inIslet, inWater, RASTER, surfaceAt } from "../terrain";
 import { PATH_SAMPLES, STATION_XZ, trackDist, trackNearest } from "../track";
 import type { SpeciesId } from "../trees/species";
 import { ART, MURAL0 } from "../cultureArt";
@@ -201,7 +201,15 @@ function corridorRaster() {
   return { dist: (x: number, z: number) => at(d, x, z), deck: (x: number, z: number) => at(y, x, z) };
 }
 
+/**
+ * The city is laid out on the ground as baked, Deadman's Island standing (terrain.ts carves it to water): every number
+ * is drawn as before, and the island's lots go into the scratch sink with the rail yard's and senákw's.
+ */
 export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
+  return asBaked(() => layOut(rng, lowEnd));
+}
+
+function layOut(rng: Rng, lowEnd: boolean): CityGeometry {
   const now = () => (typeof performance !== "undefined" ? performance.now() : 0);
   const t0 = now();
   const phases: Record<string, number> = {};
@@ -352,7 +360,7 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
     const yb = Math.min(...pts.map(([px, pz]) => footAt(px, pz))) - 0.6;
     const yt = Math.max(...pts.map(([px, pz]) => floorAt(px, pz)));
     const dist = Math.min(...pts.map(([px, pz]) => cor.dist(px, pz)));
-    const onSite = pts.some(([px, pz]) => inSenakw(px, pz) || inYard(px, pz));
+    const onSite = pts.some(([px, pz]) => inSenakw(px, pz) || inYard(px, pz) || inIslet(px, pz));
     // the turned footprint's extent on the axes, for the city's box tests
     const aw = Math.abs(w * Math.cos(ry)) + Math.abs(d * Math.sin(ry));
     const ad = Math.abs(w * Math.sin(ry)) + Math.abs(d * Math.cos(ry));

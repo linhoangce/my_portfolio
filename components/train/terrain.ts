@@ -17,6 +17,76 @@ const decode = (s: string): Uint8Array => {
 };
 const DEM = new Uint16Array(decode(DEM_CITY_DATA).buffer);
 const SDF = new Int8Array(decode(SDF_CITY_DATA).buffer);
+/** The field as baked, Deadman's Island and all (see `carveIslet` and `asBaked`). */
+const SDF_BAKED = SDF.slice();
+/** The field `sdfAt` reads: the carved one, or the baked one while the city and its trees are laid out. */
+let field = SDF;
+
+/**
+ * Deadman's Island, beside the Canada Place pier only because the pier stands west of its real site: the box round
+ * it. Inside the box the island is carved to water (its cells in the baked field set to the sea, the distances round
+ * it worked out afresh), so the harbour, the ground, the roads' and parks' tests and the boats all see open water.
+ */
+export const ISLET_BOX = { x0: -115, x1: -60, z0: -135, z1: -60 };
+/** On what was the island (or its shore), as baked. */
+export const inIslet = (x: number, z: number): boolean =>
+  x > ISLET_BOX.x0 && x < ISLET_BOX.x1 && z > ISLET_BOX.z0 && z < ISLET_BOX.z1 && bilinear(SDF_CITY, (k) => SDF_BAKED[k] / SDF_CITY.scale, x, z) > -2;
+
+/** Carve the island: the land in the box not joined to land outside it becomes water, and the water's depth is redrawn. */
+function carveIslet(): number {
+  const g = SDF_CITY;
+  const i0 = Math.max(1, Math.floor((ISLET_BOX.x0 - g.x0) / g.step));
+  const i1 = Math.min(g.nx - 2, Math.ceil((ISLET_BOX.x1 - g.x0) / g.step));
+  const j0 = Math.max(1, Math.floor((ISLET_BOX.z0 - g.z0) / g.step));
+  const j1 = Math.min(g.nz - 2, Math.ceil((ISLET_BOX.z1 - g.z0) / g.step));
+  const inBox = (i: number, j: number) => i >= i0 && i <= i1 && j >= j0 && j <= j1;
+  const land = (i: number, j: number) => SDF[j * g.nx + i] > 0;
+  // the mainland's land in the box: what joins (side by side) the land outside it
+  const joined = new Uint8Array(g.nx * g.nz);
+  const queue: [number, number][] = [];
+  for (let j = j0; j <= j1; j++) {
+    for (let i = i0; i <= i1; i++) {
+      if (!land(i, j)) continue;
+      if ([[i - 1, j], [i + 1, j], [i, j - 1], [i, j + 1]].some(([a, b]) => !inBox(a, b) && land(a, b))) {
+        joined[j * g.nx + i] = 1;
+        queue.push([i, j]);
+      }
+    }
+  }
+  while (queue.length) {
+    const [i, j] = queue.pop() as [number, number];
+    for (const [a, b] of [[i - 1, j], [i + 1, j], [i, j - 1], [i, j + 1]]) {
+      if (inBox(a, b) && land(a, b) && !joined[b * g.nx + a]) {
+        joined[b * g.nx + a] = 1;
+        queue.push([a, b]);
+      }
+    }
+  }
+  let carved = 0;
+  for (let j = j0; j <= j1; j++) {
+    for (let i = i0; i <= i1; i++) {
+      if (land(i, j) && !joined[j * g.nx + i]) {
+        SDF[j * g.nx + i] = -1;
+        carved++;
+      }
+    }
+  }
+  // the water's distance to the land left, where it is more than a cell and a half from it (the shores elsewhere keep
+  // their baked values), down to the field's floor
+  const R = 3;
+  for (let j = j0; j <= j1; j++) {
+    for (let i = i0; i <= i1; i++) {
+      const k = j * g.nx + i;
+      if (SDF[k] > 0) continue;
+      let best = Infinity;
+      for (let b = Math.max(0, j - R); b <= Math.min(g.nz - 1, j + R); b++) for (let a = Math.max(0, i - R); a <= Math.min(g.nx - 1, i + R); a++) if (SDF[b * g.nx + a] > 0) best = Math.min(best, Math.hypot(a - i, b - j) * g.step);
+      if (best > g.step * 1.5) SDF[k] = Math.max(-128, -Math.round((best - g.step / 2) * g.scale));
+    }
+  }
+  return carved;
+}
+/** How many of the field's points the island took. */
+export const ISLET_CARVED = carveIslet();
 
 const sstep = (a: number, b: number, x: number): number => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -171,7 +241,7 @@ export function polySdf(poly: [number, number][], x: number, z: number): number 
 
 /** Signed distance to the shore in world units, positive on land, negative on water. */
 export const sdfAt = (x: number, z: number): number => {
-  const s = bilinear(SDF_CITY, (k) => SDF[k] / SDF_CITY.scale, x, z);
+  const s = bilinear(SDF_CITY, (k) => field[k] / SDF_CITY.scale, x, z);
   let drawn = Infinity;
   for (let k = 0; k < EXTRA_WATER.length; k++) {
     const b = EXTRA_BOX[k];
@@ -225,6 +295,9 @@ export const rectPad = (x: number, z: number, tx: number, tz: number, halfAlong:
 };
 
 let frozen: Float32Array | null = null;
+/** The raster as baked (the island standing) round the island's box, read while `asBaked` runs. */
+let bakedRaster: Float32Array | null = null;
+let baked = false;
 /** The raster the ground mesh draws: 6-unit cells over the city box. */
 export const RASTER: GridDef = { x0: -520, z0: -450, step: 6, nx: 254, nz: 219 };
 
@@ -248,13 +321,43 @@ function freeze(): Float32Array {
   return hf;
 }
 export const terrainRaster = (): { grid: GridDef; hf: Float32Array } => ({ grid: RASTER, hf: frozen ?? freeze() });
+/** The raster the ground reads: the drawn one, or the baked one while `asBaked` runs. */
+const raster = (): Float32Array => (baked && bakedRaster ? bakedRaster : (frozen ?? freeze()));
+
+/**
+ * Run f on the ground and the shore as baked, Deadman's Island standing: the city lays its lots and plants its trees
+ * this way, so every number it draws is drawn as before and the island's own lots and trees (taken out after) do not
+ * move the rest. Only the island's box differs.
+ */
+export function asBaked<T>(f: () => T): T {
+  const hf = frozen ?? freeze();
+  if (!bakedRaster) {
+    const out = hf.slice();
+    const g = RASTER;
+    field = SDF_BAKED;
+    for (let j = Math.max(0, Math.floor((ISLET_BOX.z0 - g.z0) / g.step) - 1); j <= Math.min(g.nz - 1, Math.ceil((ISLET_BOX.z1 - g.z0) / g.step) + 1); j++) {
+      for (let i = Math.max(0, Math.floor((ISLET_BOX.x0 - g.x0) / g.step) - 1); i <= Math.min(g.nx - 1, Math.ceil((ISLET_BOX.x1 - g.x0) / g.step) + 1); i++) out[j * g.nx + i] = finalAt(g.x0 + i * g.step, g.z0 + j * g.step);
+    }
+    field = SDF;
+    bakedRaster = out;
+  }
+  const was = baked;
+  baked = true;
+  field = SDF_BAKED;
+  try {
+    return f();
+  } finally {
+    baked = was;
+    field = was ? SDF_BAKED : SDF;
+  }
+}
 
 /**
  * Final ground height. Inside the raster it interpolates on the mesh's own triangles: each cell (a, b / c, d) is split
  * along b–c into (a, c, b) and (b, c, d), exactly as Ground.tsx indexes it.
  */
 export function groundAt(x: number, z: number): number {
-  const hf = frozen ?? freeze();
+  const hf = raster();
   const g = RASTER;
   const fx = (x - g.x0) / g.step;
   const fz = (z - g.z0) / g.step;
@@ -277,7 +380,7 @@ export function groundAt(x: number, z: number): number {
  */
 export function surfaceAt(x: number, z: number, stride: number): number {
   if (stride === 1) return groundAt(x, z);
-  const hf = frozen ?? freeze();
+  const hf = raster();
   const g = RASTER;
   const nx = Math.floor((g.nx - 1) / stride) + 1;
   const nz = Math.floor((g.nz - 1) / stride) + 1;

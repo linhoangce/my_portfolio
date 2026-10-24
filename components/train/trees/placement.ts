@@ -15,7 +15,7 @@ import { onFeature } from "../commonsLayout";
 import { inSetZone } from "../sets/zones";
 import { inYard } from "../railYard";
 import { inLandmark, inPark, inPoly, nearBridge, parkAt, parkPathDist, PARKS, PLANTED, streamDist } from "../sites";
-import { groundAt, inWater, sdfAt, slopeAt } from "../terrain";
+import { asBaked, groundAt, inIslet, inWater, sdfAt, slopeAt } from "../terrain";
 import { LEN, nearestStation, SAMPLES, samples, stationS, trackDist, trackNearest } from "../track";
 import { POOLS, SPECIES, SPECIES_INDEX, type SpeciesId } from "./species";
 
@@ -57,6 +57,12 @@ const VERGE = {
 };
 
 export function placeTrees(rng: Rng, lowEnd: boolean, lots: LotBox[]): TreeInst[] {
+  // planted on the ground as baked, Deadman's Island standing (terrain.ts carves it to water), so every tree draws its
+  // numbers as before; the island's trees, with the rail yard's, are taken out after
+  return asBaked(() => plant(rng, lowEnd, lots)).filter((t) => !inYard(t.x, t.z) && !inIslet(t.x, t.z));
+}
+
+function plant(rng: Rng, lowEnd: boolean, lots: LotBox[]): TreeInst[] {
   const cap = lowEnd ? 16000 : 44000;
   // the verge and street trees may use 65 % of the budget; the woods (parks, Stanley Park, the cut, the North Shore) keep the rest
   const streetCap = cap * 0.65;
@@ -303,6 +309,5 @@ export function placeTrees(rng: Rng, lowEnd: boolean, lots: LotBox[]): TreeInst[
   const keepNearW = Math.min(1, roomW / Math.max(1, nNearW));
   const keepFarW = Math.min(1, Math.max(0, roomW - nNearW * keepNearW) / Math.max(1, woods.length - nNearW));
   for (const w of woods) if (rng.next() < (w.far ? keepFarW : keepNearW)) add(w.x, w.z, w.id, w.s);
-  // none on the rail yard's fill (railYard.ts), taken out after, so every other tree stands where it did
-  return out.filter((t) => !inYard(t.x, t.z));
+  return out;
 }
