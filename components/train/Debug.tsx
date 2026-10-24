@@ -11,7 +11,7 @@ import { skyway } from "./hoverLanes";
 import { skipToHold } from "./scene/director";
 import { shotFor } from "./scene/shots";
 import { orbitBy, zoomBy } from "./scene/view";
-import type { LandmarkKey } from "./sites";
+import type { MonumentKey } from "./monumentData";
 import { useTrain } from "./store";
 import { BLOCKERS } from "./cityModel";
 import { getCityData } from "./cityData";
@@ -40,7 +40,7 @@ export type TrainDebug = {
   stationS: number[];
   /** Orbit the current view (yaw, pitch in radians) and zoom (log). */
   orbit: (yaw: number, pitch: number, zoom?: number) => void;
-  monument: (key: LandmarkKey | null) => void;
+  monument: (key: MonumentKey | null) => void;
   /** Skip an establishing shot to its hold. */
   skip: () => void;
   /** The current scene's shot plan (positions only), for the frame checks. */

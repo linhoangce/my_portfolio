@@ -16,6 +16,7 @@
  * Pure layout, in world coordinates (the market's from the Stadium set's frame).
  */
 import { ART, PLAQUE } from "./cultureArt";
+import { RECONCILIATION_AT } from "./monumentData";
 import { fromStation, SET_SHIFT, STATION_FRAMES } from "./sets/zones";
 import { groundAt } from "./terrain";
 import type { SpeciesId } from "./trees/species";
@@ -261,7 +262,7 @@ export type Kind =
   | "taiko"
   | "banner"
   | "mural"
-  | "longhouse"
+  | "monument"
   | "landing"
   | "post"
   | "fire";
@@ -354,10 +355,10 @@ const CULTURE: Feature[] = [
   { kind: "mural", ...inSet(5, -19.2, 36, 1, 0), cell: ART.hands, w: 5.4, site: "commercial" },
   { kind: "flag", ...inSet(5, -19.4, 46, 1, 0), cell: ART.pride, site: "commercial" },
   { kind: "flag", ...inSet(5, -19.4, 50, 1, 0), cell: ART.trans, site: "commercial" },
-  // the canoe landing on the slope of the Canada Place forecourt down to the harbour: a longhouse at its head facing the
-  // water, two carved posts at the top of its steps, a fire circle between, the steps (Culture.tsx lays them on the
-  // ground) running down to a float where two journey canoes are drawn up
-  { kind: "longhouse", x: -16.5, z: -30, ry: Math.PI, w: 10, d: 6, site: "forecourt" },
+  // the canoe landing on the slope of the Canada Place forecourt down to the harbour: the reconciliation monument at its
+  // head, its plaque to the water, two carved posts at the top of its steps, a fire circle between, the steps
+  // (Culture.tsx lays them on the ground) running down to a float where two journey canoes are drawn up
+  { kind: "monument", x: RECONCILIATION_AT[0], z: RECONCILIATION_AT[1], ry: Math.PI, w: 5.6, d: 5.6, site: "forecourt" },
   { kind: "fire", x: -16.5, z: -34.6, ry: 0, site: "forecourt" },
   { kind: "post", x: -24.4, z: -36.2, ry: Math.PI, site: "forecourt" },
   { kind: "post", x: -8.6, z: -36.2, ry: Math.PI, site: "forecourt" },
@@ -527,8 +528,8 @@ export function footprint(f: Feature): Shape[] {
       return [["c", f.x, f.z, 0.9]];
     case "mural":
       return [rect((f.w ?? 6) / 2 + 0.2, 0.3)];
-    case "longhouse":
-      return [rect((f.w ?? 10) / 2 + 1.2, (f.d ?? 6) / 2 + 1.2)];
+    case "monument":
+      return [rect(3.4, 3.4)];
     case "landing":
       return [rect((f.w ?? 15) / 2 + 0.6, (f.d ?? 19) / 2)];
     case "post":
