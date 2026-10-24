@@ -4,11 +4,10 @@ import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo } from "react";
 import {
   BoxGeometry,
+  type BufferGeometry,
   ConeGeometry,
   CylinderGeometry,
   Group,
-  InstancedMesh,
-  Matrix4,
   Mesh,
   MeshStandardMaterial,
   SphereGeometry,
@@ -16,14 +15,15 @@ import {
 } from "three";
 
 import { merged } from "./merge";
-import { paint } from "./shapes";
+import { shopGlow } from "./pavilion";
+import { merge, paint } from "./shapes";
 import { type Built, buildBCPlace, buildBridges, buildCanadaPlace, buildConvention, buildHarbourCentre, buildHarbourfront, buildRogersArena, buildScienceWorld, buildWaterfrontHub } from "./landmarkKit";
 import { clearReflections } from "./reflectionSources";
 import { LANDMARKS, type LandmarkKey, type PlacedLandmark } from "./sites";
-import { groundAt } from "./terrain";
+import { groundAt, surfaceAt } from "./terrain";
+import { ART_LIGHTS, placeLight, uplight } from "./uplight";
 import { type World, useWorld } from "./world";
 
-const m4 = new Matrix4();
 const SMALL = new Set<LandmarkKey>(["gate", "cauldron", "orca", "steamClock"]);
 
 /** Sized against the train (one car ≈ 17 m), not the compressed street grid, so they read at the right scale from the guideway. */
@@ -53,24 +53,30 @@ function buildLandmark(l: PlacedLandmark, world: World): Built {
     g.add(new Mesh(gate, new MeshStandardMaterial({ vertexColors: true, roughness: 0.55 })));
     return { group: g };
   }
+  // the plaza's sculptures are lit after dark from fixtures on the paving round them (uplight.ts), in their own mesh
+  const stride = world.lowEnd ? 2 : 1;
+  const foot = groundAt(l.px, l.pz);
+  const litUp = (parts: BufferGeometry[]) => {
+    const spec = ART_LIGHTS[key];
+    const { spots, parts: fixtures } = placeLight(spec, 0, 0, 0, 0, (x, z) => surfaceAt(l.px + x, l.pz + z, stride) + 0.13 - foot, paint);
+    uplight(parts, spots, spec.gain);
+    return new Mesh(merge([...parts, ...fixtures]), shopGlow(new MeshStandardMaterial({ vertexColors: true, roughness: 0.45 }), world));
+  };
   if (key === "cauldron") {
     // the Olympic Cauldron: four leaning white columns and a flame that burns in the event's colours
-    const white = new MeshStandardMaterial({ color: 0xf2f3f5, roughness: 0.4 });
     const cols = Array.from({ length: 4 }, (_, i) => {
       const a = (i / 4) * Math.PI * 2 + 0.4;
-      return { geo: new BoxGeometry(0.7, 11, 0.9), position: [Math.cos(a) * 2.2, 5.2, Math.sin(a) * 2.2] as [number, number, number], rotation: [Math.sin(a) * 0.18, -a, -Math.cos(a) * 0.18] as [number, number, number] };
+      return { geo: paint(new BoxGeometry(0.7, 11, 0.9), 0xf2f3f5), position: [Math.cos(a) * 2.2, 5.2, Math.sin(a) * 2.2] as [number, number, number], rotation: [Math.sin(a) * 0.18, -a, -Math.cos(a) * 0.18] as [number, number, number] };
     });
     // the columns and the bowl in one mesh
-    g.add(new Mesh(merged([...cols, { geo: new CylinderGeometry(1.4, 0.9, 0.8, 16), position: [0, 9.9, 0] }]), white));
+    g.add(litUp([merged([...cols, { geo: paint(new CylinderGeometry(1.4, 0.9, 0.8, 16), 0xf2f3f5), position: [0, 9.9, 0] }])]));
     const flame = new Mesh(new ConeGeometry(1.1, 3.4, 10), events.glow);
     flame.position.y = 11.6;
     g.add(flame);
     return { group: g, animate: (t) => flame.scale.set(1, 0.85 + 0.25 * Math.sin(t * 6) * Math.sin(t * 2.3), 1) };
   }
   if (key === "orca") {
-    // Douglas Coupland's Digital Orca: a breaching killer whale in black and white cubes
-    const black = new MeshStandardMaterial({ color: 0x15171c, roughness: 0.6 });
-    const white = new MeshStandardMaterial({ color: 0xf2f3f5, roughness: 0.6 });
+    // Douglas Coupland's Digital Orca: a breaching killer whale in black and white cubes, painted into one mesh
     const cubes: [number, number, number, boolean][] = [];
     for (let k = 0; k < 14; k++) {
       const t = k / 13;
@@ -80,18 +86,7 @@ function buildLandmark(l: PlacedLandmark, world: World): Built {
       for (let a = -2; a <= 2; a++) for (let b = -1; b <= 1; b++) if (a * a + b * b * 2 <= rad * rad * 3) cubes.push([a * 0.5, y + b * 0.5, zc, b < 0 && Math.abs(a) < 2]);
     }
     cubes.push([0, 5.6, 0.4, false], [0, 6.1, 0.4, false]);
-    for (const [isWhite, mat] of [
-      [false, black],
-      [true, white],
-    ] as const) {
-      const list = cubes.filter((c) => c[3] === isWhite);
-      const inst = new InstancedMesh(new BoxGeometry(0.48, 0.48, 0.48), mat, Math.max(1, list.length));
-      list.forEach(([x, y, z], i) => {
-        m4.makeTranslation(x, y, z);
-        inst.setMatrixAt(i, m4);
-      });
-      g.add(inst);
-    }
+    g.add(litUp(cubes.map(([x, y, z, isWhite]) => paint(new BoxGeometry(0.48, 0.48, 0.48).translate(x, y, z), isWhite ? 0xf2f3f5 : 0x15171c))));
     return { group: g };
   }
   // the Gastown Steam Clock, puffing steam
