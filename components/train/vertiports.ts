@@ -16,7 +16,7 @@ import { BoxGeometry, type BufferGeometry, CylinderGeometry, RingGeometry, Torus
 
 import { padDeck } from "./buildings/archetypes";
 import type { Tint } from "./buildings/meshBuilder";
-import { box as part, type Sink, solid, strut, tpl, WHITE } from "./buildings/parts";
+import { box as part, fp, type Sink, solid, strut, tpl, walls, WHITE } from "./buildings/parts";
 import { SEA } from "./constants";
 import { lit } from "./pavilion";
 import { merge, paint } from "./shapes";
@@ -223,22 +223,48 @@ export function lonsdaleVertiport(): BufferGeometry {
 const tint = (hex: number): Tint => [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255];
 
 /**
- * The Skyport on its tower (centre cx, cz; roof y), into a city chunk's meshes: the deck on struts reaching past the
- * tower, its two pads (the pad façade's mark, a violet ring of light round each), the glass lounge, the drone deck on
- * the lounge's roof with its six docks ringed in light, the nets round the deck leaning out, and red obstruction
- * lights at its corners (the city's neon). Draws nothing from the rng.
+ * The Skyport on its tower (centre cx, cz; roof y; the tower's rounded plan tw by td, its ends round), into a city
+ * chunk's meshes: the deck reaching past the tower, carried on the tower's walls (taken up to it as a drum) and on a
+ * grillage of beams under it, raking struts from a ring beam round the tower out to the beams under the overhang; its
+ * two pads (the pad façade's mark, a violet ring of light round each), the glass lounge, the drone deck on the lounge's
+ * roof with its six docks ringed in light, the nets round the deck leaning out, and red obstruction lights at its
+ * corners (the city's neon). Draws nothing from the rng.
  */
-export function skyport(s: Sink, cx: number, cz: number, y: number): void {
+export function skyport(s: Sink, cx: number, cz: number, y: number, tw: number, td: number): void {
   const D = SKYPORT.deck;
   const top = y + SKYPORT_DECK;
   const X = (lx: number) => cx + lx;
   const Z = (lz: number) => cz + lz;
   const steel = tint(0x8a9099);
-  part(s, "concrete", X((D.x0 + D.x1) / 2), y + D.lift, Z((D.z0 + D.z1) / 2), D.x1 - D.x0, D.t, D.z1 - D.z0, tint(0xd8d4cc));
-  // the cantilever carried on struts back to the tower's east face, and posts on its roof
-  for (const lz of [D.z0 + 0.6, 0, D.z1 - 0.6]) {
-    strut(s, "metal", [X(4.5), y - 5, Z(lz)], [X(D.x1 - 0.6), y + D.lift, Z(lz)], 0.16, steel);
-    for (const lx of [-3.8, 3.8]) strut(s, "metal", [X(lx), y, Z(lz)], [X(lx), y + D.lift, Z(lz)], 0.2, steel);
+  const stone = tint(0xd8d4cc);
+  part(s, "concrete", X((D.x0 + D.x1) / 2), y + D.lift, Z((D.z0 + D.z1) / 2), D.x1 - D.x0, D.t, D.z1 - D.z0, stone);
+  // the tower's walls taken up to the deck's underside
+  const r = Math.min(tw, td) / 2 - 0.05;
+  walls(s, "concrete", fp.rounded(tw, td, r, 5), cx, cz, y, y + D.lift, { tint: stone });
+  // the grillage under the deck: beams along it and across it
+  const BEAM = 0.55;
+  const under = y + D.lift - BEAM;
+  const xs = [D.x0 + 0.6, 0.5, 4.5, 8.7, D.x1 - 0.6];
+  const zs = [D.z0 + 0.6, 0, D.z1 - 0.6];
+  for (const lz of zs) part(s, "metal", X((D.x0 + D.x1) / 2), under, Z(lz), D.x1 - D.x0 - 0.6, BEAM, 0.35, steel);
+  for (const lx of xs) part(s, "metal", X(lx), under, Z((D.z0 + D.z1) / 2), 0.35, BEAM, D.z1 - D.z0 - 0.6, steel);
+  // the raking struts: from a ring beam round the tower a storey and a half down, each from the point of the tower's
+  // face nearest where it lands, up to a crossing of the beams beyond the drum; so every strut stays over the deck,
+  // clear of the towers beside
+  const ringY = y - 6;
+  walls(s, "metal", fp.rounded(tw + 0.5, td + 0.5, r + 0.25, 5), cx, cz, ringY - 0.35, ringY + 0.35, { tint: steel });
+  const hx = tw / 2 - r;
+  const hz = td / 2 - r;
+  for (const lx of xs) {
+    for (const lz of zs) {
+      const qx = Math.max(-hx, Math.min(hx, lx));
+      const qz = Math.max(-hz, Math.min(hz, lz));
+      const d = Math.hypot(lx - qx, lz - qz);
+      if (d < r + 0.4) continue;
+      const fx = qx + ((lx - qx) / d) * (r + 0.15);
+      const fz = qz + ((lz - qz) / d) * (r + 0.15);
+      strut(s, "metal", [X(fx), ringY, Z(fz)], [X(lx), under + 0.1, Z(lz)], lx > 8 ? 0.2 : 0.16, steel);
+    }
   }
   for (const [lx, lz] of SKYPORT.pads) {
     solid(s, "pad", tpl("padDeck", padDeck), X(lx), top, Z(lz), PAD_R, SKYPORT_PAD - SKYPORT_DECK, PAD_R);

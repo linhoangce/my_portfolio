@@ -1,347 +1,492 @@
 /**
- * The air taxis of 2100 (airways.ts flies them, AirTaxis.tsx draws them): four makes, none of them a car with its
- * wheels off and none of them a drone, each built nose along +x, its feet on y 0 (it stands on its pad):
- * - the Halo, an egg of a two-seater inside a ring wing, the ring's inner face and outer rim its light;
- * - the Manta, a four-seat flying wing, a fan in each wing under a lit rim, its swept leading edges lit;
- * - the Dart, a tandem two-seater with canards, a swept wing and a ducted fan at each tip, a light line down its flanks;
- * - the Lantern, a six-seat cabin on two fan sponsons, a band of windows down each side over a belt of light.
- * No open rotors and no red, green and white points (the delivery drones' look, vessels.ts): lights in lines and
- * rings in the livery's accent, a white lamp at the nose and red at the tail. Every vertex carries what the aircraft
- * shader needs:
+ * The air taxis of 2100 (airways.ts flies them, AirTaxis.tsx draws them): five bodies of one maker's line, built as
+ * vehicles, not as aircraft or toys: no wings, no tail fins, no open rotors. Each is a sculpted hull, a cabin on a spine
+ * between fan pods where a car's wheels would be, the fans in grilles flush with the pods' decks over and under, a dark
+ * glasshouse, a light blade across the nose and a bar across the tail; each built nose along +x, its retracted feet on
+ * y 0 (it stands on its pad):
+ * - the coupé, low, its roof falling in a fastback;
+ * - the saloon, longer, its cabin upright under a long roof, a notched tail;
+ * - the utility, tall and square-shouldered, a dark lower body, roof rails;
+ * - the shuttle, long and tall, its cabin full width between the pods, windows down its sides under a flat roof;
+ * - the sport, a narrow canopy for two between wide pods, very low.
+ * Their lights are lines (the delivery drones show points, vessels.ts): a line round the shoulder, rings round the fans.
+ * Every vertex carries what the aircraft shader needs:
  * - its colour;
  * - aTint (1 where the paint takes the instance's livery);
  * - aGlow: 1 a lamp in its own colour, 2 a light in the livery's accent, 3 glass, 4 glass with the cabin's light
  *   behind it (warm after dark).
  */
-import {
-  type BufferGeometry,
-  BoxGeometry,
-  CircleGeometry,
-  CylinderGeometry,
-  ExtrudeGeometry,
-  Float32BufferAttribute,
-  LatheGeometry,
-  RingGeometry,
-  Shape,
-  SphereGeometry,
-  SplineCurve,
-  TorusGeometry,
-  Vector2,
-  Vector3,
-} from "three";
+import { type BufferGeometry, BoxGeometry, CircleGeometry, Float32BufferAttribute, BufferGeometry as Geo, PlaneGeometry, RingGeometry, Vector3 } from "three";
 
 import { merge } from "./shapes";
 
 /** A face's look: its colour, its glow (see above) and whether the livery tints it. */
 type Look = readonly [hex: number, glow: number, tint: number];
 const PAINT: Look = [0xffffff, 0, 1];
-const GLASS: Look = [0x0c1622, 3, 0];
-const LIT: Look = [0x0c1622, 4, 0];
+const GLASS: Look = [0x2c3a48, 3, 0];
+const LIT: Look = [0x1c2630, 4, 0];
 const ACCENT: Look = [0xffffff, 2, 0];
 const HEAD: Look = [0xf2f8ff, 1, 0];
 const TAIL: Look = [0xff2a1f, 1, 0];
-const DARK: Look = [0x15181d, 0, 0];
-const BELLY: Look = [0x2a3039, 0, 0];
-const TRIM: Look = [0x8d96a1, 0, 0];
+const DARK: Look = [0x121417, 0, 0];
+const BELLY: Look = [0x24282e, 0, 0];
+const TRIM: Look = [0x9aa2ab, 0, 0];
+const GRILLE: Look = [0x30353c, 0, 0];
 
 const lin = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
 const rgb = (hex: number) => [lin(((hex >> 16) & 255) / 255), lin(((hex >> 8) & 255) / 255), lin((hex & 255) / 255)];
 
-const c = new Vector3();
-const n = new Vector3();
-/**
- * A part with the aircraft's attributes, face by face: its look, or its look by where a face sits (its centre) and
- * which way it faces; `quads` takes its triangles two by two (a lathe's or a sphere's are its quads), so its edges run
- * straight.
- */
-function part(g: BufferGeometry, look: Look | ((c: Vector3, n: Vector3) => Look), quads = false): BufferGeometry {
+/** A part with the aircraft's attributes, all in one look. */
+function part(g: BufferGeometry, look: Look): BufferGeometry {
   const ng = g.index ? g.toNonIndexed() : g;
   if (ng !== g) g.dispose();
   if (!ng.attributes.normal) ng.computeVertexNormals();
   for (const k of Object.keys(ng.attributes)) if (!["position", "normal", "uv"].includes(k)) ng.deleteAttribute(k);
-  const pos = ng.attributes.position;
-  const nrm = ng.attributes.normal;
-  const count = pos.count;
+  const count = ng.attributes.position.count;
   if (!ng.attributes.uv) ng.setAttribute("uv", new Float32BufferAttribute(new Float32Array(count * 2), 2));
+  const k = rgb(look[0]);
   const col = new Float32Array(count * 3);
-  const glow = new Float32Array(count);
-  const tint = new Float32Array(count);
-  const per = quads ? 6 : 3;
-  for (let f = 0; f < count; f += per) {
-    c.set(0, 0, 0);
-    n.set(0, 0, 0);
-    for (let v = f; v < f + per; v++) {
-      c.x += pos.getX(v) / per;
-      c.y += pos.getY(v) / per;
-      c.z += pos.getZ(v) / per;
-      n.x += nrm.getX(v);
-      n.y += nrm.getY(v);
-      n.z += nrm.getZ(v);
-    }
-    n.normalize();
-    const [hex, gl, ti] = typeof look === "function" ? look(c, n) : look;
-    const k = rgb(hex);
-    for (let v = f; v < f + per; v++) {
-      col.set(k, v * 3);
-      glow[v] = gl;
-      tint[v] = ti;
-    }
-  }
+  for (let v = 0; v < count; v++) col.set(k, v * 3);
   ng.setAttribute("color", new Float32BufferAttribute(col, 3));
-  ng.setAttribute("aGlow", new Float32BufferAttribute(glow, 1));
-  ng.setAttribute("aTint", new Float32BufferAttribute(tint, 1));
+  ng.setAttribute("aGlow", new Float32BufferAttribute(new Float32Array(count).fill(look[1]), 1));
+  ng.setAttribute("aTint", new Float32BufferAttribute(new Float32Array(count).fill(look[2]), 1));
   return ng;
 }
 
-/**
- * A body of revolution along x: smooth through its radius at each x of `prof` (tail to nose, on the axis at both
- * ends), a row every `step` or so, `seg` round. A row of faces is centred on the equator at either side (±z).
- */
-function spindle(prof: [number, number][], seg: number, step: number): BufferGeometry {
-  const curve = new SplineCurve(prof.map(([x, r]) => new Vector2(x, r)));
-  const pts = curve.getSpacedPoints(Math.ceil(curve.getLength() / step)).map((p) => new Vector2(Math.max(0, p.y), p.x));
-  pts[0].x = 0;
-  pts[pts.length - 1].x = 0;
-  return new LatheGeometry(pts, seg, -Math.PI / seg).rotateZ(-Math.PI / 2);
-}
+/** A flat disc (or, r0 > 0, a ring) at (x, y, z), facing up or, `down`, down. */
+const flat = (x: number, y: number, z: number, r1: number, r0 = 0, down = false, seg = 20) =>
+  (r0 > 0 ? new RingGeometry(r0, r1, seg) : new CircleGeometry(r1, seg)).rotateX(down ? Math.PI / 2 : -Math.PI / 2).translate(x, y, z);
 
-/** A plan outline from its right half (nose to tail, x forward and s out to the right), smoothed or as given, and mirrored. */
-function outline(half: [number, number][], smooth: boolean): [number, number][] {
-  const right = smooth ? new SplineCurve(half.map(([x, s]) => new Vector2(x, s))).getSpacedPoints(28).map((p): [number, number] => [p.x, Math.max(0, p.y)]) : half;
-  const left = right
-    .slice(1, -1)
-    .reverse()
-    .map(([x, s]): [number, number] => [x, -s]);
-  return [...right, ...left];
-}
-
-/** A flat plate of a plan outline, `t` thick with its edges rounded by r, its mid-plane at height y. */
-function plate(ring: [number, number][], t: number, r: number, y: number): BufferGeometry {
-  const sh = new Shape();
-  sh.moveTo(ring[0][0], ring[0][1]);
-  for (const [x, s] of ring.slice(1)) sh.lineTo(x, s);
-  sh.closePath();
-  // the extrusion's depth stands up and the outline's s runs along z
-  return new ExtrudeGeometry(sh, { depth: t, bevelEnabled: r > 0, bevelThickness: r, bevelSize: r, bevelSegments: 2, curveSegments: 4 })
-    .rotateX(-Math.PI / 2)
-    .translate(0, y - t / 2, 0);
-}
-
-/** A fin standing on the centre line: its side outline (x, y) `t` thick. */
-function fin(side: [number, number][], t: number): BufferGeometry {
-  const sh = new Shape();
-  sh.moveTo(side[0][0], side[0][1]);
-  for (const [x, y] of side.slice(1)) sh.lineTo(x, y);
-  sh.closePath();
-  return new ExtrudeGeometry(sh, { depth: t, bevelEnabled: false }).translate(0, 0, -t / 2);
-}
-
-/** A ring round a vertical axis through (x, y, z), radius R, its section w across and h high. */
-const hoop = (x: number, y: number, z: number, R: number, w: number, h: number, radial = 8, around = 36) =>
-  new TorusGeometry(R, w / 2, radial, around)
-    .rotateX(Math.PI / 2)
-    .scale(1, h / w, 1)
-    .translate(x, y, z);
-
-/** How much a face's normal points out from a vertical axis through (x, z): 1 straight out, −1 straight in. */
-const outward = (x: number, z: number) => {
-  const d = Math.hypot(c.x - x, c.z - z) || 1;
-  return (n.x * (c.x - x) + n.z * (c.z - z)) / d;
-};
-
-/** A disc facing down at (x, y, z), lit in the livery's accent: the glow of a fan's downwash. */
-const downwash = (x: number, y: number, z: number, r: number) => part(new CircleGeometry(r, 16).rotateX(Math.PI / 2).translate(x, y, z), ACCENT);
-
-/** A leg from the ground up to y at (x, z), on a round foot. */
-const leg = (x: number, z: number, y: number) => [
-  part(new CylinderGeometry(0.035, 0.045, y, 6).translate(x, y / 2, z), DARK),
-  part(new CylinderGeometry(0.1, 0.1, 0.03, 8).translate(x, 0.015, z), DARK),
-];
-
-/** The Halo: an egg of a pod for two inside a ring wing on four pylons, three legs. About 3.7 across. */
-function halo(): BufferGeometry {
-  const yc = 1.0;
-  const rx = 0.05;
-  // prettier-ignore
-  const pod = spindle([[-1.4, 0], [-1.3, 0.28], [-0.95, 0.52], [-0.4, 0.68], [0.2, 0.72], [0.75, 0.65], [1.18, 0.47], [1.43, 0.23], [1.5, 0]], 20, 0.14)
-    .scale(1, 0.9, 1)
-    .translate(0, yc, 0);
-  const parts = [
-    part(pod, (c, n) => {
-      // by its row of faces, the angle over the pod's equator: a lamp across the nose under the visor and one across
-      // the tail; the canopy over the top and round the front, its lower rows lit from inside; a light line down the
-      // spine behind it
-      const a = (Math.atan2((c.y - yc) / 0.9, Math.abs(c.z)) * 180) / Math.PI;
-      if (c.x > 1.1 && a < -9 && a > -27) return HEAD;
-      if (c.x < -1.12 && Math.abs(a) < 9) return TAIL;
-      if ((a > 9 && c.x > -0.55) || (c.x > 0.8 && a > -9)) return a < 45 ? LIT : GLASS;
-      if (a > 81 && c.x < -0.55 && c.x > -1.2) return ACCENT;
-      return n.y < -0.75 ? BELLY : PAINT;
-    }, true),
-    // the ring, lit on its inner face, and a line of light round its outer rim
-    part(hoop(rx, yc, 0, 1.7, 0.34, 0.2, 6, 36), (_, n) => (outward(rx, 0) < -0.5 ? ACCENT : n.y < -0.6 ? BELLY : PAINT), true),
-    part(hoop(rx, yc, 0, 1.87, 0.03, 0.03, 3, 36), ACCENT),
-    ...[0.7, -0.7, Math.PI - 0.7, 0.7 - Math.PI].map((a) => part(new BoxGeometry(0.92, 0.07, 0.13).rotateY(-a).translate(rx + Math.cos(a) * 1.08, yc, Math.sin(a) * 1.08), PAINT)),
-    part(new RingGeometry(0.2, 0.44, 16).rotateX(Math.PI / 2).translate(0.15, yc - 0.655, 0), ACCENT),
-    ...leg(0.75, 0.32, 0.47),
-    ...leg(0.75, -0.32, 0.47),
-    ...leg(-0.8, 0, 0.5),
-  ];
-  return merge(parts);
-}
-
-/** The Manta: a flying wing for four, its cabin a blister on the wing, a fan in each wing, twin canted fins, skids. About 4 long and 4 across. */
-function manta(): BufferGeometry {
-  const yw = 0.48;
-  // prettier-ignore
-  const wing = plate(outline([[2.0, 0], [1.72, 0.4], [1.1, 1.08], [0.3, 1.72], [-0.38, 2.0], [-0.72, 1.86], [-0.84, 1.32], [-1.12, 0.74], [-1.52, 0.38], [-1.92, 0.14], [-2.0, 0]], true), 0.08, 0.07, yw);
-  const yb = yw + 0.12;
-  const cabin = new SphereGeometry(1, 20, 10).scale(1.3, 0.44, 0.74).translate(0.3, yb, 0);
-  const parts = [
-    part(wing, (c, n) => {
-      if (n.y > 0.55) return PAINT;
-      if (n.y < -0.55) return BELLY;
-      // the edge: white at the nose, the accent along the swept leading edges, red at the trailing tips
-      if (n.x > 0.2 && c.x > -0.6) return c.x > 1.62 ? HEAD : ACCENT;
-      if (c.x < -0.5 && Math.abs(c.z) > 1.72) return TAIL;
-      return DARK;
-    }),
-    // the canopy over its front and round its sides (by meridian, so its edges run straight), its lower half lit from inside
-    part(cabin, (c) => (c.y - yb > 0.13 && Math.abs(Math.atan2(c.z / 0.74, (c.x - 0.3) / 1.3)) < 2.0 ? (c.y - yb < 0.27 ? LIT : GLASS) : PAINT), true),
-  ];
-  for (const fz of [-1.12, 1.12]) {
-    const fx = -0.3;
-    parts.push(
-      part(new CylinderGeometry(0.5, 0.5, 0.27, 20).translate(fx, yw, fz), DARK),
-      part(hoop(fx, yw + 0.13, fz, 0.53, 0.07, 0.04, 3, 20), ACCENT),
-      ...[0, Math.PI / 3, (2 * Math.PI) / 3].map((a) => part(new BoxGeometry(0.96, 0.02, 0.05).rotateY(a).translate(fx, yw + 0.145, fz), TRIM)),
-      part(new CylinderGeometry(0.12, 0.12, 0.05, 10).translate(fx, yw + 0.15, fz), TRIM),
-      downwash(fx, yw - 0.14, fz, 0.44),
-    );
-  }
-  for (const s of [-1, 1]) {
-    parts.push(
-      part(
-        fin(
-          [
-            [-0.85, 0],
-            [-1.42, 0],
-            [-1.72, 0.52],
-            [-1.48, 0.55],
-          ],
-          0.04,
-        ),
-        (c) => (c.y > 0.5 ? ACCENT : PAINT),
-      )
-        .rotateX(s * 0.3)
-        .translate(0, yw + 0.1, s * 0.5),
-      part(new CylinderGeometry(0.035, 0.035, 1.7, 6).rotateZ(Math.PI / 2).translate(0.25, 0.035, s * 0.5), DARK),
-      ...[0.85, -0.4].map((x) => part(new BoxGeometry(0.04, 0.26, 0.04).translate(x, 0.18, s * 0.5), DARK)),
-    );
-  }
-  return merge(parts);
-}
-
-/** The Dart: a slender tandem two-seater, canards at the nose, a swept wing with a ducted fan at each tip, a tall fin. About 4.2 long, 4.3 across. */
-function dart(): BufferGeometry {
-  const yc = 0.8;
-  const yw = yc - 0.14;
-  // prettier-ignore
-  const body = spindle([[-2.02, 0], [-1.95, 0.1], [-1.6, 0.19], [-1.0, 0.31], [-0.3, 0.39], [0.3, 0.41], [0.9, 0.37], [1.4, 0.27], [1.8, 0.15], [2.06, 0.05], [2.14, 0]], 18, 0.18)
-    .scale(1, 0.92, 0.9)
-    .translate(0, yc, 0);
-  /** A flying surface: the paint on top, the belly under, its leading edge lit. */
-  const surface = (c: Vector3, n: Vector3): Look => (n.y > 0.5 ? PAINT : n.y < -0.5 ? BELLY : n.x > 0.3 ? ACCENT : PAINT);
-  const parts = [
-    part(body, (c, n) => {
-      if (c.x > 1.8 && Math.abs(c.y - yc) < 0.07) return HEAD;
-      if (c.x < -1.88) return TAIL;
-      // the light line down each flank, on the row of faces at the equator
-      if (Math.abs(n.y) < 0.15 && c.x > -1.65 && c.x < 1.7) return ACCENT;
-      return n.y < -0.7 ? BELLY : PAINT;
-    }, true),
-    part(new SphereGeometry(1, 16, 8).scale(1.0, 0.32, 0.29).translate(0.55, yc + 0.25, 0), (c) => (c.y < yc + 0.42 ? LIT : GLASS), true),
-    // prettier-ignore
-    part(plate(outline([[0.15, 0], [-0.68, 1.2], [-1.2, 1.2], [-1.18, 0]], false), 0.06, 0.03, yw), surface),
-    // prettier-ignore
-    part(plate(outline([[1.32, 0], [1.02, 0.62], [0.88, 0.62], [0.9, 0]], false), 0.03, 0.015, yc - 0.05), surface),
-    part(
-      fin(
-        [
-          [-1.15, yc + 0.18],
-          [-1.9, yc + 0.18],
-          [-2.12, yc + 0.96],
-          [-1.82, yc + 0.98],
-        ],
-        0.05,
-      ),
-      (c) => (c.y > yc + 0.9 ? ACCENT : PAINT),
-    ),
-    ...leg(1.05, 0, 0.52),
-    ...leg(-0.7, 0.42, 0.62),
-    ...leg(-0.7, -0.42, 0.62),
-  ];
-  for (const dz of [-1.62, 1.62]) {
-    const dx = -0.95;
-    parts.push(
-      // the duct, lit inside
-      part(hoop(dx, yw, dz, 0.44, 0.2, 0.34, 6, 20), (_, n) => (outward(dx, dz) < -0.4 ? ACCENT : n.y < -0.6 ? BELLY : PAINT), true),
-      part(new CylinderGeometry(0.36, 0.36, 0.05, 16).translate(dx, yw, dz), DARK),
-      part(new CylinderGeometry(0.09, 0.09, 0.1, 8).translate(dx, yw, dz), TRIM),
-      downwash(dx, yw - 0.18, dz, 0.34),
-    );
-  }
-  return merge(parts);
-}
+/* ------------------------------------------------------------------ hulls */
 
 /**
- * The Lantern: a cabin for six, a band of windows down each side over a belt of light round it and a lit crown on its
- * roof, on two sponsons with two fans each. About 3.7 long, 3.1 across.
+ * A hull's station: at x, its half-widths (w at the shoulder, c at the glasshouse's foot or the spine's edge, r at the
+ * roof's edge) and heights (yb its floor, yl its shoulder and the fan pods' decks, yt its roof).
  */
-function lantern(): BufferGeometry {
-  const yc = 1.0;
-  const sy = 0.8;
-  const sz = 1.02;
-  // prettier-ignore
-  const cabin = spindle([[-1.85, 0], [-1.76, 0.3], [-1.45, 0.55], [-0.8, 0.72], [0, 0.78], [0.75, 0.79], [1.3, 0.72], [1.62, 0.52], [1.8, 0.26], [1.85, 0]], 20, 0.15)
-    .scale(1, sy, sz)
-    .translate(0, yc, 0);
-  const parts = [
-    part(cabin, (c, n) => {
-      // which row of faces: its angle over the cabin's equator
-      const a = (Math.atan2((c.y - yc) / sy, Math.abs(c.z) / sz) * 180) / Math.PI;
-      if (Math.abs(a) < 5) return c.x > 1.55 ? HEAD : c.x < -1.6 ? TAIL : ACCENT;
-      // the windows over the belt along both sides, between three slim pillars, lit from inside
-      if (a > 8 && a < 45 && c.x > -1.25 && c.x < 1.3 && Math.abs(c.x + 0.62) > 0.06 && Math.abs(c.x - 0.04) > 0.06 && Math.abs(c.x - 0.7) > 0.06) return LIT;
-      return n.y < -0.8 ? BELLY : PAINT;
-    }, true),
-    // a lit crown on the roof
-    part(new SphereGeometry(1, 12, 6).scale(0.5, 0.06, 0.16).translate(-0.15, yc + 0.62, 0), ACCENT),
-  ];
-  for (const s of [-1, 1]) {
-    const z = s * 1.12;
-    // prettier-ignore
-    const sponson = spindle([[-1.62, 0], [-1.5, 0.14], [-1.1, 0.22], [0, 0.24], [1.1, 0.23], [1.5, 0.16], [1.68, 0]], 8, 0.22)
-      .scale(1, 1, 1.85)
-      .translate(0, 0.38, z);
-    parts.push(
-      part(sponson, (c, n) => (c.x < -1.46 ? TAIL : n.y < -0.6 ? BELLY : PAINT), true),
-      part(new BoxGeometry(0.9, 0.08, 0.45).translate(0, 0.52, s * 0.56), PAINT),
-      ...leg(1.0, z, 0.18),
-      ...leg(-1.0, z, 0.18),
-    );
-    for (const fx of [-0.78, 0.78]) {
-      parts.push(
-        part(new CylinderGeometry(0.3, 0.3, 0.52, 12).translate(fx, 0.38, z), DARK),
-        part(hoop(fx, 0.635, z, 0.32, 0.06, 0.03, 3, 14), ACCENT),
-        downwash(fx, 0.115, z, 0.28),
-      );
+type St = [x: number, w: number, c: number, r: number, yb: number, yl: number, yt: number];
+
+/** The bands round a hull's section, floor to roof: */
+const UNDER = 0;
+const SILL = 1;
+const FLANK = 2;
+const LINE = 3;
+const DECK = 4;
+const LOW = 5;
+const HIGH = 6;
+const ROOF = 7;
+
+/** Monotone cubic interpolation through (xs, ys) (Fritsch–Carlson), so a hull never bulges past its stations. */
+function monotone(xs: number[], ys: number[]): (x: number) => number {
+  const n = xs.length;
+  const d = xs.slice(1).map((x, i) => (ys[i + 1] - ys[i]) / (x - xs[i]));
+  const m = xs.map((_, i) => (i === 0 ? d[0] : i === n - 1 ? d[n - 2] : d[i - 1] * d[i] <= 0 ? 0 : (d[i - 1] + d[i]) / 2));
+  for (let i = 0; i < n - 1; i++) {
+    if (d[i] === 0) {
+      m[i] = m[i + 1] = 0;
+      continue;
+    }
+    const a = m[i] / d[i];
+    const b = m[i + 1] / d[i];
+    const h = Math.hypot(a, b);
+    if (h > 3) {
+      m[i] = (3 * a * d[i]) / h;
+      m[i + 1] = (3 * b * d[i]) / h;
     }
   }
+  return (x: number) => {
+    let i = 0;
+    while (i < n - 2 && x > xs[i + 1]) i++;
+    const h = xs[i + 1] - xs[i];
+    const t = Math.min(1, Math.max(0, (x - xs[i]) / h));
+    const t2 = t * t;
+    const t3 = t2 * t;
+    return (2 * t3 - 3 * t2 + 1) * ys[i] + (t3 - 2 * t2 + t) * h * m[i] + (-2 * t3 + 3 * t2) * ys[i + 1] + (t3 - t2) * h * m[i + 1];
+  };
+}
+
+/**
+ * A hull through its stations, a section every `step` or so. Each section's ring, from the floor's centre round the
+ * right side to the roof's centre, is the floor, the sill, the flank, a narrow chamfer at the shoulder (the line the
+ * lights run in), the deck in from the shoulder to the glasshouse's foot (over the fan pods), the glasshouse in two
+ * panes leaning in, and the roof; mirrored to the left. Each band is shaded smooth along the hull and sharp at its
+ * edges, the creases a body's panels make; `look` paints each quad of a band by where it is (its centre, on the right
+ * side). The nose and tail are closed flat, each face of them painted by `end` by its height over the floor's (0 the
+ * floor, 1 the shoulder).
+ */
+function hull(stations: St[], step: number, look: (band: number, x: number, y: number, z: number) => Look, end: (front: boolean, h: number) => Look): BufferGeometry {
+  const st = [...stations].sort((a, b) => a[0] - b[0]);
+  const xs = st.map((s) => s[0]);
+  const at = [1, 2, 3, 4, 5, 6].map((k) => monotone(xs, st.map((s) => s[k])));
+  const x0 = xs[0];
+  const x1 = xs[xs.length - 1];
+  const N = Math.max(2, Math.ceil((x1 - x0) / step));
+  const X: number[] = [];
+  const rings: [z: number, y: number][][] = [];
+  for (let i = 0; i <= N; i++) {
+    const x = x0 + ((x1 - x0) * i) / N;
+    const [w, cw, r, yb, yl, yt] = at.map((f) => f(x));
+    const hg = Math.max(0, yt - yl);
+    const foot = Math.min(cw, w * 0.95);
+    X.push(x);
+    rings.push([
+      [0, yb],
+      [w * 0.84, yb],
+      [w * 0.985, yb + (yl - yb) * 0.32],
+      [w, yl - Math.min(0.05, (yl - yb) * 0.15)],
+      [w * 0.975, yl],
+      [foot, yl + Math.min(0.02, hg * 0.1)],
+      [r + (foot - r) * 0.42, yl + hg * 0.6],
+      [r, yt - Math.min(0.03, hg * 0.1)],
+      [0, yt],
+    ]);
+  }
+  const P = (i: number, j: number) => new Vector3(X[i], rings[i][j][1], rings[i][j][0]);
+  const B = rings[0].length - 1;
+  // each quad's normal (the sum of its triangles', which face out: A, D, B and D, C, B on the right)
+  const fn: Vector3[][] = [];
+  for (let i = 0; i < N; i++) {
+    fn.push([]);
+    for (let j = 0; j < B; j++) {
+      const a = P(i, j);
+      const b = P(i, j + 1);
+      const c = P(i + 1, j + 1);
+      const d = P(i + 1, j);
+      const n = new Vector3().subVectors(d, a).cross(new Vector3().subVectors(b, a));
+      n.add(new Vector3().subVectors(c, d).cross(new Vector3().subVectors(b, d)));
+      fn[i].push(n.lengthSq() > 1e-12 ? n.normalize() : new Vector3(0, j < 2 ? -1 : 1, 0));
+    }
+  }
+  const vn = (i: number, j: number) => new Vector3().addVectors(fn[Math.max(0, i - 1)][j], fn[Math.min(N - 1, i)][j]).normalize();
+  const pos: number[] = [];
+  const nrm: number[] = [];
+  const col: number[] = [];
+  const glow: number[] = [];
+  const tint: number[] = [];
+  const put = (p: Vector3, n: Vector3, l: Look, m: number) => {
+    pos.push(p.x, p.y, p.z * m);
+    nrm.push(n.x, n.y, n.z * m);
+    col.push(...rgb(l[0]));
+    glow.push(l[1]);
+    tint.push(l[2]);
+  };
+  for (let i = 0; i < N; i++) {
+    for (let j = 0; j < B; j++) {
+      const a = P(i, j);
+      const b = P(i, j + 1);
+      const c = P(i + 1, j + 1);
+      const d = P(i + 1, j);
+      const l = look(j, (X[i] + X[i + 1]) / 2, (a.y + b.y + c.y + d.y) / 4, (a.z + b.z + c.z + d.z) / 4);
+      const ni = vn(i, j);
+      const nj = vn(i + 1, j);
+      for (const m of [1, -1]) {
+        const tris: [Vector3, Vector3][] =
+          m > 0
+            ? [
+                [a, ni],
+                [d, nj],
+                [b, ni],
+                [d, nj],
+                [c, nj],
+                [b, ni],
+              ]
+            : [
+                [a, ni],
+                [b, ni],
+                [d, nj],
+                [d, nj],
+                [b, ni],
+                [c, nj],
+              ];
+        for (const [p, n] of tris) put(p, n, l, m);
+      }
+    }
+  }
+  // the ends, closed flat: fans from the middle of each end's ring, round the right side and back down the left
+  for (const [i, s] of [
+    [N, 1],
+    [0, -1],
+  ] as const) {
+    const ring = [...rings[i].map(([z, y]) => [z, y]), ...rings[i].slice(1, -1).reverse().map(([z, y]) => [-z, y])];
+    const cy = ring.reduce((t, q) => t + q[1], 0) / ring.length;
+    const yb = rings[i][0][1];
+    const yl = rings[i][4][1];
+    const n = new Vector3(s, 0, 0);
+    for (let k = 0; k < ring.length; k++) {
+      const p = ring[k];
+      const q = ring[(k + 1) % ring.length];
+      const l = end(s > 0, ((cy + p[1] + q[1]) / 3 - yb) / Math.max(0.01, yl - yb));
+      const tri = s > 0 ? [[0, cy], q, p] : [[0, cy], p, q];
+      for (const [z, y] of tri) put(new Vector3(X[i], y, z), n, l, 1);
+    }
+  }
+  const g = new Geo();
+  g.setAttribute("position", new Float32BufferAttribute(pos, 3));
+  g.setAttribute("normal", new Float32BufferAttribute(nrm, 3));
+  g.setAttribute("uv", new Float32BufferAttribute(new Float32Array((pos.length / 3) * 2), 2));
+  g.setAttribute("color", new Float32BufferAttribute(col, 3));
+  g.setAttribute("aGlow", new Float32BufferAttribute(glow, 1));
+  g.setAttribute("aTint", new Float32BufferAttribute(tint, 1));
+  return g;
+}
+
+/**
+ * A fan in its pod's deck at height y, flush with it: a dark grille, its vanes and hub, a bright bezel and a ring of
+ * light inside it; under the pod's floor (`under`) the grille and the ring of light only.
+ */
+function fan(x: number, y: number, z: number, r: number, under = false): BufferGeometry[] {
+  if (under) return [part(flat(x, y - 0.006, z, r, 0, true), DARK), part(flat(x, y - 0.01, z, r - 0.03, r - 0.06, true), ACCENT)];
+  return [
+    part(flat(x, y + 0.006, z, r), DARK),
+    ...[0, Math.PI / 4, Math.PI / 2, (3 * Math.PI) / 4].map((a) => part(new PlaneGeometry(2 * r - 0.06, 0.03).rotateX(-Math.PI / 2).rotateY(a).translate(x, y + 0.01, z), GRILLE)),
+    part(flat(x, y + 0.012, z, 0.08, 0, false, 10), TRIM),
+    part(flat(x, y + 0.008, z, r + 0.035, r, false), TRIM),
+    part(flat(x, y + 0.011, z, r - 0.02, r - 0.045, false), ACCENT),
+  ];
+}
+
+/** A landing pad under the floor at (x, z), up into it. */
+const foot = (x: number, z: number, yb: number) => [part(new BoxGeometry(0.2, yb + 0.02, 0.14).translate(x, (yb + 0.02) / 2, z), DARK)];
+
+/** A thin dark line down the flank at x (a door's shut line), on both sides, from the sill's crease to the shoulder's. */
+function shut(at: (x: number) => St, x: number): BufferGeometry[] {
+  const [, w, , , yb, yl] = at(x);
+  const a = new Vector3(x, yb + (yl - yb) * 0.32, w * 0.985);
+  const b = new Vector3(x, yl - Math.min(0.05, (yl - yb) * 0.15), w);
+  const out = new Vector3(0, -(b.z - a.z), b.y - a.y).normalize().multiplyScalar(0.004);
+  return [1, -1].map((s) => {
+    const g = new PlaneGeometry(0.018, a.distanceTo(b));
+    // stood along the flank's slope, facing out
+    g.rotateY(s > 0 ? 0 : Math.PI).rotateX(s * Math.atan2(b.z - a.z, b.y - a.y));
+    g.translate(x, (a.y + b.y) / 2 + out.y, s * ((a.z + b.z) / 2 + out.z));
+    return part(g, DARK);
+  });
+}
+
+/** A make: its stations, its glasshouse (from x to x, pillars at), how its bands are dressed, its fans' places. */
+type Make = {
+  st: St[];
+  glass: [number, number];
+  pillars: number[];
+  /** The roof: painted, dark, or glass. */
+  roof: "paint" | "dark" | "glass";
+  /** The sill: painted, or a dark lower body. */
+  sill: "paint" | "dark";
+  /** The shoulder's line between the lamps: the accent lit, or bright trim. */
+  line: "accent" | "trim";
+  /** The fans' x along the pods (each one a pair, right and left). */
+  fans: number[];
+  /** The landing pads' x. */
+  feet: number[];
+  /** The doors' shut lines' x. */
+  doors: number[];
+  extra?: (at: (x: number) => St) => BufferGeometry[];
+};
+
+/** A make built: its hull dressed, its fans in the pods' decks and floors, its lamps across the nose and tail, its feet. */
+function build(m: Make): BufferGeometry {
+  const st = [...m.st].sort((a, b) => a[0] - b[0]);
+  const xs = st.map((s) => s[0]);
+  const f = [1, 2, 3, 4, 5, 6].map((k) => monotone(xs, st.map((s) => s[k])));
+  const at = (x: number): St => [x, ...f.map((g) => g(x))] as St;
+  const x0 = xs[0];
+  const x1 = xs[xs.length - 1];
+  const [g0, g1] = m.glass;
+  const body = hull(
+    st,
+    0.12,
+    (band, x) => {
+      const glass = x > g0 && x < g1;
+      switch (band) {
+        case UNDER:
+          return BELLY;
+        case SILL:
+          return m.sill === "dark" ? DARK : PAINT;
+        case FLANK:
+          return PAINT;
+        case LINE:
+          // the lamps wrap round the nose's and the tail's corners; the line between
+          if (x > x1 - 0.32) return HEAD;
+          if (x < x0 + 0.3) return TAIL;
+          return m.line === "accent" ? ACCENT : TRIM;
+        case DECK:
+          return PAINT;
+        case LOW:
+        case HIGH:
+          if (!glass) return PAINT;
+          // the pillars black, so the roof floats; the lower pane lit from inside after dark
+          if (m.pillars.some((p) => Math.abs(x - p) < 0.06)) return DARK;
+          return band === LOW ? LIT : GLASS;
+        case ROOF:
+          return m.roof === "glass" && glass ? GLASS : m.roof === "dark" ? DARK : PAINT;
+        default:
+          return PAINT;
+      }
+    },
+    // a dark intake low in the nose, the tail's diffuser dark under its lamp bar
+    (front, h) => (front ? (h < 0.45 ? DARK : PAINT) : h < 0.62 ? DARK : PAINT),
+  );
+  const parts: BufferGeometry[] = [body];
+  // the light blade across the nose and the bar across the tail, at the shoulder
+  const n = at(x1);
+  const t = at(x0);
+  parts.push(part(new BoxGeometry(0.02, 0.045, n[1] * 1.7).translate(x1 + 0.008, n[5] - 0.03, 0), HEAD));
+  parts.push(part(new BoxGeometry(0.02, 0.06, t[1] * 1.8).translate(x0 - 0.008, t[5] - 0.04, 0), TAIL));
+  for (const fx of m.fans) {
+    const [, w, c, , yb, yl] = at(fx);
+    const z = (w * 0.975 + c) / 2;
+    const r = Math.min((w * 0.975 - c) / 2 - 0.05, 0.4);
+    const ru = Math.min(r, w * 0.84 - z - 0.03);
+    for (const s of [1, -1]) parts.push(...fan(fx, yl, s * z, r), ...fan(fx, yb, s * z, ru, true));
+  }
+  for (const fx of m.feet) {
+    const [, , c, , yb] = at(fx);
+    for (const s of [1, -1]) parts.push(...foot(fx, s * c * 0.75, yb));
+  }
+  for (const x of m.doors) parts.push(...shut(at, x));
+  // the side cameras where mirrors were, at the glasshouse's front foot
+  const mx = g1 - 0.32;
+  const [, , mc, , , myl] = at(mx);
+  for (const s of [1, -1]) parts.push(part(new BoxGeometry(0.14, 0.05, 0.1).translate(mx, myl + 0.07, s * (Math.min(mc, at(mx)[1] * 0.95) + 0.05)), DARK));
+  if (m.extra) parts.push(...m.extra(at));
   return merge(parts);
 }
 
-/** The makes, in order: the Halo, the Manta, the Dart and the Lantern. */
+/* ------------------------------------------------------------------ the line */
+
+// prettier-ignore
+const COUPE: Make = {
+  st: [
+    [2.15, 0.36, 0.22, 0.18, 0.24, 0.52, 0.52],
+    [2.0, 0.78, 0.3, 0.22, 0.17, 0.58, 0.58],
+    [1.75, 1.06, 0.34, 0.26, 0.13, 0.63, 0.64],
+    [1.35, 1.2, 0.38, 0.3, 0.11, 0.66, 0.7],
+    [0.95, 1.12, 0.56, 0.4, 0.1, 0.68, 0.92],
+    [0.5, 0.98, 0.66, 0.48, 0.1, 0.69, 1.12],
+    [0.0, 0.95, 0.68, 0.5, 0.1, 0.7, 1.16],
+    [-0.5, 1.0, 0.66, 0.47, 0.1, 0.71, 1.1],
+    [-0.95, 1.13, 0.56, 0.38, 0.11, 0.72, 0.94],
+    [-1.35, 1.2, 0.4, 0.3, 0.12, 0.73, 0.8],
+    [-1.75, 1.1, 0.36, 0.28, 0.15, 0.73, 0.75],
+    [-2.05, 0.9, 0.32, 0.26, 0.2, 0.72, 0.73],
+    [-2.15, 0.82, 0.3, 0.25, 0.23, 0.71, 0.72],
+  ],
+  glass: [-1.2, 1.2],
+  pillars: [],
+  roof: "paint",
+  sill: "paint",
+  line: "accent",
+  fans: [1.35, -1.35],
+  feet: [1.35, -1.35],
+  doors: [0.95, -0.55],
+};
+
+// prettier-ignore
+const SALOON: Make = {
+  st: [
+    [2.35, 0.4, 0.26, 0.2, 0.24, 0.56, 0.56],
+    [2.2, 0.82, 0.34, 0.26, 0.18, 0.62, 0.62],
+    [1.95, 1.1, 0.4, 0.3, 0.14, 0.67, 0.68],
+    [1.55, 1.2, 0.42, 0.32, 0.12, 0.7, 0.74],
+    [1.1, 1.14, 0.66, 0.5, 0.11, 0.72, 1.02],
+    [0.6, 1.04, 0.74, 0.58, 0.11, 0.73, 1.26],
+    [0.0, 1.02, 0.76, 0.6, 0.11, 0.74, 1.3],
+    [-0.6, 1.04, 0.75, 0.58, 0.11, 0.75, 1.27],
+    [-1.05, 1.14, 0.66, 0.5, 0.12, 0.76, 1.12],
+    [-1.4, 1.2, 0.48, 0.38, 0.13, 0.77, 0.86],
+    [-1.75, 1.19, 0.42, 0.34, 0.15, 0.78, 0.8],
+    [-2.2, 1.0, 0.4, 0.32, 0.19, 0.78, 0.79],
+    [-2.35, 0.9, 0.38, 0.3, 0.22, 0.77, 0.78],
+  ],
+  glass: [-1.3, 1.35],
+  pillars: [0.05, -0.8],
+  roof: "paint",
+  sill: "paint",
+  line: "trim",
+  fans: [1.55, -1.75],
+  feet: [1.55, -1.75],
+  doors: [1.05, 0.02, -0.95],
+};
+
+// prettier-ignore
+const UTILITY: Make = {
+  st: [
+    [2.25, 0.5, 0.3, 0.25, 0.3, 0.66, 0.66],
+    [2.1, 0.95, 0.4, 0.32, 0.22, 0.74, 0.74],
+    [1.85, 1.2, 0.45, 0.36, 0.18, 0.8, 0.82],
+    [1.45, 1.26, 0.5, 0.4, 0.16, 0.84, 0.9],
+    [1.05, 1.2, 0.78, 0.66, 0.16, 0.86, 1.32],
+    [0.6, 1.14, 0.84, 0.74, 0.16, 0.87, 1.52],
+    [0.0, 1.14, 0.85, 0.75, 0.16, 0.88, 1.55],
+    [-0.7, 1.15, 0.85, 0.75, 0.16, 0.89, 1.55],
+    [-1.15, 1.2, 0.82, 0.72, 0.17, 0.9, 1.5],
+    [-1.5, 1.26, 0.6, 0.5, 0.18, 0.91, 1.12],
+    [-1.9, 1.22, 0.5, 0.42, 0.2, 0.91, 0.96],
+    [-2.25, 1.05, 0.48, 0.4, 0.26, 0.9, 0.92],
+  ],
+  glass: [-1.55, 1.25],
+  pillars: [0.1, -0.85],
+  roof: "paint",
+  sill: "dark",
+  line: "trim",
+  fans: [1.45, -1.55],
+  feet: [1.45, -1.55],
+  doors: [1.0, 0.08, -0.95],
+  // roof rails
+  extra: (at) => [1, -1].map((s) => part(new BoxGeometry(1.7, 0.035, 0.05).translate(-0.15, at(-0.15)[6] + 0.03, s * (at(-0.15)[3] - 0.1)), TRIM)),
+};
+
+// prettier-ignore
+const SHUTTLE: Make = {
+  st: [
+    [2.45, 0.66, 0.42, 0.32, 0.3, 0.7, 0.72],
+    [2.3, 1.04, 0.56, 0.44, 0.22, 0.76, 0.96],
+    [2.05, 1.32, 0.66, 0.56, 0.18, 0.8, 1.3],
+    [1.65, 1.42, 0.7, 0.62, 0.16, 0.82, 1.5],
+    [1.15, 1.34, 0.9, 0.8, 0.16, 0.83, 1.56],
+    [0.0, 1.22, 0.98, 0.86, 0.16, 0.83, 1.58],
+    [-1.15, 1.34, 0.9, 0.8, 0.16, 0.83, 1.56],
+    [-1.65, 1.42, 0.7, 0.62, 0.16, 0.83, 1.5],
+    [-2.05, 1.34, 0.68, 0.58, 0.18, 0.83, 1.36],
+    [-2.3, 1.12, 0.6, 0.5, 0.22, 0.82, 1.1],
+    [-2.45, 0.84, 0.5, 0.4, 0.28, 0.8, 0.84],
+  ],
+  glass: [-2.15, 2.2],
+  pillars: [1.25, 0.42, -0.42, -1.25],
+  roof: "paint",
+  sill: "dark",
+  line: "accent",
+  fans: [1.65, -1.65],
+  feet: [1.65, -1.65],
+  doors: [0.85, -0.05],
+};
+
+// prettier-ignore
+const SPORT: Make = {
+  st: [
+    [2.05, 0.3, 0.16, 0.12, 0.2, 0.46, 0.46],
+    [1.85, 0.8, 0.2, 0.14, 0.14, 0.52, 0.53],
+    [1.5, 1.16, 0.24, 0.16, 0.1, 0.56, 0.6],
+    [1.15, 1.18, 0.34, 0.2, 0.09, 0.58, 0.74],
+    [0.7, 1.06, 0.5, 0.3, 0.08, 0.6, 0.94],
+    [0.15, 1.0, 0.54, 0.32, 0.08, 0.61, 1.0],
+    [-0.4, 1.02, 0.5, 0.3, 0.08, 0.62, 0.95],
+    [-0.85, 1.08, 0.36, 0.2, 0.09, 0.63, 0.8],
+    [-1.25, 1.2, 0.28, 0.18, 0.1, 0.64, 0.7],
+    [-1.65, 1.14, 0.26, 0.17, 0.12, 0.64, 0.67],
+    [-2.0, 0.92, 0.24, 0.16, 0.16, 0.63, 0.64],
+    [-2.1, 0.84, 0.23, 0.16, 0.19, 0.62, 0.63],
+  ],
+  glass: [-0.8, 1.15],
+  pillars: [],
+  roof: "glass",
+  sill: "paint",
+  line: "accent",
+  fans: [1.3, -1.3],
+  feet: [1.3, -1.3],
+  doors: [0.85],
+};
+
+/** The makes, in order: the coupé, the saloon, the utility, the shuttle and the sport. */
 export function aircraft(): BufferGeometry[] {
-  return [halo(), manta(), dart(), lantern()];
+  return [COUPE, SALOON, UTILITY, SHUTTLE, SPORT].map(build);
 }

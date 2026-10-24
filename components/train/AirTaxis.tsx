@@ -10,22 +10,22 @@ import { useDispose } from "./useDispose";
 import { skipInMirror } from "./waterMirror";
 import { useWorld } from "./world";
 
-/** The accents the taxis' lights take: cyan, magenta, amber, violet, sky (never the drones' red, green or white). */
-const ACCENTS = [0x38e8ff, 0xff48d8, 0xffa62b, 0x8c6cff, 0x58a6ff];
-/** The liveries: a paint and its accent (an index into ACCENTS). */
+/** The accents the taxis' light lines take: ice, cyan, amber, warm white, violet (never the drones' red, green or strobe). */
+const ACCENTS = [0xcfe8ff, 0x5fd8ff, 0xffb048, 0xffdfae, 0x9f92ff];
+/** The liveries, a maker's metallic paints: a paint and its accent (an index into ACCENTS). */
 const LIVERIES: [number, number][] = [
-  [0xf2f0eb, 0], // pearl
-  [0xff6a55, 4], // coral
-  [0xffb21c, 3], // saffron
-  [0x0fae9e, 2], // teal
-  [0x2d5bff, 0], // cobalt
-  [0xa35cff, 1], // orchid
-  [0x363d4a, 2], // graphite
-  [0x8fe0c0, 1], // mint
-  [0xe9e2d2, 3], // ivory
-  [0xd42a42, 4], // crimson
-  [0xb9c2cc, 1], // silver
-  [0xff7f2a, 0], // tangerine
+  [0x15171b, 1], // obsidian
+  [0xe9e8e3, 0], // pearl
+  [0x4b525c, 2], // gunmetal
+  [0x1c2a4a, 0], // midnight
+  [0xa9b0b8, 1], // titanium
+  [0x5a1822, 3], // burgundy
+  [0xc8b38f, 3], // champagne
+  [0x1d4a4f, 2], // deep teal
+  [0x30343b, 4], // graphite
+  [0x203a2b, 3], // racing green
+  [0x8a5a3c, 0], // bronze
+  [0x51637a, 1], // slate
 ];
 
 const m4 = new Matrix4();
@@ -37,10 +37,10 @@ const eu = new Euler();
 const white = new Color(0xffffff);
 
 /**
- * The air taxis on their timetables (airways.ts), the four makes (aircraft.ts) in a dozen liveries, one batched mesh,
- * one draw. Each taxi's paint is its livery's and its light lines and rings its accent, lit by day and bright after
- * dark, breathing slowly (the delivery drones show points and a strobe); after dark the cabins glow warm and the paint
- * keeps some of its colour, so a taxi reads against the night as a lit shape.
+ * The air taxis on their timetables (airways.ts), the five makes (aircraft.ts) in a dozen liveries, one batched mesh,
+ * one draw. Each taxi's paint is its livery's and its light lines and fan rings its accent, lit by day and bright
+ * after dark, breathing slowly (the delivery drones show points and a strobe); after dark the cabins glow warm and the
+ * paint keeps some of its colour, so a taxi reads against the night as a lit shape.
  */
 export function AirTaxis() {
   const world = useWorld();
@@ -56,7 +56,7 @@ export function AirTaxis() {
       uTime: { value: 0 },
       uAccent: { value: ACCENTS.map((h) => new Color(h)) },
     };
-    const mat = new MeshStandardMaterial({ vertexColors: true, roughness: 0.32, metalness: 0.3, envMap: world.envTex, envMapIntensity: 0.9 });
+    const mat = new MeshStandardMaterial({ vertexColors: true, roughness: 0.34, metalness: 0.45, envMap: world.envTex, envMapIntensity: 0.9 });
     mat.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, u);
       sh.vertexShader = sh.vertexShader
