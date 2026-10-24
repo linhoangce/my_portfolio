@@ -8,6 +8,7 @@ import { stations } from "@/data";
 
 import type { EventId, Season, Weather } from "./lookTypes";
 import { airTaxis } from "./airways";
+import { deliveryDrones } from "./droneways";
 import { skipToHold } from "./scene/director";
 import { shotFor } from "./scene/shots";
 import { orbitBy, zoomBy } from "./scene/view";
@@ -59,6 +60,8 @@ export type TrainDebug = {
   bg: () => string;
   /** The air taxis (airways.ts): x, y, z, service and phase round its cycle (0–1) of each. */
   hover: () => number[][];
+  /** The delivery drones (droneways.ts): x, y, z of each. */
+  drones: () => number[][];
   state: () => Record<string, unknown>;
   /** The water's signed distance at a point (negative on water), for the shore checks. */
   sdf: (x: number, z: number) => number;
@@ -211,6 +214,7 @@ export function Debug() {
       },
       bg: () => world.scene.background.getHexString(),
       hover: () => airTaxis(st().env.lowEnd).taxis.map((c) => [c.x, c.y, c.z, c.service, c.phase]),
+      drones: () => deliveryDrones(st().env.lowEnd).drones.map((d) => [d.x, d.y, d.z]),
       sdf: (x, z) => sdfAt(x, z),
       geometry: () => {
         const city = getCityData(st().env.lowEnd);

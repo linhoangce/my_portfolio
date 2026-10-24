@@ -8,9 +8,10 @@
  * - its colour;
  * - aGlow (1 where it lights, brighter after dark);
  * - aTint (1 where the paint takes the instance's colour).
- * So the five car kinds, the hover car and the bus sections all batch into one mesh (Life.tsx).
+ * So the five car kinds, the bus sections and the journey canoes all batch into one mesh (Life.tsx); the air taxis
+ * are aircraft.ts's.
  */
-import { BoxGeometry, type BufferGeometry, CircleGeometry, CylinderGeometry, Float32BufferAttribute, BufferGeometry as Geo, PlaneGeometry } from "three";
+import { BoxGeometry, type BufferGeometry, CylinderGeometry, Float32BufferAttribute, BufferGeometry as Geo, PlaneGeometry } from "three";
 
 import { merge, paint } from "./shapes";
 
@@ -21,7 +22,6 @@ const DARK = 0x16181b;
 const RIM = 0x9aa1a9;
 const HEAD = 0xeaf6ff;
 const TAIL = 0xff2a1f;
-const HOVER_GLOW = 0x5ef2ff;
 
 /** Mark every vertex of a part: lit (aGlow) and tinted by the instance (aTint). */
 export function mark(g: BufferGeometry, glow: number, tint: number): BufferGeometry {
@@ -236,62 +236,6 @@ export function carKinds(): BufferGeometry[] {
     car(van, [[-1.0, 0.28], [1.0, 0.28]], false, false, sideBand(-1.35, 1.35, 1.0, 0.07, 0.68, 0x7ef0ff)),
     car(truck, [[-0.98, 0.32], [0.98, 0.32]], false, true, [lightBar(1, 1.45, 0.64, 1.2, 0.04, HEAD)]),
   ];
-}
-
-/**
- * An air taxi (airways.ts flies them), built about its centre (it flies):
- * - a teardrop body under a glass canopy, the fleet's violet line along both flanks;
- * - a ducted fan at each corner, its lower rim and the disc under it glowing;
- * - struts across to them, front and back;
- * - navigation lights on the outer fans, red to port and green to starboard, and a white strobe on the tail (its glow
- *   marked 2, which the vehicles' shader flashes, Life.tsx).
- */
-export function hoverCar(): BufferGeometry {
-  // prettier-ignore
-  const body: Sec[] = [
-    [-1.3, 0.5, 0.2, 0.36, 0.4, 0.4, 0],
-    [-0.9, 0.95, 0.08, 0.42, 0.56, 0.7, 1],
-    [-0.3, 1.2, 0.0, 0.46, 0.92, 0.7, 1],
-    [0.3, 1.2, 0.0, 0.46, 0.9, 0.72, 1],
-    [0.8, 1.0, 0.05, 0.42, 0.56, 0.8, 0],
-    [1.3, 0.5, 0.16, 0.32, 0.34, 0.4, 0],
-  ];
-  const parts: BufferGeometry[] = [loft(body, true), lightBar(1, 1.3, 0.27, 0.4, 0.05, HEAD), lightBar(-1, -1.3, 0.3, 0.42, 0.06, TAIL)];
-  for (const x of [-0.85, 0.85]) {
-    parts.push(mark(paint(new BoxGeometry(0.18, 0.06, 1.7).translate(x, 0.26, 0), PAINT), 0, 1));
-    for (const z of [-0.95, 0.95]) {
-      // the duct: a short drum, its lower half's flank lit
-      const duct = paint(new CylinderGeometry(0.36, 0.36, 0.16, 8, 2).translate(x, 0.24, z), DARK);
-      const n = duct.attributes.position.count;
-      const glow = new Float32Array(n);
-      const pos = duct.attributes.position;
-      const nrm = duct.attributes.normal;
-      const col = duct.attributes.color.array as Float32Array;
-      for (let f = 0; f < n / 3; f++) {
-        const cy = (pos.getY(f * 3) + pos.getY(f * 3 + 1) + pos.getY(f * 3 + 2)) / 3;
-        const lit = cy < 0.24 && Math.abs(nrm.getY(f * 3)) < 0.5;
-        if (!lit) continue;
-        for (let v = 0; v < 3; v++) {
-          glow[f * 3 + v] = 1;
-          col.set([0.11, 0.89, 1.0], (f * 3 + v) * 3);
-        }
-      }
-      mark(duct, 0, 0);
-      duct.setAttribute("aGlow", new Float32BufferAttribute(glow, 1));
-      parts.push(duct);
-      parts.push(mark(paint(new CircleGeometry(0.3, 8).rotateX(Math.PI / 2).translate(x, 0.15, z), HOVER_GLOW), 1, 0));
-    }
-  }
-  // the violet line along both flanks, lit
-  parts.push(...sideBand(-0.6, 0.5, 0.4, 0.05, 0.6, 0xa78bfa));
-  // navigation lights on the front fans' outer rims (port is −z, the left of a nose along +x), the strobe on the tail
-  for (const [z, hex] of [
-    [-1.33, TAIL],
-    [1.33, 0x2fd36b],
-  ] as const)
-    parts.push(mark(paint(new BoxGeometry(0.12, 0.1, 0.06).translate(0.85, 0.27, z), hex), 1.2, 0));
-  parts.push(mark(paint(new BoxGeometry(0.1, 0.08, 0.1).translate(-1.2, 0.45, 0), 0xffffff), 2, 0));
-  return merge(parts);
 }
 
 /**

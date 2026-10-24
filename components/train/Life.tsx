@@ -8,7 +8,6 @@ import {
   Color,
   CylinderGeometry,
   DoubleSide,
-  Euler,
   Group,
   InstancedBufferAttribute,
   InstancedMesh,
@@ -29,9 +28,10 @@ import { paint } from "./shapes";
 import { sdfAt } from "./terrain";
 import { groundAt, UP } from "./track";
 import { boatLights, busSection, sailboat, seabus, yacht } from "./vessels";
-import { asVehicle, canoe, carKinds, hoverCar } from "./vehicles";
-import { airTaxis, floatplaneAt, flyTaxis } from "./airways";
+import { asVehicle, canoe, carKinds } from "./vehicles";
+import { floatplaneAt } from "./airways";
 import { SEABUS_A, SEABUS_B } from "./SeaBus";
+import { useDispose } from "./useDispose";
 import { inNoSail } from "./waterfrontHub";
 import { skipInMirror } from "./waterMirror";
 import { useWorld } from "./world";
@@ -41,10 +41,8 @@ const CAR_COLOURS = [0xffffff, 0xe8e8e8, 0xc9ccd1, 0x2b2f36, 0x1f2a44, 0x8c1d1d,
 const m4 = new Matrix4();
 const q = new Quaternion();
 const one = new Vector3(1, 1, 1);
-const none = new Vector3(0, 0, 0);
 const p = new Vector3();
 const sc = new Vector3();
-const eu = new Euler();
 
 /**
  * kind: 0 SeaBus (or, smaller, a False Creek ferry), 1 sailboat, 2 motor yacht, 3 journey canoe (drawn with the
@@ -177,8 +175,8 @@ function laneAt(u: number, out: { x: number; z: number; tx: number; tz: number }
 const lane = { x: 0, z: 0, tx: 0, tz: 0 };
 
 /**
- * Traffic on the street grid, the air taxis (airways.ts), people on platforms and sidewalks, boats on the inlet and on
- * False Creek (under way, moored and at anchor), a floatplane over the harbour.
+ * Traffic on the street grid, people on platforms and sidewalks, boats on the inlet and on False Creek (under way,
+ * moored and at anchor), a floatplane over the harbour (the air taxis over it are AirTaxis.tsx's).
  */
 export function Life() {
   const world = useWorld();
@@ -187,47 +185,32 @@ export function Life() {
 
   const built = useMemo(() => {
     const rng = new Rng(5);
-    // the vehicles: the five kinds of car, the buses' two sections and the air taxis (vehicles.ts), one batched mesh,
-    // one draw. The paint takes each one's colour; lamps, light bars and the buses' signs glow by an attribute,
-    // brighter after dark; the taxis' tail strobes flash.
+    // the vehicles: the five kinds of car and the buses' two sections (vehicles.ts), one batched mesh, one draw. The
+    // paint takes each one's colour; lamps, light bars and the buses' signs glow by an attribute, brighter after dark.
     const kinds = carKinds();
-    const HOVER = kinds.length;
-    const BUS_F = HOVER + 1;
-    const BUS_R = HOVER + 2;
-    const CANOE = HOVER + 3;
-    const geos = [...kinds, hoverCar(), asVehicle(busSection(true)), asVehicle(busSection(false)), canoe()];
+    const BUS_F = kinds.length;
+    const BUS_R = BUS_F + 1;
+    const CANOE = BUS_F + 2;
+    const geos = [...kinds, asVehicle(busSection(true)), asVehicle(busSection(false)), canoe()];
     // the journey canoes on False Creek, paddled from end to end
     const nCanoe = lowEnd ? 1 : 2;
     const cars = data.traffic.cars;
     const nb = data.traffic.buses.length;
-    const air = airTaxis(lowEnd);
     const vehGlow = { value: 0.6 };
-    const strobeT = { value: 0 };
     const vehMat = new MeshStandardMaterial({ vertexColors: true, roughness: 0.36, metalness: 0.2, envMap: world.envTex, envMapIntensity: 0.55 });
     vehMat.onBeforeCompile = (sh) => {
       sh.uniforms.uGlow = vehGlow;
-      sh.uniforms.uStrobeT = strobeT;
       sh.vertexShader = sh.vertexShader
-        .replace("#include <common>", "#include <common>\nattribute float aGlow;\nattribute float aTint;\nuniform float uStrobeT;\nvarying float vGlow;")
+        .replace("#include <common>", "#include <common>\nattribute float aGlow;\nattribute float aTint;\nvarying float vGlow;")
         .replace("#include <color_vertex>", "#include <color_vertex>\nvColor.xyz = mix(color.xyz, vColor.xyz, aTint);")
-        .replace(
-          "#include <begin_vertex>",
-          [
-            "#include <begin_vertex>",
-            "vGlow = aGlow;",
-            // a taxi's strobe (its glow marked 2): two quick flashes every 1.3 s, each taxi on its own beat
-            "#ifdef USE_BATCHING",
-            "if (aGlow > 1.5) { float beat = fract(uStrobeT / 1.3 + fract(getIndirectIndex(gl_DrawID) * 0.618034)); vGlow = 2.5 * (step(beat, 0.04) + step(abs(beat - 0.14), 0.03)); }",
-            "#endif",
-          ].join("\n"),
-        );
+        .replace("#include <begin_vertex>", "#include <begin_vertex>\nvGlow = aGlow;");
       sh.fragmentShader = sh.fragmentShader
         .replace("#include <common>", "#include <common>\nuniform float uGlow;\nvarying float vGlow;")
         .replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\ntotalEmissiveRadiance += vColor.rgb * vGlow * uGlow;");
     };
     vehMat.customProgramCacheKey = () => "vehicles";
     const vehicles = new BatchedMesh(
-      cars.length + air.taxis.length + 2 * nb + nCanoe,
+      cars.length + 2 * nb + nCanoe,
       geos.reduce((s, g) => s + g.attributes.position.count, 0),
       0,
       vehMat,
@@ -240,12 +223,6 @@ export function Life() {
       // the trucks in their stainless steel, the vans in delivery liveries, the rest from the street's palette
       const hex = car.kind === 4 ? rng.pick([0xc3c8ce, 0xaab0b7, 0x2b2f36]) : car.kind === 3 ? rng.pick([0xffffff, 0xf2f3f5, 0x2563eb, 0xf59e0b, 0x0f766e]) : rng.pick(CAR_COLOURS);
       vehicles.setColorAt(id, c.setHex(hex));
-      return id;
-    });
-    // the taxis in the fleet's white (its violet line is their own)
-    const taxiIds = air.taxis.map(() => {
-      const id = vehicles.addInstance(geoIds[HOVER]);
-      vehicles.setColorAt(id, c.setHex(0xf4f5f7));
       return id;
     });
     const busIds = data.traffic.buses.map(() => [vehicles.addInstance(geoIds[BUS_F]), vehicles.addInstance(geoIds[BUS_R])]);
@@ -335,30 +312,27 @@ export function Life() {
       m.frustumCulled = false;
       return m;
     });
-    return { vehicles, vehMat, vehGlow, strobeT, carIds, taxiIds, busIds, canoeIds, air, peopleMesh, boats, boatMeshes, boatLamps, boatMat, lightMat, docks, plane };
+    return { vehicles, vehMat, vehGlow, carIds, busIds, canoeIds, peopleMesh, boats, boatMeshes, boatLamps, boatMat, lightMat, docks, plane };
   }, [data, mats, lowEnd, world.envTex]);
 
-  // cars, taxis and people are too small to show in the water
+  // cars and people are too small to show in the water
   useEffect(() => skipInMirror(built.vehicles, built.peopleMesh), [built]);
 
-  useEffect(
-    () => () => {
-      built.vehicles.dispose();
-      built.vehMat.dispose();
-      built.peopleMesh.geometry.dispose();
-      built.peopleMesh.dispose();
-      for (const m of [...built.boatMeshes, ...built.boatLamps]) {
-        m.geometry.dispose();
-        m.dispose();
-      }
-      built.lightMat.dispose();
-      built.docks.geometry.dispose();
-      built.plane.traverse((o) => {
-        if (o instanceof Mesh) o.geometry.dispose();
-      });
-    },
-    [built],
-  );
+  useDispose(built, (b) => {
+    b.vehicles.dispose();
+    b.vehMat.dispose();
+    b.peopleMesh.geometry.dispose();
+    b.peopleMesh.dispose();
+    for (const m of [...b.boatMeshes, ...b.boatLamps]) {
+      m.geometry.dispose();
+      m.dispose();
+    }
+    b.lightMat.dispose();
+    b.docks.geometry.dispose();
+    b.plane.traverse((o) => {
+      if (o instanceof Mesh) o.geometry.dispose();
+    });
+  });
 
   useFrame((state, delta) => {
     const dt = Math.min(delta, 0.05);
@@ -378,14 +352,6 @@ export function Life() {
       p.set(b.rx, c.y, b.rz);
       q.setFromAxisAngle(UP, b.ryaw);
       built.vehicles.setMatrixAt(built.busIds[i][1], m4.compose(p, q, one));
-    });
-    // the air taxis on their timetables (airways.ts): their bank and pitch on top of the heading; none past the map's edge
-    flyTaxis(built.air, state.clock.elapsedTime);
-    built.strobeT.value = state.clock.elapsedTime;
-    built.air.taxis.forEach((h, i) => {
-      p.set(h.x, h.y, h.z);
-      q.setFromEuler(eu.set(h.roll, h.yaw, h.pitch, "YZX"));
-      built.vehicles.setMatrixAt(built.taxiIds[i], m4.compose(p, q, h.shown ? one : none));
     });
     for (const h of data.people) {
       if (h.move) {
