@@ -1,9 +1,9 @@
 /** Scripted attendant: keyword matching over the station notes, used when no API key is configured. No three.js here. */
 import { EVENT_META, type EventId, type Season, SEASONS, type Weather } from "@/components/train/lookTypes";
-import type { LandmarkKey } from "@/components/train/sites";
+import type { MonumentKey } from "@/components/train/monumentData";
 
 export type SceneChange = { weather?: Weather; season?: Season; time?: "day" | "night"; event?: EventId | null };
-export type ScriptedReply = { answer: string | null; go: number | null; scene: SceneChange | null; monument?: LandmarkKey };
+export type ScriptedReply = { answer: string | null; go: number | null; scene: SceneChange | null; monument?: MonumentKey };
 
 /** Event phrases, matched before anything else ("fireworks" must not read as "work", "rainbow" as "rain"). */
 const EVENT_WORDS: [EventId, string[]][] = [
@@ -17,7 +17,8 @@ const EVENT_WORDS: [EventId, string[]][] = [
   ["vaisakhi", ["vaisakhi", "baisakhi"]],
 ];
 
-const MONUMENT_WORDS: [LandmarkKey, string[]][] = [
+const MONUMENT_WORDS: [MonumentKey, string[]][] = [
+  ["reconciliation", ["reconciliation", "every child matters", "veterans monument", "indigenous monument"]],
   ["scienceWorld", ["science world", "sphere", "geodesic", "dome"]],
   ["bcPlace", ["bc place"]],
   ["canadaPlace", ["canada place", "sails"]],

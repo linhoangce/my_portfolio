@@ -26,6 +26,7 @@ import { chessBoard, dragon, globeLamp, lanternString, laughingFigures, parkLamp
 import { bench, foodTruck, pavilion, type Pieces, shopGlow, stall, umbrellaTable, warmLights } from "./pavilion";
 import { canvasTexture, merge, paint } from "./shapes";
 import { surfaceAt } from "./terrain";
+import { ART_LIGHTS, placeLight, uplight } from "./uplight";
 import { skipInMirror } from "./waterMirror";
 import { useWorld } from "./world";
 
@@ -144,6 +145,14 @@ export function Commons() {
       for (const g of p.glass) all.glass.push(g.rotateY(ry).translate(x, y, z));
       for (const g of p.warm) all.warm.push(g.rotateY(ry).translate(x, y, z));
     };
+    // a sculpture lit after dark from fixtures on the ground round it, their light baked into it (uplight.ts)
+    const addLit = (kind: string, p: Pieces, x: number, y: number, z: number, ry: number) => {
+      add(p, x, y, z, ry);
+      const spec = ART_LIGHTS[kind];
+      const { spots, parts } = placeLight(spec, x, y, z, ry, (px, pz) => surfaceAt(px, pz, stride) + 0.1, paint);
+      uplight(p.solid, spots, spec.gain);
+      all.solid.push(...parts);
+    };
     // the paths across the lawns: draped ribbons of pale stone, benches and lamps along them
     const STONE = rgb(0xd9d2c3);
     for (const place of PLACES) {
@@ -245,10 +254,10 @@ export function Commons() {
       const y = surfaceAt(f.x, f.z, stride);
       switch (f.kind) {
         case "laughing":
-          add(laughingFigures(f.r ?? 8, Math.round(f.x)), f.x, groundUnder(f, 3.5, 2) - 0.05, f.z, ry);
+          addLit("laughing", laughingFigures(f.r ?? 8, Math.round(f.x)), f.x, groundUnder(f, 3.5, 2) - 0.05, f.z, ry);
           break;
         case "arch":
-          add(waveArch(f.r ?? 8), f.x, y, f.z, ry);
+          addLit("arch", waveArch(f.r ?? 8), f.x, y, f.z, ry);
           break;
         case "playground":
           add(playground(), f.x, groundUnder(f, 4.5, 4) - 0.02, f.z, ry);
@@ -275,7 +284,7 @@ export function Commons() {
           add(stageWithSeats(0), f.x, groundUnder(f, 3.6, 2.2) - 0.1, f.z, ry);
           break;
         case "ring":
-          add(ringSculpture(), f.x, y, f.z, ry);
+          addLit("ring", ringSculpture(), f.x, y, f.z, ry);
           break;
         case "picnic":
           add(picnic(f.hex ?? 0xd2452f), f.x, y + 0.05, f.z, ry);
@@ -305,7 +314,7 @@ export function Commons() {
           add(treePlanter(), f.x, y, f.z, ry);
           break;
         case "cenotaph":
-          add(cenotaph(), f.x, y, f.z, ry);
+          addLit("cenotaph", cenotaph(), f.x, y, f.z, ry);
           break;
         case "fountain": {
           const r = f.r ?? 2;

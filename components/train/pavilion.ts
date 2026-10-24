@@ -61,9 +61,15 @@ export function lit(g: BufferGeometry, v: number): BufferGeometry {
   return g;
 }
 
-/** Let a vertex-coloured material show its parts' glow (lit), by the world's shop light (0 by day, about 1 at night). */
-export function shopGlow<M extends Material>(mat: M, world: World): M {
+/**
+ * Let a vertex-coloured material show its parts' glow (lit), by the world's shop light (0 by day, about 1 at night).
+ * With `albedo` the glow takes the surface's own colour, its map's too, warmed a little (the art atlas's pieces, whose
+ * vertex colour is white where the art shows), rather than the vertex colour alone.
+ */
+export function shopGlow<M extends Material>(mat: M, world: World, opts: { albedo?: boolean } = {}): M {
   const prev = mat.onBeforeCompile.bind(mat);
+  // a fixture's beam is far brighter than the night's ambient light, so lit albedo is doubled
+  const tone = opts.albedo ? "diffuseColor.rgb * vec3( 2.0, 1.72, 1.32 )" : "vColor.rgb";
   mat.onBeforeCompile = (sh, r) => {
     prev(sh, r);
     sh.uniforms.uShopGlow = world.shopGlow;
@@ -72,10 +78,10 @@ export function shopGlow<M extends Material>(mat: M, world: World): M {
       .replace("#include <begin_vertex>", "#include <begin_vertex>\nvShopGlow = aGlow;");
     sh.fragmentShader = sh.fragmentShader
       .replace("#include <common>", "#include <common>\nuniform float uShopGlow;\nvarying float vShopGlow;")
-      .replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\ntotalEmissiveRadiance += vColor.rgb * vShopGlow * uShopGlow;");
+      .replace("#include <emissivemap_fragment>", `#include <emissivemap_fragment>\ntotalEmissiveRadiance += ${tone} * vShopGlow * uShopGlow;`);
   };
   const key = mat.customProgramCacheKey.bind(mat);
-  mat.customProgramCacheKey = () => `${key()}|shopGlow`;
+  mat.customProgramCacheKey = () => `${key()}|shopGlow${opts.albedo ? "Albedo" : ""}`;
   return mat;
 }
 const box = (w: number, h: number, d: number, x: number, y: number, z: number, hex: number) => paint(at(new BoxGeometry(w, h, d), x, y, z), hex);

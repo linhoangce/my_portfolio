@@ -16,7 +16,7 @@ import { groundAt, surfaceAt } from "../terrain";
 import { skyport, SKYPORT, SKYPORT_DRONE_DECK, SKYPORT_PAD, type Spot } from "../vertiports";
 import { BUILD, type Ctx } from "./archetypes";
 import type { Tint } from "./meshBuilder";
-import { box, cap, fp, hip, type Sink, solid, walls } from "./parts";
+import { box, cap, fp, hip, type Sink, slopedTop, solid, walls } from "./parts";
 
 const T = (hex: number): Tint => {
   const c = new Color(hex);
@@ -46,13 +46,20 @@ const BC_TOWERS: [number, number, number, number, number][] = [
 
 /** A spot near Joyce–Collingwood: along the line (a) and across it (l, positive toward the station's set). */
 const nearJoyce = (a: number, l: number): [number, number] => fromStation(8, a, l);
-/** One of the towers round the station today: a brick podium, a concrete shaft wrapped in glass balconies, plant on top. */
-const villageTower = (s: Sink, x: number, z: number, yb: number, yt: number, H: number, tint: Tint) => {
+/**
+ * One of the towers round the station today, each its own: a brick podium, a shaft in its skin and glass (`fam`,
+ * `tint`) on its plan, and its top: 0 a plant room, 1 two floors stepping back, 2 a slanted glass crown.
+ */
+const villageTower = (s: Sink, x: number, z: number, yb: number, yt: number, H: number, tint: Tint, fam: "balcony" | "ribbon" | "mullion" = "balcony", plan = fp.rounded(11, 9.5, 1.6, 3), top = 0) => {
   const pod = walls(s, "brick", fp.rect(16, 14), x, z, yb, yt + 4.2, { tint: T(0xa94e3c), yRef: yt });
   cap(s, "garden", pod);
-  const ring = walls(s, "balcony", fp.rounded(11, 9.5, 1.6, 3), x, z, yt + 4.2, yt + H, { tint, yRef: yt });
-  cap(s, "roof", ring);
-  box(s, "concrete", x, yt + H, z, 4, 2.2, 3.4, T(0xd8d4cc));
+  const ring = walls(s, fam, plan, x, z, yt + 4.2, yt + H - (top === 1 ? 4.4 : 0), { tint, yRef: yt });
+  if (top === 2) slopedTop(s, "glass", ring, 0.6, 0.8, 4, tint, yt);
+  else cap(s, "roof", ring);
+  if (top === 1) {
+    const pent = walls(s, fam, plan.map(([a, b]) => [a * 0.74, b * 0.74] as [number, number]), x, z, yt + H - 4.4, yt + H, { tint, yRef: yt });
+    cap(s, "garden", pent);
+  } else if (top === 0) box(s, "concrete", x, yt + H, z, 4, 2.2, 3.4, T(0xd8d4cc));
 };
 const joyce = (name: string, a: number, l: number, r: number, h: number, build: Hero["build"]): Hero => {
   const [x, z] = nearJoyce(a, l);
@@ -233,9 +240,9 @@ const RAW: Hero[] = [
   { name: "Cedar Terraces", x: -168, z: 60, r: 10, h: 54, build: (s, x, z, yb, yt, rng, terrace) => BUILD.ziggurat(ctx(s, x, z, yb, yt, 19, 17, 52, rng, terrace)) },
   { name: "Fern Tower", x: -76, z: 96, r: 7, h: 74, build: (s, x, z, yb, yt, rng, terrace) => BUILD.vforest(ctx(s, x, z, yb, yt, 13, 13, 72, rng, terrace)) },
   // Joyce–Collingwood: the towers across the line today, and new ones beside the market hall and down the line
-  joyce("Collingwood Village I", -24, -34, 9, 42, (s, x, z, yb, yt) => villageTower(s, x, z, yb, yt, 40, T(0xeee6d8))),
-  joyce("Collingwood Village II", 0, -44, 9, 38, (s, x, z, yb, yt) => villageTower(s, x, z, yb, yt, 36, T(0xe2e6ea))),
-  joyce("Collingwood Village III", 24, -34, 9, 46, (s, x, z, yb, yt) => villageTower(s, x, z, yb, yt, 44, T(0xf3ede0))),
+  joyce("Collingwood Village I", -24, -34, 9, 42, (s, x, z, yb, yt) => villageTower(s, x, z, yb, yt, 40, T(0xd9b48a))),
+  joyce("Collingwood Village II", 0, -44, 9, 38, (s, x, z, yb, yt) => villageTower(s, x, z, yb, yt, 36, T(0x88d0d0), "ribbon", fp.chamfer(11, 9.5, 2.6), 1)),
+  joyce("Collingwood Village III", 24, -34, 9, 46, (s, x, z, yb, yt) => villageTower(s, x, z, yb, yt, 44, T(0xa7adb3), "mullion", fp.octagon(10.5, 10, 2.2), 2)),
   joyce("Joyce Lattice", -40, 44, 9, 64, (s, x, z, yb, yt, rng, terrace) => BUILD.latticeTower(ctx(s, x, z, yb, yt, 15, 14, 62, rng, terrace))),
   joyce("Joyce Gold", 46, 30, 8, 56, (s, x, z, yb, yt, rng, terrace) => BUILD.boxTower(ctx(s, x, z, yb, yt, 14, 13, 54, rng, terrace))),
   joyce("Joyce Commons", 44, -40, 9, 52, (s, x, z, yb, yt, rng, terrace) => BUILD.slabStack(ctx(s, x, z, yb, yt, 15, 14, 50, rng, terrace))),
