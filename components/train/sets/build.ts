@@ -1,0 +1,2792 @@
+/**
+ * The ten set pieces, one built around each station's section. Each is made in its station's frame (x = lateral
+ * toward the set side, y = up from the deck, z = along the track toward the set's "ahead") and merged per material,
+ * so a set costs a handful of draw calls. Anchors are where the captions pin; `shot` is the establishing shot in the
+ * station frame (along, lateral toward the set, up) that shots.ts checks against the city.
+ */
+import {
+  AdditiveBlending,
+  BoxGeometry,
+  type BufferGeometry,
+  CatmullRomCurve3,
+  CanvasTexture,
+  Color,
+  ConeGeometry,
+  CylinderGeometry,
+  DoubleSide,
+  EdgesGeometry,
+  Euler,
+  ExtrudeGeometry,
+  Float32BufferAttribute,
+  FrontSide,
+  Group,
+  IcosahedronGeometry,
+  LatheGeometry,
+  LineBasicMaterial,
+  LineSegments,
+  InstancedMesh,
+  type Material,
+  Matrix4,
+  Mesh,
+  MeshBasicMaterial,
+  MeshStandardMaterial,
+  PlaneGeometry,
+  Points,
+  PointsMaterial,
+  BufferGeometry as BG,
+  Quaternion,
+  NoColorSpace,
+  OctahedronGeometry,
+  RepeatWrapping,
+  Shape,
+  SphereGeometry,
+  SRGBColorSpace,
+  TorusGeometry,
+  TubeGeometry,
+  Vector2,
+  Vector3,
+  Vector4,
+} from "three";
+
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { busNetwork } from "../buses";
+import { isRoad } from "../roadNetwork";
+import { moreProjects, roles, stations } from "@/data";
+
+
+import { merged, type Part } from "../merge";
+import { cap, type P2, paint, walls } from "../shapes";
+import { useTrain } from "../store";
+import { groundAt, sdfAt, surfaceAt } from "../terrain";
+import { dotTexture } from "../textures";
+import { frameAt, makeFrame, PATH_SAMPLES, stationS, UP } from "../track";
+import { sailboat, seabus, yacht } from "../vessels";
+import { barkTexture, type Conifer, coniferSkeleton, crownFromOf, DETAIL_FULL, DETAIL_LOW, frondTexture, limbGeometry, sprayCard, sprayMatrix, trunkGeometry } from "../trees/conifer";
+import type { World } from "../world";
+import { bench, bollard, festoon, foodTruck, lit, type Pieces, pavilion, planter, shopGlow, stall, umbrellaTable, warmLights } from "../pavilion";
+import { inLandmark } from "../sites";
+import { COURTS, type FrameBox, GYM, MATS, PERGOLA, RUN_PATH, YOGA_DECK } from "./wellness";
+import { along, inCbSquare, lineLength, MARKET_HALF, MARKET_STREET, OCEAN_HALL, type Square, SQUARES, WOODLAND_LANE } from "./squares";
+import { fromStation, MAIN_COLUMN, SET_RECT, SET_SHIFT, SET_SIDE, SET_TREES, STATION_FRAMES, toStation } from "./zones";
+
+type V3 = [number, number, number];
+export type ShotSpec = { from: V3; to: V3; look: V3; fromLook?: V3; free?: boolean };
+export type BuiltSet = { group: Group; anchors: Vector3[]; focus: Vector3; update?: (t: number) => void; shot: ShotSpec };
+
+type Ctx = {
+  i: number;
+  side: 1 | -1;
+  world: World;
+  lowEnd: boolean;
+  group: Group;
+  /** Local coordinates for (along, lateral toward the set, up). */
+  L: (a: number, l: number, u: number) => V3;
+  /** Ground height, local, under (along, lateral). */
+  G: (a: number, l: number) => number;
+  /** The drawn ground's surface there (its mesh, coarser on low-end devices), for what lies on it. */
+  S: (a: number, l: number) => number;
+  add: (mat: Material, geo: BufferGeometry, pos?: V3, rot?: V3, scale?: V3) => void;
+};
+
+const DEFAULT_SHOT: ShotSpec = { from: [-58, 82, 15], to: [-22, 62, 24], look: [0, 14, 5] };
+
+function canvasTex(w: number, h: number, paint: (g: CanvasRenderingContext2D) => void, repeat = false): CanvasTexture {
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  const g = c.getContext("2d");
+  if (g) paint(g);
+  const t = new CanvasTexture(c);
+  t.colorSpace = SRGBColorSpace;
+  if (repeat) t.wrapS = t.wrapT = RepeatWrapping;
+  return t;
+}
+
+const fontOf = () => {
+  const cs = getComputedStyle(document.documentElement);
+  return { serif: `${cs.getPropertyValue("--font-serif").trim() || "Georgia"}, Georgia, serif`, mono: `${cs.getPropertyValue("--font-mono").trim() || "ui-monospace"}, ui-monospace, monospace`, sans: `${cs.getPropertyValue("--font-sans").trim() || "system-ui"}, system-ui, sans-serif` };
+};
+
+const glowMat = (c: number, i = 1.6) => new MeshStandardMaterial({ color: 0x111111, emissive: c, emissiveIntensity: i, roughness: 0.6 });
+
+/** How far a point of this set (along, lateral toward its side) is from the nearest track, the turning loops included. */
+function trackClear(c: Ctx, a: number, l: number): number {
+  const [x, z] = fromStation(c.i, a, l);
+  let d = Infinity;
+  for (const f of PATH_SAMPLES) d = Math.min(d, (f.p.x - x) ** 2 + (f.p.z - z) ** 2);
+  return Math.sqrt(d);
+}
+
+/** Columns from a raised deck down to the ground. */
+function legs(c: Ctx, mat: Material, pts: [number, number][], top: number, r = 0.45) {
+  for (const [a, l] of pts) {
+    const g = c.G(a, l);
+    const h = top - g;
+    if (h > 0.4) c.add(mat, new CylinderGeometry(r, r * 1.3, h, 10), c.L(a, l, g + h / 2));
+  }
+}
+
+/**
+ * A raised terrace at platform height (or on the ground where that is higher), with legs, and a bridge to it from the
+ * platform's outer edge at `bridgeA` along. Returns its top.
+ */
+function terrace(c: Ctx, a0: number, a1: number, l0: number, l1: number, bridgeA = 0): number {
+  let gmax = -1e9;
+  for (let a = a0; a <= a1; a += 4) for (let l = l0; l <= l1; l += 4) gmax = Math.max(gmax, c.G(a, l));
+  const top = Math.max(1.4, gmax + 0.35);
+  const { mats } = c.world;
+  c.add(mats.plat, new BoxGeometry(l1 - l0, 0.5, a1 - a0), c.L((a0 + a1) / 2, (l0 + l1) / 2, top - 0.25));
+  legs(c, mats.girder, [
+    [a0 + 3, l0 + 3],
+    [a1 - 3, l0 + 3],
+    [a0 + 3, l1 - 3],
+    [a1 - 3, l1 - 3],
+    [(a0 + a1) / 2, l1 - 3],
+  ], top - 0.5);
+  // a bridge from the platform's outer edge onto the terrace, sloping up where the terrace stands on a bank of the cut
+  if (l0 > 11.6) {
+    const run = l0 - 11.4;
+    const rise = top - 0.1 - 1.3;
+    c.add(mats.plat, new BoxGeometry(Math.hypot(run, rise), 0.3, 5), c.L(bridgeA, (l0 + 11.4) / 2, 1.3 + rise / 2), [0, 0, Math.atan2(rise, run)]);
+  }
+  return top;
+}
+
+/** The CPR station's buff stone: arched windows on the ground floor, square ones above, joints and a cornice band. */
+function stationTextures(): { map: CanvasTexture; glow: CanvasTexture } {
+  const paint = (lit: boolean) =>
+    canvasTex(
+      128,
+      128,
+      (g) => {
+        g.fillStyle = lit ? "#000" : "#d9ccb3";
+        g.fillRect(0, 0, 128, 128);
+        if (!lit) {
+          g.fillStyle = "#c7b99e";
+          for (let y = 8; y < 128; y += 10) g.fillRect(0, y, 128, 1);
+          g.fillStyle = "#e6dbc6";
+          g.fillRect(0, 0, 128, 9);
+          g.fillRect(0, 58, 128, 6);
+        }
+        for (const x of [14, 78]) {
+          // a tall arched window below, a square one above
+          g.fillStyle = lit ? "#ffcf8a" : "#2c3644";
+          g.beginPath();
+          g.moveTo(x, 120);
+          g.lineTo(x, 84);
+          g.arc(x + 18, 84, 18, Math.PI, 0);
+          g.lineTo(x + 36, 120);
+          g.fill();
+          g.fillRect(x + 6, 22, 24, 26);
+          if (!lit) {
+            g.fillStyle = "#d9ccb3";
+            g.fillRect(x + 17, 66, 2, 54);
+            g.fillRect(x + 17, 22, 2, 26);
+          }
+        }
+      },
+      true,
+    );
+  return { map: paint(false), glow: paint(true) };
+}
+let stationGlow: MeshStandardMaterial | null = null;
+
+// ------------------------------------------------------------------ the squares (sets/squares.ts)
+/** A timber or steel strut from one point to another (local coordinates), as a cylinder. */
+function strut(c: Ctx, mat: Material, p0: V3, p1: V3, r: number): void {
+  const d = new Vector3(p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]);
+  const len = d.length();
+  const e = new Euler().setFromQuaternion(new Quaternion().setFromUnitVectors(UP, d.normalize()));
+  c.add(mat, new CylinderGeometry(r, r, len, 8), [(p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2, (p0[2] + p1[2]) / 2], [e.x, e.y, e.z]);
+}
+
+type Kit = { lit: MeshBasicMaterial; put: (p: Pieces, a: number, l: number, face: [number, number], y?: number) => void };
+
+/**
+ * A square's fixtures in its set's frame:
+ * - the pavilions, each with its name lit over its front;
+ * - the market stalls and food trucks;
+ * - the splash fountains and the stage;
+ * - a planter under each of its trees (the tree layer plants them).
+ *
+ * The painted parts share the set's vertex-coloured material and the glass the world's. The lights and the names
+ * share one glowing material: an atlas of the names over a white strip at its foot, where the lights' unmapped
+ * corner reads.
+ */
+function squareKit(c: Ctx, sq: Square, vc: Material): Kit {
+  const { mats } = c.world;
+  const zs = c.L(1, 0, 0)[2];
+  const fonts = fontOf();
+  const CELL = 128;
+  const rows = Math.ceil(sq.pavilions.length / 2);
+  const AH = CELL * rows + 16;
+  const atlas = canvasTex(1024, AH, (g) => {
+    g.fillStyle = "#ffffff";
+    g.fillRect(0, CELL * rows, 1024, 16);
+    sq.pavilions.forEach((p, k) => {
+      const x = (k % 2) * 512;
+      const y = Math.floor(k / 2) * CELL;
+      g.fillStyle = ["#1f2a33", "#3a2a22", "#22332a", "#2c2638"][k % 4];
+      g.fillRect(x, y, 512, CELL);
+      g.fillStyle = "#f6efe2";
+      g.font = `500 62px ${fonts.serif}`;
+      g.textAlign = "center";
+      g.textBaseline = "middle";
+      g.fillText(p.name, x + 256, y + CELL / 2 + 4, 470);
+    });
+  });
+  const lit = warmLights(c.world, new MeshBasicMaterial({ map: atlas, vertexColors: true, toneMapped: false }));
+  vc.userData.square = lit.userData.square = true;
+  // a piece's front (its local +z) turned toward (da, dl)
+  const turn = (f: [number, number]) => Math.atan2(f[1], f[0] * zs);
+  const put = (p: Pieces, a: number, l: number, face: [number, number], y = c.G(a, l)) => {
+    const pos = c.L(a, l, y);
+    const rot: V3 = [0, turn(face), 0];
+    for (const g of p.solid) c.add(vc, g, pos, rot);
+    for (const g of p.glass) c.add(mats.pane, g, pos, rot);
+    for (const g of p.warm) c.add(lit, g, pos, rot);
+  };
+  sq.pavilions.forEach((p, k) => {
+    const piece = pavilion({ w: p.w, d: p.d, h: p.h, front: p.front, umbrella: p.umbrella, well: p.well, roof: p.roof });
+    // standing on the highest ground under its deck, so the deck's skirt meets the lower side
+    const [fa, fl] = p.face;
+    let g = -Infinity;
+    for (const [al, ac] of [
+      [-p.d / 2 - 0.8, -p.w / 2 - 0.8],
+      [-p.d / 2 - 0.8, p.w / 2 + 0.8],
+      [p.d / 2 + (p.front ?? 3.4), -p.w / 2 - 0.8],
+      [p.d / 2 + (p.front ?? 3.4), p.w / 2 + 0.8],
+      [0, 0],
+    ])
+      g = Math.max(g, c.G(p.a + fa * al - fl * ac, p.l + fl * al + fa * ac));
+    // its name over the front, from its cell of the atlas
+    const s = piece.sign;
+    const sign = new PlaneGeometry(s.w, s.h);
+    const uv = sign.attributes.uv as Float32BufferAttribute;
+    const u0 = (k % 2) / 2;
+    const v0 = 1 - ((Math.floor(k / 2) + 1) * CELL) / AH;
+    for (let q = 0; q < uv.count; q++) uv.setXY(q, u0 + uv.getX(q) / 2, v0 + (uv.getY(q) * CELL) / AH);
+    piece.warm.push(paint(sign.translate(s.x, s.y, s.z), 0xffffff));
+    put(piece, p.a, p.l, p.face, g - 0.02);
+  });
+  sq.stalls.forEach((q, k) => put(stall(q.hex, k), q.a, q.l, q.face));
+  for (const q of sq.trucks) {
+    // a truck serves from its +x side: its front (+z) a quarter turn round from where it serves
+    put(foodTruck(q.hex), q.a, q.l, [q.face[1] * zs, -q.face[0] * zs]);
+  }
+  // tables under umbrellas out in the open
+  for (const [a, l, hex] of sq.seats) {
+    const out: Pieces = { solid: [], glass: [], warm: [] };
+    umbrellaTable(out, 0, 0, 0, hex);
+    put(out, a, l, [1, 0]);
+  }
+  // a stone planter round each tree's foot
+  for (const t of sq.trees) {
+    const g = c.G(t.a, t.l);
+    c.add(vc, paint(new CylinderGeometry(0.85, 0.95, 0.5, 10), 0xa9a49a), c.L(t.a, t.l, g + 0.2));
+    c.add(vc, paint(new CylinderGeometry(0.75, 0.75, 0.06, 10), 0x5b4a3a), c.L(t.a, t.l, g + 0.46));
+  }
+  // splash fountains: a low stone rim round a shallow pool
+  for (const [a, l, r] of sq.pools) {
+    const g = c.G(a, l);
+    c.add(vc, paint(new CylinderGeometry(r, r + 0.15, 0.45, 20), 0xbab4a8), c.L(a, l, g + 0.2));
+    c.add(vc, paint(new CylinderGeometry(r - 0.25, r - 0.25, 0.05, 20), 0x5fa8d3), c.L(a, l, g + 0.43));
+  }
+  // the stage: a dark platform, a back wall, a roof on four posts, speakers and lights along its front
+  if (sq.stage) {
+    const st = sq.stage;
+    const out: Pieces = { solid: [], glass: [], warm: [] };
+    out.solid.push(paint(new BoxGeometry(6, 0.7, 3.6).translate(0, 0.35, 0), 0x2b2f36), paint(new BoxGeometry(6, 3.4, 0.2).translate(0, 2.4, -1.7), st.hex));
+    for (const [x, z] of [
+      [-2.9, -1.7],
+      [2.9, -1.7],
+      [-2.9, 1.7],
+      [2.9, 1.7],
+    ])
+      out.solid.push(paint(new BoxGeometry(0.14, 4.1, 0.14).translate(x, 2.05, z), 0x3a3f46));
+    out.solid.push(paint(new BoxGeometry(6.6, 0.25, 4.2).translate(0, 4.2, 0), 0xf1e9da));
+    for (const x of [-2.4, 2.4]) out.solid.push(paint(new BoxGeometry(0.7, 1.1, 0.6).translate(x, 1.25, 1.2), 0x15171c));
+    for (let x = -2.6; x <= 2.61; x += 0.65) out.warm.push(paint(new CylinderGeometry(0.1, 0.14, 0.18, 6).translate(x, 3.98, 1.9), 0xffd49a));
+    put(out, st.a, st.l, st.face);
+  }
+  return { lit, put };
+}
+
+/**
+ * Paving over a square: two-unit stones laid on the drawn ground, a hand above it (the pavilions' decks stand a little
+ * higher), one sheet that follows its slopes. `tone` picks each stone's colour, or skips it (null).
+ */
+function paveSquare(c: Ctx, vc: Material, a0: number, a1: number, l0: number, l1: number, tone: (a: number, l: number, i: number, j: number) => number | null): void {
+  const pos: number[] = [];
+  const col: number[] = [];
+  const lin = (v: number) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+  const h = new Map<number, number>();
+  const at = (a: number, l: number): V3 => {
+    const k = a * 10007 + l;
+    let y = h.get(k);
+    if (y === undefined) h.set(k, (y = c.S(a, l) + 0.12));
+    return c.L(a, l, y);
+  };
+  for (let a = a0, i = 0; a < a1; a += 2, i++) {
+    for (let l = l0, j = 0; l < l1; l += 2, j++) {
+      const hex = tone(a + 1, l + 1, i, j);
+      if (hex === null) continue;
+      const rgb = [lin(((hex >> 16) & 255) / 255), lin(((hex >> 8) & 255) / 255), lin((hex & 255) / 255)];
+      for (const tri of [
+        [at(a, l), at(a, l + 2), at(a + 2, l)],
+        [at(a + 2, l), at(a, l + 2), at(a + 2, l + 2)],
+      ]) {
+        // wound to face up, whichever way the frame's along axis runs
+        const [p, q, r] = tri;
+        const up = (q[2] - p[2]) * (r[0] - p[0]) - (q[0] - p[0]) * (r[2] - p[2]);
+        for (const v of up > 0 ? [p, q, r] : [p, r, q]) {
+          pos.push(...v);
+          col.push(...rgb);
+        }
+      }
+    }
+  }
+  const geo = new BG();
+  geo.setAttribute("position", new Float32BufferAttribute(pos, 3));
+  geo.setAttribute("color", new Float32BufferAttribute(col, 3));
+  geo.setAttribute("uv", new Float32BufferAttribute(new Float32Array((pos.length / 3) * 2), 2));
+  geo.computeVertexNormals();
+  c.add(vc, geo);
+}
+
+/** Poles along a line of points (a, l), festoon lights strung from each to the next. */
+function festoons(c: Ctx, vc: Material, lit: Material, pts: [number, number][], h = 4.2): void {
+  const out: Pieces = { solid: [], glass: [], warm: [] };
+  const tops = pts.map(([a, l]): V3 => {
+    const g = c.G(a, l);
+    c.add(vc, paint(new CylinderGeometry(0.06, 0.08, h, 6), 0x3a3f46), c.L(a, l, g + h / 2));
+    return c.L(a, l, g + h - 0.1);
+  });
+  for (let k = 1; k < tops.length; k++) festoon(out, tops[k - 1], tops[k], 0.5);
+  for (const g of out.solid) c.add(vc, g);
+  for (const g of out.warm) c.add(lit, g);
+}
+
+/** Distance from (a, l) to a polyline of (a, l). */
+function lineDist(line: [number, number][], a: number, l: number): number {
+  let d = Infinity;
+  for (let k = 1; k < line.length; k++) {
+    const [pa, pl] = line[k - 1];
+    const [qa, ql] = line[k];
+    const ea = qa - pa;
+    const el = ql - pl;
+    const t = Math.max(0, Math.min(1, ((a - pa) * ea + (l - pl) * el) / (ea * ea + el * el)));
+    d = Math.min(d, Math.hypot(a - pa - ea * t, l - pl - el * t));
+  }
+  return d;
+}
+
+// ------------------------------------------------------------------ 00 Depart · Waterfront
+/** A row of planters with clipped shrubs down the middle of a plaza, each with a bench beside it. */
+function plaza(c: Ctx, a0: number, a1: number, l0: number, l1: number, skip: (a: number, l: number) => boolean = () => false): void {
+  const planter = new MeshStandardMaterial({ color: 0x8a8378, roughness: 0.9 });
+  const green = new MeshStandardMaterial({ color: 0x4f7a3e, roughness: 1 });
+  for (let a = a0 + 4; a < a1 - 2; a += 10) {
+    const l = (l0 + l1) / 2;
+    if (skip(a, l)) continue;
+    const g = c.G(a, l);
+    c.add(planter, new BoxGeometry(3, 0.8, 3), c.L(a, l, g + 0.6));
+    c.add(green, new SphereGeometry(1.6, 10, 8), c.L(a, l, g + 1.6), [0, 0, 0], [1, 0.7, 1]);
+    c.add(planter, new BoxGeometry(0.6, 0.5, 3.2), c.L(a + 3.2, l, g + 0.45));
+  }
+}
+
+/** The Canada Line's hall at Waterfront, as the set lays it out (along, lateral): open to the sky, in the plaza. */
+const HALL = { a0: -21, a1: -5, l0: 17, l1: 27, deep: 6.2 };
+
+/**
+ * The Canada Line at Waterfront: it runs underground, so its platform is seen from the plaza through a sunken hall, a
+ * pit cut into the paving (the ground leaves it open) with a glass balustrade round its rim and a glass canopy over
+ * half of it. Below, a platform along one side and the track along the other, a tunnel mouth in each end wall, and a
+ * two-car train that comes in, waits and goes on; escalators run down from the rim, and a glass entrance pavilion
+ * with the line's roundel stands at the end. Returns the per-frame update.
+ */
+function canadaLineHall(c: Ctx, vc: Material, lit: Material): (t: number) => void {
+  const { mats } = c.world;
+  const { a0, a1, l0, l1, deep } = HALL;
+  let low = Infinity;
+  let high = -Infinity;
+  for (let a = a0; a <= a1; a += 2) {
+    for (let l = l0; l <= l1; l += 2) {
+      low = Math.min(low, c.G(a, l));
+      high = Math.max(high, c.G(a, l));
+    }
+  }
+  const rim = high + 0.05;
+  const floor = low - deep;
+  const H = rim - floor;
+  const am = (a0 + a1) / 2;
+  const lm = (l0 + l1) / 2;
+  // the ground leaves the hall open
+  const fr = STATION_FRAMES[c.i];
+  const [hx, hz] = fromStation(c.i, am, lm);
+  const u = c.world.mats.ground.userData as { hole: { value: Vector4 }; holeDir: { value: Vector2 } };
+  u.hole.value.set(hx, hz, (a1 - a0) / 2, (l1 - l0) / 2);
+  u.holeDir.value.set(fr.tx, fr.tz).normalize();
+  // the hall's own parts in one painted mesh, its lit edges in one glowing one
+  const wall = (geo: BufferGeometry, pos: V3, rot?: V3) => c.add(vc, paint(geo, 0xd8d4cc), pos, rot);
+  c.add(vc, paint(new BoxGeometry(l1 - l0 + 0.8, 0.4, a1 - a0 + 0.8), 0xd8d4cc), c.L(am, lm, floor - 0.2));
+  for (const l of [l0 - 0.2, l1 + 0.2]) wall(new BoxGeometry(0.4, H, a1 - a0 + 0.8), c.L(am, l, floor + H / 2));
+  for (const a of [a0 - 0.2, a1 + 0.2]) {
+    wall(new BoxGeometry(l1 - l0 + 0.8, H, 0.4), c.L(a, lm, floor + H / 2));
+    // the tunnel mouth the train comes out of and goes into
+    c.add(vc, paint(new BoxGeometry(4.2, 4.2, 0.5), 0x0b0d12), c.L(a, l1 - 3, floor + 2.3));
+  }
+  // the platform along the near side with its lit edge, the track along the far side
+  c.add(mats.plat, new BoxGeometry(4.4, 1.2, a1 - a0), c.L(am, l0 + 2.2, floor + 0.6));
+  c.add(lit, paint(new BoxGeometry(0.14, 0.06, a1 - a0 - 0.4), 0x1fb5c9), c.L(am, l0 + 4.35, floor + 1.22));
+  c.add(mats.bed, new BoxGeometry(3.4, 0.15, a1 - a0), c.L(am, l1 - 3, floor + 0.08));
+  for (const s of [-0.72, 0.72]) c.add(mats.rail, new BoxGeometry(0.12, 0.14, a1 - a0), c.L(am, l1 - 3 + s, floor + 0.22));
+  // a glass balustrade round the rim, and a glass canopy on steel over the platform's end
+  for (const l of [l0 - 0.1, l1 + 0.1]) c.add(mats.pane, new BoxGeometry(0.06, 1.1, a1 - a0), c.L(am, l, rim + 0.55));
+  for (const a of [a0 - 0.1, a1 + 0.1]) c.add(mats.pane, new BoxGeometry(l1 - l0, 1.1, 0.06), c.L(a, lm, rim + 0.55));
+  c.add(mats.pane, new BoxGeometry(l1 - l0 + 1, 0.08, 7), c.L(a0 + 3.5, lm, rim + 4.4), [0.12, 0, 0]);
+  for (const a of [a0 + 0.4, a0 + 6.6]) for (const l of [l0 - 0.3, l1 + 0.3]) c.add(mats.post, new BoxGeometry(0.16, 4.4, 0.16), c.L(a, l, rim + 2.2));
+  // escalators down from the rim at the pavilion's end to the platform
+  const run = Math.hypot(8, H - 1.2);
+  const tilt = Math.atan2(H - 1.2, 8);
+  for (const l of [l0 + 0.9, l0 + 2.5]) {
+    c.add(mats.plat, new BoxGeometry(1.3, 0.3, run), c.L(a1 - 4.4, l, floor + 1.2 + (H - 1.2) / 2), [-tilt * Math.sign(c.L(1, 0, 0)[2] || 1), 0, 0]);
+  }
+  // the entrance pavilion at the end of the hall: glass under a white roof, the line's roundel on a mast
+  c.add(mats.pane, new BoxGeometry(l1 - l0, 3.6, 4), c.L(a1 + 2.6, lm, rim + 1.8));
+  c.add(mats.plat, new BoxGeometry(l1 - l0 + 1.4, 0.3, 5), c.L(a1 + 2.6, lm, rim + 3.75));
+  c.add(mats.post, new CylinderGeometry(0.1, 0.1, 6, 8), c.L(a1 + 5.4, l0 - 0.6, rim + 3));
+  c.add(lit, paint(new CylinderGeometry(1.1, 1.1, 0.12, 24).rotateX(Math.PI / 2), 0x1fb5c9), c.L(a1 + 5.4, l0 - 0.6, rim + 6.3));
+  // the train: two short cars, white with a teal window band, in and out of the tunnels
+  const train = new Mesh(
+    merged(
+      [-3.4, 3.4].flatMap((dz) => [
+        { geo: paint(new BoxGeometry(2.3, 2.3, 6.4).translate(0, 1.45, dz), 0xf1f3f4) },
+        { geo: paint(new BoxGeometry(2.32, 0.7, 5.6).translate(0, 1.9, dz), 0x1d6f7d) },
+        { geo: paint(new BoxGeometry(2.0, 0.2, 6.2).translate(0, 2.7, dz), 0xb5babf) },
+        { geo: paint(new BoxGeometry(2.34, 0.18, 6.42).translate(0, 1.0, dz), 0x1fb5c9) },
+      ]),
+    ),
+    vc,
+  );
+  c.group.add(train);
+  const place = (a: number) => {
+    const [x, y, z] = c.L(a, l1 - 3, floor + 0.25);
+    train.position.set(x, y, z);
+    train.visible = a > a0 - 9 && a < a1 + 9;
+  };
+  return (t) => {
+    // in from the far tunnel, a wait at the platform, out through the near one
+    const T = t % 28;
+    const ease = (v: number) => v * v * (3 - 2 * v);
+    place(T < 5 ? a0 - 9 + (am - a0 + 9) * ease(T / 5) : T < 15 ? am : T < 20 ? am + (a1 + 9 - am) * ease((T - 15) / 5) : a0 - 20);
+  };
+}
+
+/**
+ * The plaza at Waterfront made the busiest place on the line: a row of market kiosks under coloured awnings, café
+ * tables under umbrellas, a fountain with leaping jets, a bike-share dock, trees in planters, and a departures board
+ * for all four lines (the Expo, the Canada Line, the West Coast Express and the SeaBus). Returns the per-frame update.
+ */
+function busyPlaza(c: Ctx, vc: Material, lamps: Material): (t: number) => void {
+  const { mats } = c.world;
+  const G = (a: number, l: number) => c.G(a, l);
+  // market kiosks along the station side of the plaza
+  const awnings = [0xe4572e, 0xf3a712, 0x29a19c, 0x6c5ce7, 0xe84393, 0x00b894];
+  awnings.forEach((col, k) => {
+    const a = 1 + k * 3.8;
+    const l = 15.5;
+    const g = G(a, l);
+    c.add(mats.timber, new BoxGeometry(2.2, 1.1, 2.8), c.L(a, l, g + 0.55));
+    c.add(vc, lit(paint(new BoxGeometry(2.8, 0.12, 3.4), col), 0.55), c.L(a, l + 0.3, g + 2.7), [0, 0, 0.18 * Math.sign(c.L(0, 1, 0)[0] || 1)]);
+    for (const s of [-1.2, 1.2]) c.add(mats.post, new BoxGeometry(0.08, 2.6, 0.08), c.L(a + s * 1.1, l + 1.3, g + 1.3));
+    c.add(lamps, paint(new BoxGeometry(0.06, 0.06, 2.4), 0xffd7a0), c.L(a, l + 1.3, g + 2.4));
+  });
+  // café tables under umbrellas
+  for (let k = 0; k < 10; k++) {
+    const a = 2 + (k % 5) * 4.2;
+    const l = 25 + Math.floor(k / 5) * 4.5;
+    const g = G(a, l);
+    c.add(mats.post, new CylinderGeometry(0.5, 0.5, 0.06, 12), c.L(a, l, g + 0.8));
+    c.add(mats.post, new CylinderGeometry(0.05, 0.05, 2.4, 6), c.L(a, l, g + 1.2));
+    c.add(vc, lit(paint(new ConeGeometry(1.4, 0.5, 10), 0xf4efe6), 0.35), c.L(a, l, g + 2.5));
+    for (const s of [-0.8, 0.8]) c.add(mats.timber, new BoxGeometry(0.4, 0.45, 0.4), c.L(a + s, l, g + 0.22));
+  }
+  // a fountain: a shallow round pool and jets that leap in turn
+  const fa = -2;
+  const fl = 30;
+  const fg = G(fa, fl);
+  c.add(mats.planter, new CylinderGeometry(3.2, 3.4, 0.5, 24), c.L(fa, fl, fg + 0.25));
+  c.add(c.world.mats.water, new CylinderGeometry(2.9, 2.9, 0.05, 24), c.L(fa, fl, fg + 0.45));
+  const jetMat = new MeshStandardMaterial({ color: 0xdff4ff, transparent: true, opacity: 0.7, roughness: 0.1, emissive: 0x88c8ff, emissiveIntensity: 0.3 });
+  const jets = new InstancedMesh(new CylinderGeometry(0.06, 0.14, 1, 6).translate(0, 0.5, 0), jetMat, 6);
+  const jetAt = Array.from({ length: 6 }, (_, k) => {
+    const th = (k / 6) * Math.PI * 2;
+    return new Vector3(...c.L(fa + Math.cos(th) * 1.7, fl + Math.sin(th) * 1.7, fg + 0.45));
+  });
+  c.group.add(jets);
+  const jm = new Matrix4();
+  const jq = new Quaternion();
+  const js = new Vector3();
+  // the bike-share dock: a row of bikes at their posts
+  for (let k = 0; k < 8; k++) {
+    const a = -4 + k * 1.1;
+    const l = 33.5;
+    const g = G(a, l);
+    c.add(mats.post, new BoxGeometry(0.12, 0.9, 0.12), c.L(a, l - 0.6, g + 0.45));
+    c.add(vc, paint(new BoxGeometry(0.12, 0.5, 1.4), 0x2f9e44), c.L(a, l, g + 0.6));
+    for (const s of [-0.55, 0.55]) c.add(mats.trim, new TorusGeometry(0.32, 0.05, 6, 12).rotateY(Math.PI / 2), c.L(a, l + s, g + 0.35));
+  }
+  // the departures board for all four lines, facing the plaza, lit
+  const fonts = fontOf();
+  const board = canvasTex(1024, 512, (g) => {
+    g.fillStyle = "#0b0f18";
+    g.fillRect(0, 0, 1024, 512);
+    g.fillStyle = "#f2e6c9";
+    g.font = `600 52px ${fonts.sans}`;
+    g.fillText("Departures · Waterfront", 40, 80);
+    const rows: [string, string, string, string][] = [
+      ["#a78bfa", "Expo Line", "Patterson", "2 min"],
+      ["#1fb5c9", "Canada Line", "YVR–Airport · Richmond", "4 min"],
+      ["#9b59d0", "West Coast Express", "Mission City", "17:25"],
+      ["#4dabf7", "SeaBus", "Lonsdale Quay", "6 min"],
+    ];
+    rows.forEach(([col, line, to, when], k) => {
+      const y = 170 + k * 88;
+      g.fillStyle = col;
+      g.fillRect(40, y - 40, 16, 52);
+      g.fillStyle = "#ffffff";
+      g.font = `500 40px ${fonts.sans}`;
+      g.fillText(line, 76, y);
+      g.fillStyle = "#b9bcc4";
+      g.font = `400 34px ${fonts.sans}`;
+      g.fillText(to, 470, y);
+      g.fillStyle = "#ffb547";
+      g.font = `500 38px ${fonts.mono}`;
+      g.textAlign = "right";
+      g.fillText(when, 984, y);
+      g.textAlign = "left";
+    });
+  });
+  const bg = G(-2, 16);
+  c.add(mats.post, new BoxGeometry(0.2, 4.4, 0.2), c.L(-4.5, 16, bg + 2.2));
+  c.add(mats.post, new BoxGeometry(0.2, 4.4, 0.2), c.L(0.5, 16, bg + 2.2));
+  // both faces in one mesh
+  const faces = [Math.PI / 2, -Math.PI / 2].map((ry) =>
+    new PlaneGeometry(5.4, 2.7).rotateY(ry).translate(...c.L(-2, 16 + (ry > 0 ? 0.08 : -0.08), bg + 3.7)),
+  );
+  c.group.add(new Mesh(mergeGeometries(faces, false), new MeshBasicMaterial({ map: board, toneMapped: false })));
+  for (const f of faces) f.dispose();
+  return (t) => {
+    jetAt.forEach((p, k) => {
+      const v = Math.max(0, Math.sin(t * 2.2 - k * 1.05));
+      jets.setMatrixAt(k, jm.compose(p, jq, js.set(1, 0.2 + 2.6 * v, 1)));
+    });
+    jets.instanceMatrix.needsUpdate = true;
+  };
+}
+
+function depart(c: Ctx): Partial<BuiltSet> {
+  // the hub's own parts share one painted material and one for what glows
+  const vc = shopGlow(new MeshStandardMaterial({ vertexColors: true, roughness: 0.7 }), c.world);
+  const glow = new MeshBasicMaterial({ vertexColors: true, toneMapped: false });
+  // the plaza: stone laid on the ground right up to the Canada Line's hall, its planters down the middle
+  paveSquare(c, vc, -24, 24, 14, 44, (a, l, i, j) => {
+    if (a > HALL.a0 - 1 && a < HALL.a1 + 1 && l > HALL.l0 - 1 && l < HALL.l1 + 1) return null;
+    return i % 5 === 0 || j % 5 === 0 ? 0xbdb6a9 : (i + j) % 2 ? 0xd3ccbf : 0xcac3b6;
+  });
+  plaza(c, -24, 24, 14, 44, (a, l) => a > HALL.a0 - 3 && a < HALL.a1 + 3 && l > HALL.l0 - 3 && l < HALL.l1 + 3);
+  const hall = canadaLineHall(c, vc, glow);
+  const busy = busyPlaza(c, vc, glow);
+  const top = Math.max(1.4, c.G(0, 24) + 0.5);
+  // the restored CPR station: a beaux-arts block in buff stone, arched windows below and square ones above, a
+  // colonnade with an entablature and pediment facing the line, a copper-roofed attic; its windows light at dusk
+  const l = 36;
+  const g = Math.min(c.G(10, l), c.G(10, l + 10), c.G(-1, l + 5), c.G(21, l + 5)) - 0.4;
+  const h = top + 6.5 - g;
+  const facade = stationTextures();
+  const stoneWall = new MeshStandardMaterial({ map: facade.map, emissiveMap: facade.glow, emissive: 0xffffff, emissiveIntensity: 0, roughness: 0.85 });
+  const ring: P2[] = [
+    [-1, l],
+    [21, l],
+    [21, l + 10],
+    [-1, l + 10],
+  ].map(([a, ll]) => {
+    const [x, , z] = c.L(a, ll, 0);
+    return [x, z] as P2;
+  });
+  c.add(stoneWall, walls(ring, g, g + h, { uPer: 6, vPer: h }));
+  const stone = new MeshStandardMaterial({ color: 0xd9ccb3, roughness: 0.85 });
+  c.add(stone, cap(ring, g + h));
+  // the colonnade and its entablature, a step out from the wall
+  for (let k = 0; k <= 9; k++) c.add(stone, new CylinderGeometry(0.4, 0.48, h * 0.74, 12), c.L(k * 2.2, l - 1.6, g + (h * 0.74) / 2));
+  c.add(stone, new BoxGeometry(2.4, 1.1, 22.4), c.L(10, l - 1.4, g + h * 0.74 + 0.55));
+  c.add(stone, new BoxGeometry(2.8, 0.5, 22.8), c.L(10, l - 0.2, g + h + 0.1));
+  // the pediment over the centre bays: a low triangular prism
+  // (a 3-sided cylinder turned so its axis runs back into the wall and one edge points up)
+  c.add(stone, new CylinderGeometry(1, 1, 1, 3).rotateZ(Math.PI / 2).rotateX(-Math.PI / 2), c.L(10, l - 1.4, g + h * 0.74 + 1.9), [0, 0, 0], [2.2, 1.6, 5.8]);
+  // the attic with its copper hip roof
+  c.add(stone, new BoxGeometry(6, 2.2, 12), c.L(10, l + 5, g + h + 1.1));
+  c.add(new MeshStandardMaterial({ color: 0x5f9c86, roughness: 0.6 }), new ConeGeometry(1, 1, 4, 1).rotateY(Math.PI / 4), c.L(10, l + 5, g + h + 3.2), [0, 0, 0], [4.8, 2, 9.2]);
+  stationGlow = stoneWall;
+  // the light-line map of the ten stops, floating over the terrace
+  const lineMat = glowMat(0xa78bfa, 2.2);
+  c.add(lineMat, new BoxGeometry(0.12, 0.12, 30), c.L(0, 22, top + 7));
+  // two slim masts hold the light line over the plaza
+  for (const a of [-15, 15]) {
+    const g0 = c.G(a, 22);
+    c.add(c.world.mats.girder, new CylinderGeometry(0.12, 0.16, top + 7 - g0, 8), c.L(a, 22, (top + 7 + g0) / 2));
+  }
+  const anchors: Vector3[] = [new Vector3(...c.L(10, l, g + h + 2.2))];
+  for (let k = 0; k < stations.length; k++) {
+    const a = -15 + (30 * k) / (stations.length - 1);
+    c.add(k === 0 ? glowMat(0xffffff, 2.4) : lineMat, new SphereGeometry(k === 0 ? 0.55 : 0.38, 14, 10), c.L(a, 22, top + 7));
+  }
+  anchors.push(new Vector3(...c.L(-15, 22, top + 7.8)), new Vector3(...c.L(15, 22, top + 7.8)));
+  // from the city side, over the station and the plaza to the harbour, the loop over the water and the North Shore
+  const lit = stationGlow;
+  const city = c.world.buildings.solid;
+  return {
+    anchors,
+    focus: new Vector3(...c.L(0, 16, top + 4)),
+    update: (t) => {
+      // the station's windows light with the city's
+      if (lit) lit.emissiveIntensity = city.emissiveIntensity * 0.6;
+      hall(t);
+      busy(t);
+    },
+    shot: { from: [-74, 92, 22], to: [0, -46, 17], look: [0, 16, 6] },
+  };
+}
+
+export type StandTree = { a: number; l: number; h: number; sp: Conifer; base?: number; crownFrom?: number };
+
+/**
+ * A stand of conifers in three dimensions, for the trees a shot comes close to (trees/conifer.ts describes them). One
+ * merged bark mesh per bark, one instanced mesh of sprays per species, sharing the forest's snow so they whiten with it.
+ */
+function stand(c: Ctx, trees: StandTree[]): void {
+  const barks = new Map<Conifer, MeshStandardMaterial>();
+  const barkOf = (sp: Conifer) => {
+    const key: Conifer = sp === "cedar" ? "cedar" : "fir";
+    let m = barks.get(key);
+    if (!m) {
+      m = new MeshStandardMaterial({ map: barkTexture(key), roughness: 1 });
+      barks.set(key, m);
+    }
+    return m;
+  };
+  const sprays = new Map<Conifer, Matrix4[]>();
+  const card = sprayCard();
+  const m4 = new Matrix4();
+  for (const t of trees) {
+    const base = t.base ?? c.G(t.a, t.l);
+    const [cx, , cz] = c.L(t.a, t.l, 0);
+    const sk = coniferSkeleton(t.sp, t.h, (t.crownFrom ?? base + crownFromOf(t.sp, t.h)) - base, c.lowEnd ? DETAIL_LOW : DETAIL_FULL, t.a * 1.7 + t.l);
+    const bark = barkOf(t.sp);
+    c.add(bark, trunkGeometry(sk, c.lowEnd ? 10 : 14), [cx, base - 0.3, cz]);
+    c.add(bark, limbGeometry(sk, 4), [cx, base, cz]);
+    const list = sprays.get(t.sp) ?? [];
+    sprays.set(t.sp, list);
+    const at = new Matrix4().makeTranslation(cx, base, cz);
+    for (const sp of sk.sprays) list.push(at.clone().multiply(sprayMatrix(sp, m4)));
+  }
+  for (const [sp, list] of sprays) {
+    const mat = new MeshStandardMaterial({ map: frondTexture(sp), alphaTest: 0.45, side: DoubleSide, roughness: 0.9 });
+    // snow settles on the upper faces of the sprays as it does on the forest
+    const snow = c.world.trees.uniforms.uSnow;
+    mat.onBeforeCompile = (shd) => {
+      shd.uniforms.uSnow = snow;
+      shd.fragmentShader = shd.fragmentShader
+        .replace("#include <common>", "#include <common>\nuniform float uSnow;")
+        .replace(
+          "#include <normal_fragment_maps>",
+          "#include <normal_fragment_maps>\nfloat snowUp = dot( normal, normalize( ( viewMatrix * vec4( 0.0, 1.0, 0.0, 0.0 ) ).xyz ) );\ndiffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.92, 0.94, 0.97 ), uSnow * smoothstep( 0.35, 0.85, snowUp ) );",
+        );
+    };
+    const inst = new InstancedMesh(card, mat, list.length);
+    list.forEach((m, i) => inst.setMatrixAt(i, m));
+    inst.castShadow = !c.lowEnd;
+    inst.receiveShadow = true;
+    c.group.add(inst);
+  }
+}
+
+/** The atrium's western red cedar, through the oculus. */
+function cedar(c: Ctx, a: number, l: number, base: number, height: number, crownFrom: number): void {
+  stand(c, [{ a, l, h: height, sp: "cedar", base, crownFrom }]);
+}
+
+/**
+ * For Bright Nights, Vancouver's Christmas lights, the atrium's cedar is the city's Christmas tree: strings of lights
+ * wound up its crown (twinkling, and bright after dark), baubles on its boughs and a star on top. Fitted to the crown
+ * stand() grows (the same skeleton), so nothing floats off it or sinks into it. Returns the per-frame update.
+ */
+function christmasTree(c: Ctx, a: number, l: number, base: number, height: number, crownFrom: number): (t: number) => void {
+  const sk = coniferSkeleton("cedar", height, crownFrom - base, c.lowEnd ? DETAIL_LOW : DETAIL_FULL, a * 1.7 + l);
+  // the crown's outline: the farthest spray tip from the trunk in each band of height, the bands between filled in
+  const BANDS = 32;
+  const out = new Array<number>(BANDS).fill(0);
+  const m4 = new Matrix4();
+  const tip = new Vector3();
+  for (const sp of sk.sprays) {
+    tip.set(1, 0, 0).applyMatrix4(sprayMatrix(sp, m4));
+    const k = Math.min(BANDS - 1, Math.max(0, Math.floor((tip.y / height) * BANDS)));
+    out[k] = Math.max(out[k], Math.hypot(tip.x, tip.z));
+  }
+  const y0 = crownFrom - base;
+  const radius = (y: number) => {
+    const f = Math.min(BANDS - 1.001, Math.max(0, (y / height) * BANDS - 0.5));
+    const k = Math.floor(f);
+    // a band no spray reached takes the cone between its neighbours
+    const r0 = out[k] || out[Math.max(0, k - 1)] || 0;
+    const r1 = out[k + 1] || r0;
+    return r0 + (r1 - r0) * (f - k);
+  };
+  const [cx, , cz] = c.L(a, l, 0);
+  const deco = new Group();
+  deco.visible = false;
+  c.group.add(deco);
+  // two strings wound up the crown, half a turn apart, one twinkling against the other
+  const RED = 0xe03131;
+  const GREEN = 0x2f9e44;
+  const WARM = 0xfff1d6;
+  const GOLD = 0xffc94a;
+  const strings: PointsMaterial[] = [];
+  const col = new Color();
+  for (const phase of [0, Math.PI]) {
+    const pos: number[] = [];
+    const cols: number[] = [];
+    const turns = 9;
+    const top = height - 1.2;
+    for (let u = 0; u <= 1; u += c.lowEnd ? 0.0025 : 0.0014) {
+      const y = y0 + (top - y0) * u;
+      const th = phase + u * turns * Math.PI * 2;
+      const r = radius(y) * 0.92 + 0.25;
+      pos.push(cx + Math.cos(th) * r, base + y, cz + Math.sin(th) * r);
+      col.setHex([WARM, RED, WARM, GREEN, WARM, GOLD][pos.length % 6]);
+      cols.push(col.r, col.g, col.b);
+    }
+    const g = new BG();
+    g.setAttribute("position", new Float32BufferAttribute(pos, 3));
+    g.setAttribute("color", new Float32BufferAttribute(cols, 3));
+    const mat = new PointsMaterial({ size: 0.85, map: dotTexture(), vertexColors: true, transparent: true, depthWrite: false, toneMapped: false, blending: AdditiveBlending });
+    strings.push(mat);
+    deco.add(new Points(g, mat));
+  }
+  // baubles hung on the outside of the boughs: red, gold and silver
+  const baubles: [Material, Part[]][] = [
+    [new MeshStandardMaterial({ color: 0xc81e2a, roughness: 0.25, metalness: 0.5, emissive: 0x3a0508, envMap: c.world.envTex }), []],
+    [new MeshStandardMaterial({ color: 0xe0b040, roughness: 0.2, metalness: 0.85, emissive: 0x2a1c04, envMap: c.world.envTex }), []],
+    [new MeshStandardMaterial({ color: 0xdfe3ea, roughness: 0.15, metalness: 0.9, envMap: c.world.envTex }), []],
+  ];
+  const ball = new SphereGeometry(1, 12, 8);
+  const N = c.lowEnd ? 45 : 80;
+  for (let k = 0; k < N; k++) {
+    // spread over the crown's surface: more round the wide lower boughs
+    const u = 1 - Math.sqrt((k + 0.5) / N);
+    const y = y0 + 0.8 + (height - y0 - 3) * u;
+    const th = k * 2.39996;
+    const r = radius(y) * 0.88;
+    const s = 0.32 + ((k * 7) % 5) * 0.05;
+    baubles[k % 3][1].push({ geo: ball.clone().scale(s, s, s), position: [cx + Math.cos(th) * r, base + y - 0.25, cz + Math.sin(th) * r] });
+  }
+  ball.dispose();
+  for (const [mat, parts] of baubles) deco.add(new Mesh(merged(parts), mat));
+  // the star on top: two five-pointed stars crossed, so it reads from every side, glowing gold
+  const star = new Shape();
+  for (let k = 0; k <= 10; k++) {
+    const th = Math.PI / 2 + (k * Math.PI) / 5;
+    const r = k % 2 ? 0.55 : 1.4;
+    if (k === 0) star.moveTo(Math.cos(th) * r, Math.sin(th) * r);
+    else star.lineTo(Math.cos(th) * r, Math.sin(th) * r);
+  }
+  const starGeo = new ExtrudeGeometry(star, { depth: 0.25, bevelEnabled: false }).translate(0, 0, -0.125);
+  const starMat = new MeshStandardMaterial({ color: 0xffd76a, emissive: 0xffc23a, emissiveIntensity: 1.6, metalness: 0.4, roughness: 0.3 });
+  for (const ry of [0, Math.PI / 2]) {
+    const m = new Mesh(starGeo, starMat);
+    m.position.set(cx, base + height + 1.1, cz);
+    m.rotation.y = ry;
+    deco.add(m);
+  }
+  const city = c.world.buildings.solid;
+  return (t) => {
+    deco.visible = useTrain.getState().event === "brightnights";
+    if (!deco.visible) return;
+    // the strings bright after dark, softer by day; the two take turns twinkling
+    const night = Math.min(1, city.emissiveIntensity * 1.2);
+    strings.forEach((m, i) => (m.opacity = (0.35 + 0.65 * night) * (0.55 + 0.45 * Math.sin(t * 2.2 + i * Math.PI))));
+    starMat.emissiveIntensity = 1 + 1.4 * night;
+  };
+}
+
+// ------------------------------------------------------------------ 01 About · Burrard: the cedar atrium
+function about(c: Ctx): Partial<BuiltSet> {
+  const { mats } = c.world;
+  // the line bends back past the cedar toward Granville: it stands as near its spot as the guideway allows, and the
+  // canopy reaches out over the track, high enough for the trains to run under it
+  let L0 = 28;
+  while (L0 > 19 && trackClear(c, 0, L0) < 10) L0 -= 0.5;
+  const g = c.G(0, L0);
+  // a mass-timber canopy with an oculus the cedar grows through, on columns that keep off the guideway
+  const deckY = Math.max(g + 9, 1.4 + 7);
+  cedar(c, 0, L0, g, 36, deckY + 0.9);
+  const dress = christmasTree(c, 0, L0, g, 36, deckY + 0.9);
+  const annulus = (r0: number, r1: number, h: number) =>
+    new LatheGeometry([new Vector2(r0, 0), new Vector2(r1, 0), new Vector2(r1, h), new Vector2(r0, h), new Vector2(r0, 0)], 40);
+  c.add(mats.timber, annulus(3.2, 10, 0.6), c.L(0, L0, deckY - 0.6));
+  c.add(mats.roofGreen, annulus(3.4, 9.7, 0.3), c.L(0, L0, deckY));
+  // up to four columns on a ring under the deck, each the clear spot nearest a diagonal
+  const ring = Array.from({ length: 16 }, (_, k) => (k / 16) * Math.PI * 2).filter((th) => trackClear(c, Math.cos(th) * 7.5, L0 + Math.sin(th) * 7.5) > 9);
+  const posts: [number, number][] = [];
+  for (const want of [0.25, 0.75, 1.25, 1.75].map((q) => q * Math.PI)) {
+    const best = ring.reduce<number | null>((b, th) => (b === null || Math.abs(Math.sin((th - want) / 2)) < Math.abs(Math.sin((b - want) / 2)) ? th : b), null);
+    if (best === null) break;
+    ring.splice(ring.indexOf(best), 1);
+    posts.push([Math.cos(best) * 7.5, L0 + Math.sin(best) * 7.5]);
+  }
+  legs(c, mats.timber, posts, deckY);
+  // a moss wall behind, where the track leaves room
+  if ([-9, 0, 9].every((a) => trackClear(c, a, L0 + 11) > 9)) c.add(new MeshStandardMaterial({ color: 0x4d6b35, roughness: 1 }), new BoxGeometry(1, 7, 18), c.L(0, L0 + 11, g + 3.5));
+  // the Harbour Market round it
+  harbourMarket(c, L0, posts);
+  return {
+    focus: new Vector3(...c.L(0, L0 - 6, deckY + 6)),
+    update: dress,
+    shot: { from: [-30, 64, 6], to: [-22, 56, 30], look: [0, 22, 16], fromLook: [0, 26, 8] },
+  };
+}
+
+/**
+ * The Harbour Market, from the harbour's edge round the cedar's canopy to the line's far side (sets/squares.ts):
+ * - paving over it all;
+ * - the pavilions, stalls, food trucks, fountain and stage of its layout;
+ * - café tables under the canopy round the cedar;
+ * - festoons strung between the canopy's columns and over the stalls by the water.
+ */
+function harbourMarket(c: Ctx, L0: number, posts: [number, number][]): void {
+  const sq = SQUARES.find((s) => s.i === 1) as Square;
+  const vc = shopGlow(new MeshStandardMaterial({ vertexColors: true, roughness: 0.75 }), c.world);
+  const kit = squareKit(c, sq, vc);
+  const d = SET_RECT[0] as [number, number, number, number];
+  paveSquare(c, vc, -22, 34, 8, 60, (a, l, i, j) => {
+    const [x, z] = fromStation(1, a, l);
+    if (sdfAt(x, z) < 0.6 || inLandmark(x, z, 1.5)) return null;
+    // the Waterfront set paves its own
+    const [da, dl] = toStation(0, x, z);
+    if (da > d[0] && da < d[1] && dl > d[2] && dl < d[3]) return null;
+    return i % 4 === 0 || j % 4 === 0 ? 0xb9b2a5 : (i + j) % 2 ? 0xd6d0c4 : 0xccc5b7;
+  });
+  // café tables under the canopy, round the cedar, each with two chairs
+  for (let k = 0; k < 8; k++) {
+    const th = (k / 8) * Math.PI * 2 + 0.2;
+    const a = Math.cos(th) * 5.4;
+    const l = L0 + Math.sin(th) * 5.4;
+    if (trackClear(c, a, l) < 4.5) continue;
+    const out: Pieces = { solid: [], glass: [], warm: [] };
+    out.solid.push(
+      paint(new CylinderGeometry(0.45, 0.45, 0.06, 8).translate(0, 0.78, 0), 0xf2efe9),
+      paint(new CylinderGeometry(0.05, 0.05, 0.76, 4).translate(0, 0.38, 0), 0x2b2f36),
+      paint(new BoxGeometry(0.4, 0.45, 0.4).translate(0, 0.22, 0.75), 0xa98260),
+      paint(new BoxGeometry(0.4, 0.45, 0.4).translate(0, 0.22, -0.75), 0xa98260),
+    );
+    kit.put(out, a, l, [Math.cos(th), Math.sin(th)]);
+  }
+  // festoons from column to column under the canopy, and zigzag over the stalls by the water
+  if (posts.length > 2) festoons(c, vc, kit.lit, [...posts, posts[0]], 4.8);
+  festoons(c, vc, kit.lit, [
+    [-17.5, 35.5],
+    [-14.5, 41],
+    [-11, 37.5],
+    [-7.5, 42],
+  ]);
+  festoons(c, vc, kit.lit, [
+    [10, 50],
+    [12, 56.6],
+    [15.5, 52.6],
+    [19.5, 58],
+  ]);
+}
+
+// ------------------------------------------------------------------ 02 Experience · Granville: a portal over the line for each role, stone to light
+function experience(c: Ctx, world: World): Partial<BuiltSet> {
+  // built in world space so each portal stands square to the track where it is
+  const f = makeFrame();
+  const s0 = stationS[c.i];
+  const fonts = fontOf();
+  // oldest role first along the direction of travel (the role list runs newest first), each lintel its start year,
+  // spread over the same 40 units of line whatever their number
+  const n = roles.length;
+  const years = roles.map((r) => r.period.slice(0, 4)).reverse();
+  const order = years.map((_, k) => n - 1 - k);
+  const gap = n > 1 ? 40 / (n - 1) : 0;
+  const mats: Material[] = [
+    new MeshStandardMaterial({ color: 0xb9b2a4, roughness: 0.95 }),
+    new MeshStandardMaterial({ color: 0x9c4a36, roughness: 0.85 }),
+    new MeshStandardMaterial({ color: 0x4a5160, metalness: 0.7, roughness: 0.35, envMap: world.envTex, envMapIntensity: 0.6 }),
+    world.mats.pane,
+    glowMat(0xa78bfa, 2),
+  ];
+  const anchors: Vector3[] = new Array(n);
+  const parts: Map<Material, Part[]> = new Map();
+  const push = (m: Material, p: Part) => {
+    const list = parts.get(m);
+    if (list) list.push(p);
+    else parts.set(m, [p]);
+  };
+  const plaques: Mesh[] = [];
+  for (let k = 0; k < n; k++) {
+    frameAt(s0 + 22 + k * gap, f);
+    const yaw = Math.atan2(f.t.x, f.t.z);
+    const base = f.p.clone();
+    // stone for the oldest, light for the newest, the rest in between
+    const m = mats[n > 1 ? Math.round((k * (mats.length - 1)) / (n - 1)) : mats.length - 1];
+    const at = (lat: number, up: number): V3 => {
+      const p = base.clone().addScaledVector(f.r, lat).addScaledVector(UP, up);
+      return [p.x, p.y, p.z];
+    };
+    for (const sd of [-1, 1]) {
+      const gy = groundAt(base.x + f.r.x * sd * 9, base.z + f.r.z * sd * 9);
+      const h = base.y + 10 - gy;
+      const p = base.clone().addScaledVector(f.r, sd * 9);
+      push(m, { geo: new BoxGeometry(1.1, h, 1.1), position: [p.x, gy + h / 2, p.z], rotation: [0, yaw, 0] });
+    }
+    push(m, { geo: new BoxGeometry(19.2, 1.2, 1.3), position: at(0, 10.4), rotation: [0, yaw, 0] });
+    // the year, lit, on the lintel
+    const tex = canvasTex(256, 96, (g) => {
+      g.fillStyle = "#0b0f18";
+      g.fillRect(0, 0, 256, 96);
+      g.fillStyle = k === n - 1 ? "#c4b5fd" : "#f2e6c9";
+      g.font = `400 64px ${fonts.serif}`;
+      g.textAlign = "center";
+      g.fillText(years[k], 128, 70);
+    });
+    // one plaque on each face of the lintel, so the year reads from either direction
+    for (const turn of [0, Math.PI]) {
+      const plaque = new Mesh(new PlaneGeometry(3.2, 1.2), new MeshBasicMaterial({ map: tex, toneMapped: false }));
+      plaque.position.set(...at(0, 10.4));
+      plaque.rotation.set(0, yaw + turn, 0);
+      plaque.translateZ(0.7);
+      plaques.push(plaque);
+    }
+    anchors[order[k]] = new Vector3(...at(0, 12.2));
+  }
+  const g = new Group();
+  for (const [m, list] of parts) g.add(new Mesh(merged(list), m));
+  for (const p of plaques) g.add(p);
+  // built in world space: buildSets leaves this set's group untransformed
+  c.group.add(g);
+  return {
+    anchors,
+    focus: anchors[order[n >> 1]].clone().setY(anchors[order[n >> 1]].y - 6),
+    shot: { from: [-14, -3, 6.5], to: [42, -64, 26], look: [42, 0, 6], fromLook: [60, 0, 5.5], free: true },
+  };
+}
+
+/**
+ * A departures screen for a stop: the Expo Line badge, the stop and the clock, then the next trains each way counting
+ * down (a train every six minutes in each direction, a minute every 20 s of ride time). Redrawn only when it changes.
+ */
+function trainBoard(stop: string): { tex: CanvasTexture; tick: (t: number) => void } {
+  const W = 1024;
+  const H = 500;
+  const cv = document.createElement("canvas");
+  cv.width = W;
+  cv.height = H;
+  const g = cv.getContext("2d");
+  const tex = new CanvasTexture(cv);
+  tex.colorSpace = SRGBColorSpace;
+  tex.anisotropy = 4;
+  const fonts = fontOf();
+  const amber = "#ffb547";
+  const grey = "#7b8494";
+  let last = "";
+  const tick = (t: number) => {
+    if (!g) return;
+    const now = new Date();
+    const clock = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    const step = Math.floor(t / 20);
+    const west = (((2 - step) % 6) + 6) % 6;
+    const east = (((4 - step) % 6) + 6) % 6;
+    const rows: [string, number][] = [
+      ["Waterfront", west],
+      ["Patterson", east],
+      ["Waterfront", west + 6],
+      ["Patterson", east + 6],
+    ];
+    rows.sort((x, y) => x[1] - y[1]);
+    const key = clock + rows.map((r) => r.join()).join("|");
+    if (key === last) return;
+    last = key;
+    g.fillStyle = "#04060b";
+    g.fillRect(0, 0, W, H);
+    // the header: line badge, stop, clock
+    g.fillStyle = "#1f5fd0";
+    g.beginPath();
+    g.roundRect(36, 30, 150, 58, 10);
+    g.fill();
+    g.fillStyle = "#ffffff";
+    g.textBaseline = "middle";
+    g.textAlign = "center";
+    g.font = `700 36px ${fonts.mono}`;
+    g.fillText("EXPO", 111, 60);
+    g.textAlign = "left";
+    g.font = `600 44px ${fonts.sans}`;
+    g.fillText(stop, 212, 60, 560);
+    g.textAlign = "right";
+    g.fillStyle = amber;
+    g.font = `600 50px ${fonts.mono}`;
+    g.fillText(clock, W - 40, 60);
+    g.fillStyle = "#1d2533";
+    g.fillRect(36, 118, W - 72, 3);
+    g.fillStyle = grey;
+    g.font = `500 26px ${fonts.mono}`;
+    g.textAlign = "left";
+    g.fillText("NEXT TRAINS TO", 40, 160);
+    g.textAlign = "right";
+    g.fillText("DUE", W - 40, 160);
+    rows.forEach(([dest, due], k) => {
+      const y = 228 + k * 64;
+      g.fillStyle = k === 0 ? "#ffd27a" : amber;
+      g.font = `600 46px ${fonts.mono}`;
+      g.textAlign = "left";
+      g.fillText(dest, 40, y);
+      g.textAlign = "right";
+      g.fillText(due === 0 ? "Due" : `${due} min`, W - 40, y);
+    });
+    g.fillStyle = grey;
+    g.font = `500 24px ${fonts.mono}`;
+    g.textAlign = "left";
+    g.fillText("4-car trains  ·  doors open on the right", 40, H - 26);
+    tex.needsUpdate = true;
+  };
+  tick(0);
+  return { tex, tick };
+}
+
+// ------------------------------------------------------------------ 03 Awdon · Stadium–Chinatown: meeting to sprint
+
+/** A guard rail: a steel handrail, a mid rail and posts, from (a0, l0) to (a1, l1) along a floor at height y. */
+function balustrade(c: Ctx, a0: number, l0: number, a1: number, l1: number, y: number): void {
+  const { mats } = c.world;
+  const zs = c.L(1, 0, 0)[2];
+  const len = Math.hypot(a1 - a0, l1 - l0);
+  if (len < 0.2) return;
+  // local x runs along l, z along a × zs; a box's length turned onto the run
+  const ry: V3 = [0, -Math.atan2((a1 - a0) * zs, l1 - l0), 0];
+  const am = (a0 + a1) / 2;
+  const lm = (l0 + l1) / 2;
+  c.add(mats.girder, new BoxGeometry(len, 0.08, 0.12), c.L(am, lm, y + 1.1), ry);
+  c.add(mats.girder, new BoxGeometry(len, 0.05, 0.06), c.L(am, lm, y + 0.6), ry);
+  c.add(mats.girder, new BoxGeometry(len, 0.05, 0.06), c.L(am, lm, y + 0.2), ry);
+  const n = Math.max(1, Math.round(len / 2));
+  for (let k = 0; k <= n; k++) c.add(mats.girder, new BoxGeometry(0.08, 1.1, 0.08), c.L(a0 + ((a1 - a0) * k) / n, l0 + ((l1 - l0) * k) / n, y + 0.55));
+}
+
+/**
+ * The sprint board: what the meeting decided, as cards in three columns (to do, doing, approved by the PM, in green),
+ * under the meeting's name.
+ */
+/** Where the sprint board's canvas keeps a warm white corner, for the terrace's lamps (u, v). */
+const LAMP_UV: [number, number] = [1012 / 1024, 1 - 500 / 512];
+
+function sprintBoard(): CanvasTexture {
+  const fonts = fontOf();
+  return canvasTex(1024, 512, (g) => {
+    g.fillStyle = "#121826";
+    g.fillRect(0, 0, 1024, 512);
+    g.fillStyle = "#ffe2b0";
+    g.fillRect(1000, 488, 24, 24);
+    g.fillStyle = "#f6efe2";
+    g.font = `600 34px ${fonts.sans}`;
+    g.textBaseline = "middle";
+    g.fillText("Sprint 14 · from Monday's client meeting", 36, 42);
+    g.fillStyle = "#a78bfa";
+    g.fillRect(36, 70, 952, 4);
+    const cols: [string, string, string[]][] = [
+      ["To do", "#7dd3fc", ["Draft minutes", "Email the client", "Timesheet, week 42"]],
+      ["Doing", "#f9a8d4", ["Update the Jira board", "Status report"]],
+      ["Approved", "#34d399", ["Scope change", "Sprint goal", "Risk log"]],
+    ];
+    cols.forEach(([head, col, cards], k) => {
+      const x = 36 + k * 322;
+      g.fillStyle = col;
+      g.font = `600 28px ${fonts.sans}`;
+      g.fillText(head, x, 108);
+      cards.forEach((t, j) => {
+        const y = 140 + j * 116;
+        g.fillStyle = k === 2 ? "#123d2f" : "#1d2638";
+        g.fillRect(x, y, 300, 98);
+        g.fillStyle = col;
+        g.fillRect(x, y, 8, 98);
+        g.fillStyle = "#f6efe2";
+        g.font = `500 26px ${fonts.sans}`;
+        g.fillText(t, x + 24, y + 34, 260);
+        g.fillStyle = "rgba(246,239,226,0.35)";
+        g.fillRect(x + 24, y + 62, 150 + ((j * 53 + k * 31) % 90), 8);
+        if (k === 2) {
+          g.fillStyle = col;
+          g.font = `700 30px ${fonts.sans}`;
+          g.fillText("✓", x + 262, y + 34);
+        }
+      });
+    });
+  });
+}
+
+/**
+ * A roof garden at platform level over Chinatown's night market, reached across a bridge from the platform: a glass
+ * meeting room under a planted roof, a long table inside; its transcripts flowing as ribbons to the sprint board they
+ * become; the arrivals board where the bridge lands; trees, café tables and benches; a glass balustrade all round.
+ */
+function awdon(c: Ctx): Partial<BuiltSet> {
+  const { mats } = c.world;
+  // the garden's plain colours share the set's one painted material (a textured one would be a mesh, a draw, each)
+  const plain = (color: number) => new MeshStandardMaterial({ color, roughness: 0.8 });
+  const GREEN = plain(0x5f8f3e);
+  const WOOD = plain(0x9a7048);
+  const POST = plain(0x3a3f46);
+  const STONE = plain(0x9c958a);
+  const A0 = -16;
+  const A1 = 16;
+  const LI = 14;
+  const LO = 30;
+  const top = terrace(c, A0, A1, LI, LO);
+  const L0 = 22;
+  // the balustrade round the open edges, open where the bridge from the platform lands (a ±2.5), and along the bridge
+  const e = 0.15;
+  balustrade(c, A0 + e, LI + e, -2.8, LI + e, top);
+  balustrade(c, 2.8, LI + e, A1 - e, LI + e, top);
+  balustrade(c, A1 - e, LI + e, A1 - e, LO - e, top);
+  balustrade(c, A1 - e, LO - e, A0 + e, LO - e, top);
+  balustrade(c, A0 + e, LO - e, A0 + e, LI + e, top);
+  for (const s of [-1, 1]) balustrade(c, s * 2.6, 11.5, s * 2.6, LI + e, Math.min(top, 1.4));
+  // the meeting room: glass on slim dark mullions, a planted roof, a long table and eight chairs, a screen at its end
+  const MA = -9;
+  const MW = 8;
+  const MD = 6;
+  c.add(mats.pane, new BoxGeometry(MD, 3.2, MW), c.L(MA, L0, top + 1.6));
+  for (const [da, dl] of [
+    [-1, -1],
+    [1, -1],
+    [-1, 1],
+    [1, 1],
+  ])
+    c.add(mats.girder, new BoxGeometry(0.14, 3.2, 0.14), c.L(MA + (da * MW) / 2, L0 + (dl * MD) / 2, top + 1.6));
+  for (const da of [-2, 0, 2]) for (const dl of [-1, 1]) c.add(mats.girder, new BoxGeometry(0.08, 3.2, 0.08), c.L(MA + da, L0 + (dl * MD) / 2, top + 1.6));
+  c.add(mats.canopy, new BoxGeometry(MD + 0.8, 0.3, MW + 0.8), c.L(MA, L0, top + 3.35));
+  c.add(GREEN, new BoxGeometry(MD + 0.4, 0.16, MW + 0.4), c.L(MA, L0, top + 3.55));
+  c.add(WOOD, new BoxGeometry(1.5, 0.08, 4.6), c.L(MA, L0, top + 0.78));
+  for (const da of [-2, 2]) c.add(POST, new BoxGeometry(0.1, 0.74, 0.1), c.L(MA + da, L0, top + 0.39));
+  const seats = [0xe8663a, 0x2a9d8f, 0xf2b632, 0x6c5ce7].map((color) => new MeshStandardMaterial({ color, roughness: 0.7 }));
+  for (let k = 0; k < 8; k++) {
+    const da = -1.8 + (k % 4) * 1.2;
+    const dl = k < 4 ? -1.15 : 1.15;
+    c.add(seats[k % 4], new BoxGeometry(0.5, 0.08, 0.5), c.L(MA + da, L0 + dl, top + 0.48));
+    c.add(seats[k % 4], new BoxGeometry(0.06, 0.5, 0.5), c.L(MA + da, L0 + dl + (dl > 0 ? 0.25 : -0.25), top + 0.75));
+  }
+  c.add(POST, new BoxGeometry(1.6, 0.9, 0.06), c.L(MA - MW / 2 + 0.2, L0, top + 1.7), [0, Math.PI / 2, 0]);
+  // three translucent transcript ribbons flowing out of the room to the sprint board
+  const flow = canvasTex(256, 32, (g) => {
+    g.fillStyle = "#000";
+    g.fillRect(0, 0, 256, 32);
+    for (let x = 0; x < 256; x += 10) {
+      g.fillStyle = `rgba(255,255,255,${0.45 + ((x * 37) % 50) / 100})`;
+      g.fillRect(x, 8 + ((x * 13) % 10), 3 + ((x * 7) % 6), 4);
+    }
+  }, true);
+  flow.colorSpace = NoColorSpace;
+  const ribbonMats = [0x7dd3fc, 0xa78bfa, 0xf9a8d4].map((col) => new MeshBasicMaterial({ color: col, map: flow, alphaMap: flow, transparent: true, opacity: 0.9, side: DoubleSide, depthWrite: false, blending: AdditiveBlending }));
+  ribbonMats.forEach((m, k) => {
+    const geo = ribbonGeo(c, [MA + MW / 2 + 0.2, L0 + (k - 1) * 1.6, top + 1.4 + k * 0.6], [8.9, L0 + (k - 1) * 1.8, top + 2.4 + k * 0.6], 0.7);
+    c.group.add(new Mesh(geo, m));
+  });
+  // the sprint board: two-sided, lit, on two legs, facing back along the ribbons and out the far way
+  const zs = c.L(1, 0, 0)[2];
+  const bezel = new MeshStandardMaterial({ color: 0x15181d, roughness: 0.45, metalness: 0.5 });
+  c.add(bezel, new BoxGeometry(0.42, 4.6, 9.2), c.L(9.5, L0, top + 3.7), [0, Math.PI / 2, 0]);
+  for (const s of [-1, 1]) c.add(bezel, new BoxGeometry(0.3, 1.4, 0.3), c.L(9.5, L0 + s * 3.6, top + 0.7));
+  // its two faces and the terrace's lamps in one mesh: the lamps take the board's warm corner (sprintBoard), so they are
+  // lit as it is
+  const boardTex = sprintBoard();
+  const boardMat = new MeshBasicMaterial({ map: boardTex, toneMapped: false });
+  const lit: Part[] = [];
+  for (const face of [-1, 1]) {
+    // a plane faces +z, and local z runs along the track as a × zs
+    lit.push({ geo: new PlaneGeometry(8.8, 4.4), position: c.L(9.5 + face * 0.22, L0, top + 3.7), rotation: [0, face * zs > 0 ? 0 : Math.PI, 0] });
+  }
+  const lamp = (geo: BufferGeometry, pos: V3) => {
+    const uv = geo.attributes.uv;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, LAMP_UV[0], LAMP_UV[1]);
+    lit.push({ geo, position: pos });
+  };
+  // the meeting room's ceiling light, and lamps along the balustrade
+  lamp(new BoxGeometry(1.2, 0.08, 3.6), c.L(MA, L0, top + 3.1));
+  for (const [a0, l0] of [
+    [-12, 15],
+    [-6, 15],
+    [8, 15],
+    [13, 15],
+    [-10, 29.2],
+    [-3, 29.2],
+    [4, 29.2],
+    [11, 29.2],
+  ])
+    lamp(new CylinderGeometry(0.16, 0.16, 0.5, 8), c.L(a0, l0, top + 1.45));
+  c.group.add(new Mesh(merged(lit), boardMat));
+  // the arrivals board where the bridge lands, facing the people coming off the platform
+  const board = trainBoard(stations[c.i].name);
+  c.add(bezel, new BoxGeometry(0.3, 2.7, 5.2), c.L(5.2, 16.2, top + 2.6));
+  for (const s of [-1, 1]) c.add(bezel, new BoxGeometry(0.2, 1.3, 0.2), c.L(5.2 + s * 2, 16.2, top + 0.65));
+  const screenMat = new MeshBasicMaterial({ map: board.tex, toneMapped: false });
+  c.group.add(new Mesh(merged([-1, 1].map((face) => ({ geo: new PlaneGeometry(4.9, 2.4), position: c.L(5.2, 16.2 + face * 0.17, top + 2.6), rotation: [0, (face * Math.PI) / 2, 0] }))), screenMat));
+  // the garden: trees in planters at the corners, shrubs along the far rail, café tables between, benches facing out
+  for (const [a, l] of [
+    [-14.4, 15.6],
+    [14.4, 15.6],
+    [-14.4, 28.4],
+    [14.4, 28.4],
+    [0.5, 28.4],
+  ]) {
+    c.add(STONE, new BoxGeometry(2.2, 0.8, 2.2), c.L(a, l, top + 0.4));
+    c.add(WOOD, new CylinderGeometry(0.12, 0.16, 2.4, 6), c.L(a, l, top + 1.6));
+    c.add(GREEN, new IcosahedronGeometry(1.4, 1), c.L(a, l, top + 3.2), [0, 0, 0], [1, 0.85, 1]);
+  }
+  for (let a = -11; a <= 12; a += 3.2) {
+    if (Math.abs(a - 0.5) < 2) continue;
+    c.add(STONE, new BoxGeometry(2.4, 0.6, 0.9), c.L(a, 29.1, top + 0.3));
+    c.add(GREEN, new SphereGeometry(0.75, 8, 5, 0, Math.PI * 2, 0, Math.PI / 2), c.L(a, 29.1, top + 0.6), [0, 0, 0], [1.4, 0.8, 0.6]);
+  }
+  for (const a of [-3.2, 0.8, 4.8]) {
+    for (const l of [26.4]) {
+      c.add(POST, new CylinderGeometry(0.5, 0.5, 0.06, 12), c.L(a, l, top + 0.8));
+      c.add(POST, new CylinderGeometry(0.05, 0.05, 0.78, 6), c.L(a, l, top + 0.4));
+      for (const s of [-0.8, 0.8]) c.add(WOOD, new BoxGeometry(0.4, 0.45, 0.4), c.L(a + s, l, top + 0.22));
+    }
+  }
+  for (const a of [-12.5, 11.5]) {
+    c.add(WOOD, new BoxGeometry(0.5, 0.1, 1.8), c.L(a, 26.8, top + 0.45), [0, Math.PI / 2, 0]);
+    c.add(POST, new BoxGeometry(0.5, 0.42, 0.08), c.L(a, 26.4, top + 0.22), [0, Math.PI / 2, 0]);
+  }
+  return {
+    anchors: [new Vector3(...c.L(MA, L0, top + 5.2)), new Vector3(...c.L(9.5, L0, top + 6.6)), new Vector3(...c.L(-1, L0 - 2, top + 3.6))],
+    focus: new Vector3(...c.L(0, L0 - 4, top + 3)),
+    update: (t) => {
+      flow.offset.x = -t * 0.25;
+      board.tick(t);
+    },
+    shot: { from: [-56, 66, 8], to: [-24, 58, 22], look: [0, 20, 4] },
+  };
+}
+
+/** A curved ribbon between two local points, `w` wide, bowing upward. */
+function ribbonGeo(c: Ctx, a: V3, b: V3, w: number): BufferGeometry {
+  const n = 24;
+  const pos: number[] = [];
+  const uv: number[] = [];
+  const idx: number[] = [];
+  const A = new Vector3(...c.L(a[0], a[1], a[2]));
+  const B = new Vector3(...c.L(b[0], b[1], b[2]));
+  for (let k = 0; k <= n; k++) {
+    const u = k / n;
+    const p = A.clone().lerp(B, u).addScaledVector(UP, Math.sin(u * Math.PI) * 1.6);
+    pos.push(p.x, p.y - w / 2, p.z, p.x, p.y + w / 2, p.z);
+    uv.push(u * 3, 0, u * 3, 1);
+    if (k < n) idx.push(k * 2, k * 2 + 1, k * 2 + 2, k * 2 + 1, k * 2 + 3, k * 2 + 2);
+  }
+  const g = new BG();
+  g.setAttribute("position", new Float32BufferAttribute(pos, 3));
+  g.setAttribute("uv", new Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  return g;
+}
+
+// ------------------------------------------------------------------ 04 Planktoneer · Main Street: the water column
+function planktoneer(c: Ctx): Partial<BuiltSet> {
+  const { mats } = c.world;
+  // on the lawn in Creekside Park, between the station and the head of the basin (see zones.ts)
+  const fr = STATION_FRAMES[c.i];
+  const dx = MAIN_COLUMN[0] - fr.x;
+  const dz = MAIN_COLUMN[1] - fr.z;
+  const a = dx * fr.tx + dz * fr.tz;
+  const l = (dx * fr.rx + dz * fr.rz) * c.side;
+  const g = c.G(a, l);
+  c.add(mats.concrete, new CylinderGeometry(4.6, 5.2, 1.2, 32), c.L(a, l, g + 0.6));
+  c.add(mats.pane, new CylinderGeometry(3.2, 3.2, 16, 32, 1, true), c.L(a, l, g + 9.2));
+  c.add(new MeshStandardMaterial({ color: 0x1d6fa3, transparent: true, opacity: 0.35, roughness: 0.1, depthWrite: false }), new CylinderGeometry(3.05, 3.05, 15.6, 32), c.L(a, l, g + 9.2));
+  c.add(mats.girder, new TorusGeometry(3.25, 0.12, 6, 48), c.L(a, l, g + 17.2), [Math.PI / 2, 0, 0]);
+  const amber = glowMat(0xf59e0b, 1.8);
+  c.add(amber, new TorusGeometry(3.3, 0.09, 6, 48), c.L(a, l, g + 12.5), [Math.PI / 2, 0, 0]);
+  const scan = new Mesh(new TorusGeometry(3.35, 0.07, 6, 48), glowMat(0x7dd3fc, 2.4));
+  scan.rotation.x = Math.PI / 2;
+  c.group.add(scan);
+  // four species of plankton drifting in the column
+  const N = c.lowEnd ? 160 : 360;
+  const pos = new Float32Array(N * 3);
+  const col = new Float32Array(N * 3);
+  const seed = new Float32Array(N * 3);
+  const cols = [0x86efac, 0xf472b6, 0xfde047, 0x93c5fd].map((h) => new Color(h));
+  for (let k = 0; k < N; k++) {
+    seed.set([Math.random() * Math.PI * 2, Math.random() * 2.7, Math.random()], k * 3);
+    const cc = cols[k % 4];
+    col.set([cc.r, cc.g, cc.b], k * 3);
+  }
+  const geo = new BG();
+  geo.setAttribute("position", new Float32BufferAttribute(pos, 3));
+  geo.setAttribute("color", new Float32BufferAttribute(col, 3));
+  const pts = new Points(geo, new PointsMaterial({ size: 0.32, vertexColors: true, transparent: true, depthWrite: false, toneMapped: false }));
+  pts.frustumCulled = false;
+  c.group.add(pts);
+  const centre = new Vector3(...c.L(a, l, g));
+  const pa = geo.attributes.position as Float32BufferAttribute;
+  return {
+    anchors: [new Vector3(...c.L(a, l, g + 18.4)), new Vector3(...c.L(a, l - 3.6, g + 9)), new Vector3(...c.L(a, l + 4.8, g + 1.4))],
+    focus: new Vector3(...c.L(a * 0.6, l * 0.6, g + 8)),
+    update: (t) => {
+      scan.position.copy(centre).setY(centre.y + 2 + (Math.sin(t * 0.6) * 0.5 + 0.5) * 14);
+      for (let k = 0; k < N; k++) {
+        const ang = seed[k * 3] + t * (0.1 + seed[k * 3 + 2] * 0.15);
+        const r = seed[k * 3 + 1];
+        const y = 2 + ((seed[k * 3 + 2] * 14 + t * 0.25 * (0.5 + seed[k * 3 + 2])) % 14.5);
+        pa.setXYZ(k, centre.x + Math.cos(ang) * r, centre.y + y, centre.z + Math.sin(ang) * r);
+      }
+      pa.needsUpdate = true;
+    },
+    shot: { from: [0, 0, 0], to: [0, 0, 0], look: [0, 0, 0] },
+  };
+}
+
+// ------------------------------------------------------------------ 05 Vessel Vision · Commercial–Broadway: the Ocean Science Centre
+/**
+ * The Ocean Science Centre: a public museum of the coast in a glass hall under a roof like a swell, an aquarium wall and
+ * an orca's skeleton inside, and at its heart the live harbour, the project at work: an aerial view of a harbour (a
+ * working shore of docks and container stacks, open water with ships and their wakes), the detector's tiles sweeping
+ * across it and a frame closing round each ship as a tile finds it, under the drone that took the picture.
+ *
+ * The hall stands at platform height on timber columns in the station's square (sets/squares.ts), square to Broadway,
+ * its bridge from the platform's south end over Commercial Drive, cafés and restaurants in glass pavilions under it.
+ * The square round it is paved, East 12th Avenue through it a market street under festoon lights.
+ */
+function vessel(c: Ctx): Partial<BuiltSet> {
+  const { mats } = c.world;
+  const sq = SQUARES.find((s) => s.i === 5) as Square;
+  const vc = shopGlow(new MeshStandardMaterial({ vertexColors: true, roughness: 0.75 }), c.world);
+  const kit = squareKit(c, sq, vc);
+  const H = OCEAN_HALL;
+  const zs = c.L(1, 0, 0)[2];
+  // the square's paving: granite, the market street in brick, Woodland Drive's lane in grey setts
+  paveSquare(c, vc, -24, 30, 20, 66, (a, l, i, j) => {
+    if (!inCbSquare(a, l)) return null;
+    if (lineDist(MARKET_STREET, a, l) < MARKET_HALF) return (i + j) % 2 ? 0xa65f45 : 0xb36b4f;
+    if (a > 9 && lineDist(WOODLAND_LANE, a, l) < 2.4) return 0x8f8d88;
+    return i % 5 === 0 || j % 5 === 0 ? 0xbdb6a9 : (i + j) % 2 ? 0xd3ccbf : 0xcac3b6;
+  });
+  // the market street: bollards where it leaves Commercial Drive and Clark Drive, festoons zigzagging over it
+  const ML = lineLength(MARKET_STREET);
+  for (const s of [5.5, ML - 3]) {
+    const p = along(MARKET_STREET, s);
+    for (let k = -2; k <= 2; k++) {
+      const a = p.a - p.ul * k * 1.3;
+      const l = p.l + p.ua * k * 1.3;
+      const out: Pieces = { solid: [], glass: [], warm: [] };
+      bollard(out, 0, 0, 0);
+      kit.put(out, a, l, [1, 0]);
+    }
+  }
+  const zig: [number, number][] = [];
+  for (let s = 7, k = 0; s < ML - 4; s += 5.5, k++) {
+    const p = along(MARKET_STREET, s);
+    const side = k % 2 ? 1 : -1;
+    zig.push([p.a - p.ul * side * (MARKET_HALF - 0.2), p.l + p.ua * side * (MARKET_HALF - 0.2)]);
+  }
+  festoons(c, vc, kit.lit, zig);
+  // under the hall: benches round a planter in the middle, between the pavilions
+  {
+    const out: Pieces = { solid: [], glass: [], warm: [] };
+    planter(out, 0, 0, 0, 1.6);
+    for (const [x, z, r] of [
+      [0, 2, Math.PI],
+      [0, -2, 0],
+      [2, 0, -Math.PI / 2],
+      [-2, 0, Math.PI / 2],
+    ])
+      bench(out, x, 0.05, z, r);
+    kit.put(out, -7.5, 42.5, [1, 0]);
+  }
+  // the fountain's jets, leaping in turn
+  const [fa, fl] = sq.pools[0];
+  const fg = c.G(fa, fl);
+  const jets = new InstancedMesh(
+    new CylinderGeometry(0.06, 0.14, 1, 6).translate(0, 0.5, 0),
+    new MeshStandardMaterial({ color: 0xdff4ff, transparent: true, opacity: 0.7, roughness: 0.1, emissive: 0x88c8ff, emissiveIntensity: 0.3 }),
+    8,
+  );
+  const jetAt = Array.from({ length: 8 }, (_, k) => {
+    const th = (k / 8) * Math.PI * 2;
+    return new Vector3(...c.L(fa + Math.cos(th) * 1.3, fl + Math.sin(th) * 1.3, fg + 0.45));
+  });
+  c.group.add(jets);
+  const jm = new Matrix4();
+  const jq = new Quaternion();
+  const js = new Vector3();
+
+  // the hall's floor at platform height, its timber soffit lit from below
+  let gmax = -Infinity;
+  for (let a = H.a0; a <= H.a1; a += 4) for (let l = H.l0; l <= H.l1; l += 4) gmax = Math.max(gmax, c.G(a, l));
+  const top = Math.max(1.4, gmax + 4.5);
+  const am = (H.a0 + H.a1) / 2;
+  const lm = (H.l0 + H.l1) / 2;
+  c.add(mats.plat, new BoxGeometry(H.l1 - H.l0, 0.5, H.a1 - H.a0), c.L(am, lm, top - 0.25));
+  c.add(vc, paint(new BoxGeometry(H.l1 - H.l0 - 0.1, 0.08, H.a1 - H.a0 - 0.1), 0xb98a5a), c.L(am, lm, top - 0.54));
+  for (let a = H.a0 + 2; a < H.a1 - 1; a += 4) for (let l = H.l0 + 2.5; l < H.l1 - 1; l += 4.5) c.add(kit.lit, paint(new CylinderGeometry(0.22, 0.22, 0.05, 8), 0xffd49a), c.L(a, l, top - 0.6));
+  // timber columns in V pairs at its corners and the middle of its long sides
+  for (const a of [H.a0 + 0.8, H.a1 - 0.8]) {
+    for (const l of [H.l0 + 1.4, lm, H.l1 - 1.4]) {
+      const g = c.G(a, l);
+      for (const s of [-1, 1]) strut(c, mats.timber, c.L(a, l, g), c.L(a, l + s * 1.3, top - 0.55), 0.26);
+    }
+  }
+  // the bridge from the platform's outer edge, glass along its sides, on a pier at the kerb
+  const bridgeA = 9.5 - SET_SHIFT[5];
+  const run = H.l0 - 11.4;
+  c.add(mats.plat, new BoxGeometry(run, 0.3, 5), c.L(bridgeA, (H.l0 + 11.4) / 2, top - 0.15));
+  for (const s of [-1, 1]) c.add(mats.pane, new BoxGeometry(run, 1.1, 0.06), c.L(bridgeA + s * 2.45, (H.l0 + 11.4) / 2, top + 0.55));
+  legs(c, mats.girder, [[bridgeA, 25.6]], top - 0.3, 0.5);
+  // glass round the hall on timber mullions, a door where the bridge lands (box sizes: lateral, up, along)
+  const WH = 7.2;
+  const DOOR = [bridgeA - 1.8, bridgeA + 1.8];
+  c.add(mats.pane, new BoxGeometry(0.08, WH, H.a1 - H.a0), c.L(am, H.l1, top + WH / 2));
+  c.add(mats.pane, new BoxGeometry(0.08, WH, DOOR[0] - H.a0), c.L((H.a0 + DOOR[0]) / 2, H.l0, top + WH / 2));
+  c.add(mats.pane, new BoxGeometry(0.08, WH, H.a1 - DOOR[1]), c.L((DOOR[1] + H.a1) / 2, H.l0, top + WH / 2));
+  c.add(mats.pane, new BoxGeometry(0.08, WH - 3, DOOR[1] - DOOR[0]), c.L(bridgeA, H.l0, top + 3 + (WH - 3) / 2));
+  for (const a of [H.a0, H.a1]) c.add(mats.pane, new BoxGeometry(H.l1 - H.l0, WH, 0.08), c.L(a, lm, top + WH / 2));
+  for (let l = H.l0; l <= H.l1 + 0.01; l += (H.l1 - H.l0) / 12) for (const a of [H.a0, H.a1]) c.add(mats.timber, new BoxGeometry(0.16, WH, 0.16), c.L(a, l, top + WH / 2));
+  for (let a = H.a0 + (H.a1 - H.a0) / 6; a < H.a1 - 0.01; a += (H.a1 - H.a0) / 6) for (const l of [H.l0, H.l1]) c.add(mats.timber, new BoxGeometry(0.16, WH, 0.16), c.L(a, l, top + WH / 2));
+  // the roof: a swell rolling along the hall, a little beyond its walls; sea glass, the live harbour shows through it
+  {
+    const nl = 28;
+    const na = 12;
+    const pos: number[] = [];
+    const idx: number[] = [];
+    for (let i = 0; i <= nl; i++) {
+      for (let j = 0; j <= na; j++) {
+        const l = H.l0 - 1.5 + ((H.l1 - H.l0 + 3) * i) / nl;
+        const a = H.a0 - 1.5 + ((H.a1 - H.a0 + 3) * j) / na;
+        pos.push(...c.L(a, l, top + WH + 1.15 + 0.8 * Math.sin(l * 0.36 + 0.6) + 0.3 * Math.sin(a * 0.4)));
+        if (i < nl && j < na) {
+          const k = i * (na + 1) + j;
+          idx.push(k, k + 1, k + na + 1, k + 1, k + na + 2, k + na + 1);
+        }
+      }
+    }
+    const roof = new BG();
+    roof.setAttribute("position", new Float32BufferAttribute(pos, 3));
+    roof.setIndex(idx);
+    roof.computeVertexNormals();
+    c.group.add(new Mesh(roof, new MeshStandardMaterial({ color: 0x9fd0d6, roughness: 0.2, metalness: 0.3, side: DoubleSide, flatShading: true, transparent: true, opacity: 0.32, depthWrite: false })));
+  }
+  // the name over the front, toward the station
+  const fontsO = fontOf();
+  const nameTex = canvasTex(1024, 220, (g) => {
+    g.fillStyle = "#0e3a52";
+    g.fillRect(0, 0, 1024, 220);
+    g.fillStyle = "#ffffff";
+    g.font = `500 88px ${fontsO.serif}`;
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.fillText("Ocean Science Centre", 512, 92);
+    g.fillStyle = "#8fd3e8";
+    g.font = `500 34px ${fontsO.mono}`;
+    g.fillText("LIVE HARBOUR · VESSEL VISION", 512, 172);
+  });
+  const nm = new Mesh(new PlaneGeometry(14, 3.0), new MeshBasicMaterial({ map: nameTex, toneMapped: false }));
+  nm.position.set(...c.L(am + 1.5, H.l0 - 0.12, top + WH - 1.7));
+  nm.rotation.y = -Math.PI / 2;
+  c.group.add(nm);
+
+  // the live harbour, the aquarium and the orca: built along the table's own axes (as the hall once stood, along the
+  // line about L0) and turned into the hall square to Broadway, a tenth smaller
+  const L0 = 33;
+  const tg = new Group();
+  const tparts = new Map<Material, Part[]>();
+  const t: Ctx = {
+    ...c,
+    group: tg,
+    L: (a, l, u) => [l - L0, u - top, a * zs],
+    add: (mat, geo, pos = [0, 0, 0], rot = [0, 0, 0], scale = [1, 1, 1]) => {
+      const list = tparts.get(mat);
+      const p: Part = { geo, position: pos, rotation: rot, scale };
+      if (list) list.push(p);
+      else tparts.set(mat, [p]);
+    },
+  };
+  // along (a), lateral (l) from the table's centre line, and heading, for the ships at sea
+  const boats: [number, number, number][] = [
+    [-7, -3, 0.3],
+    [-3, 5, 1.2],
+    [4, 1, 2.1],
+    [7.5, 5.5, 0.8],
+    [1, -4, 2.6],
+  ];
+  // the table's picture: 16 across the lateral axis (u), 24 along (v); the working shore on one long side
+  const px = (a: number, l: number): [number, number] => [(l / 16 + 0.5) * 512, (0.5 + (a * zs) / 24) * 768];
+  const sea = canvasTex(512, 768, (g) => {
+    const grd = g.createLinearGradient(512, 0, 0, 0);
+    grd.addColorStop(0, "#163f5e");
+    grd.addColorStop(1, "#1f5d7f");
+    g.fillStyle = grd;
+    g.fillRect(0, 0, 512, 768);
+    // swell
+    g.strokeStyle = "rgba(255,255,255,0.07)";
+    g.lineWidth = 2;
+    for (let k = 0; k < 60; k++) {
+      const y = (k * 53) % 768;
+      g.beginPath();
+      g.moveTo(0, y);
+      g.bezierCurveTo(170, y + 8, 340, y - 8, 512, y + 4);
+      g.stroke();
+    }
+    // a wake behind each ship: its bow points along local +z turned by its heading, and the picture's v runs with local z
+    for (const [a, l, r] of boats) {
+      const [x, y] = px(a, l);
+      const dx = -Math.sin(r);
+      const dy = -Math.cos(r);
+      g.fillStyle = "rgba(235,245,250,0.55)";
+      g.beginPath();
+      g.moveTo(x, y);
+      g.lineTo(x + dx * 90 - dy * 22, y + dy * 90 + dx * 22);
+      g.lineTo(x + dx * 90 + dy * 22, y + dy * 90 - dx * 22);
+      g.closePath();
+      g.fill();
+    }
+    // the working shore: quay, container stacks in their colours, a shed, a pier reaching out
+    g.fillStyle = "#b9b4a8";
+    g.fillRect(0, 0, 66, 768);
+    g.fillStyle = "#8f8a80";
+    g.fillRect(64, 0, 5, 768);
+    const cols = ["#c0392b", "#2d6cb0", "#e0b020", "#2e8b57", "#d35400", "#7f8c8d"];
+    for (let y = 20; y < 470; y += 18) {
+      for (let x = 6; x < 56; x += 13) {
+        g.fillStyle = cols[(x * 7 + y) % cols.length];
+        g.fillRect(x, y, 11, 16);
+      }
+    }
+    g.fillStyle = "#d6d2c8";
+    g.fillRect(8, 520, 50, 160);
+    g.fillStyle = "#a7a296";
+    g.fillRect(66, 560, 110, 34);
+  });
+  const floor = new Mesh(new PlaneGeometry(16, 24), new MeshStandardMaterial({ map: sea, emissiveMap: sea, emissive: 0xffffff, emissiveIntensity: 0.45, roughness: 0.35 }));
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.set(...t.L(0, L0, top + 0.03));
+  tg.add(floor);
+  // the table's bezel (box sizes: lateral, up, along)
+  for (const [a, l, wl, wa] of [
+    [-12.2, 0, 16.8, 0.4],
+    [12.2, 0, 16.8, 0.4],
+    [0, -8.2, 0.4, 24.8],
+    [0, 8.2, 0.4, 24.8],
+  ] as const)
+    t.add(mats.trim, new BoxGeometry(wl, 0.4, wa), t.L(a, L0 + l, top + 0.18));
+  // the ships, small models of the real kinds (a ferry, sailboats, yachts)
+  const boatMat = new MeshStandardMaterial({ vertexColors: true, roughness: 0.5 });
+  const kinds = [seabus, sailboat, yacht, yacht, sailboat];
+  boats.forEach(([a, l, r], k) => t.add(boatMat, kinds[k](), t.L(a, L0 + l, top + 0.06), [0, r, 0], [0.12, 0.12, 0.12]));
+  // the SAHI tile grid (overlapping tiles) and one tile sweeping across
+  const gridMat = glowMat(0xa78bfa, 1.4);
+  for (let k = 0; k <= 4; k++) t.add(gridMat, new BoxGeometry(16, 0.05, 0.06), t.L(-12 + k * 6, L0, top + 0.12));
+  for (let k = 0; k <= 3; k++) t.add(gridMat, new BoxGeometry(0.06, 0.05, 24), t.L(0, L0 - 8 + k * (16 / 3), top + 0.12));
+  const tile = new Mesh(new BoxGeometry(5.9, 0.08, 6.6), new MeshBasicMaterial({ color: 0xa78bfa, transparent: true, opacity: 0.22, depthWrite: false }));
+  tg.add(tile);
+  // the detections: a bright frame closing round each ship as a tile finds it
+  const boxMat = new LineBasicMaterial({ color: 0x34d399, toneMapped: false });
+  const frameGeo = new EdgesGeometry(new BoxGeometry(2.2, 0.6, 2.2));
+  const dets: LineSegments[] = boats.map(([a, l]) => {
+    const m = new LineSegments(frameGeo, boxMat);
+    m.position.set(...t.L(a, L0 + l, top + 0.35));
+    m.scale.setScalar(0);
+    tg.add(m);
+    return m;
+  });
+  // the aquarium across the hall's far end: a tall tank of water, kelp swaying, and a shoal of fish
+  const tankA = 16.2;
+  t.add(new MeshStandardMaterial({ color: 0x2a86c8, transparent: true, opacity: 0.32, roughness: 0.1, depthWrite: false }), new BoxGeometry(14, 4.6, 2.2), t.L(tankA, L0, top + 2.5));
+  t.add(mats.planter, new BoxGeometry(14.4, 0.3, 2.6), t.L(tankA, L0, top + 0.15));
+  const kelp = new InstancedMesh(new BoxGeometry(0.5, 3.6, 0.12).translate(0, 1.8, 0), new MeshStandardMaterial({ color: 0x4a7a2a, roughness: 0.9 }), 9);
+  const kelpAt = Array.from({ length: 9 }, (_, k) => new Vector3(...t.L(tankA + ((k % 3) - 1) * 0.5, L0 - 6.4 + k * 1.6, top + 0.3)));
+  tg.add(kelp);
+  const kelpQ = new Quaternion();
+  const kelpE = new Euler();
+  const one = new Vector3(1, 1, 1);
+  const fish = new InstancedMesh(new ConeGeometry(0.22, 0.8, 6).rotateZ(-Math.PI / 2), new MeshStandardMaterial({ roughness: 0.4, metalness: 0.2 }), 24);
+  const fishCols = [0xf08a24, 0xf4d03f, 0x4ea8de, 0xe74c3c, 0xffffff];
+  for (let k = 0; k < 24; k++) fish.setColorAt(k, new Color(fishCols[k % fishCols.length]));
+  tg.add(fish);
+  // the orca's skeleton, hung on wires over the table: the spine, the skull, ribs and the flukes
+  const bone = new MeshStandardMaterial({ color: 0xece4d2, roughness: 0.7 });
+  const ou = top + 5.2;
+  for (let k = 0; k < 14; k++) {
+    const a = -7 + k;
+    const r = 0.32 - Math.abs(k - 5) * 0.015;
+    t.add(bone, new BoxGeometry(0.5, r * 2, 0.7), t.L(a, L0, ou + Math.sin(k * 0.3) * 0.3));
+    if (k > 2 && k < 9) t.add(bone, new TorusGeometry(0.9 - Math.abs(k - 5.5) * 0.08, 0.06, 4, 10, Math.PI), t.L(a, L0, ou), [0, 0, Math.PI]);
+  }
+  t.add(bone, new BoxGeometry(1.3, 0.7, 2.6), t.L(-8.6, L0, ou + 0.1), [0.15, 0, 0]);
+  t.add(bone, new BoxGeometry(2.6, 0.12, 0.9), t.L(7.6, L0, ou + 0.4));
+  // the wires reach the hall's roof beam (the table's frame is a tenth smaller)
+  const wireTop = top + WH / 0.9;
+  for (const a of [-6, 0, 6]) t.add(mats.post, new BoxGeometry(0.03, wireTop - ou, 0.03), t.L(a, L0, (ou + wireTop) / 2));
+  const fishT = new Matrix4();
+  const fishQ = new Quaternion();
+  const fishP = new Vector3();
+  const swim = (time: number) => {
+    for (let k = 0; k < 24; k++) {
+      const sp = 0.6 + (k % 5) * 0.15;
+      const dir = k % 2 ? 1 : -1;
+      const l = ((((time * sp * dir + k * 3.1) % 13) + 13) % 13) - 6.5;
+      fishP.set(...t.L(tankA + ((k % 3) - 1) * 0.55, L0 + l, top + 0.9 + (k % 7) * 0.5 + Math.sin(time * 1.3 + k) * 0.15));
+      // headed along the tank (the table's lateral, local x) one way or the other
+      fishQ.setFromAxisAngle(UP, dir > 0 ? 0 : Math.PI);
+      fish.setMatrixAt(k, fishT.compose(fishP, fishQ, one));
+    }
+    fish.instanceMatrix.needsUpdate = true;
+    kelpAt.forEach((p, k) => kelp.setMatrixAt(k, fishT.compose(p, kelpQ.setFromEuler(kelpE.set(0, 0, Math.sin(time * 0.8 + k) * 0.12)), one)));
+    kelp.instanceMatrix.needsUpdate = true;
+  };
+  // a drone hovering over the table: body and rotors in one mesh
+  const drone = new Mesh(
+    merged([
+      { geo: paint(new BoxGeometry(1.2, 0.35, 1.2), 0x2a3039) },
+      ...[
+        [-0.9, -0.9],
+        [0.9, -0.9],
+        [-0.9, 0.9],
+        [0.9, 0.9],
+      ].map(([x, z]) => ({ geo: paint(new CylinderGeometry(0.45, 0.45, 0.05, 12), 0x7dd3fc), position: [x, 0.2, z] as V3 })),
+    ]),
+    new MeshBasicMaterial({ vertexColors: true }),
+  );
+  tg.add(drone);
+  const dc = new Vector3(...t.L(0, L0, top + 3.6));
+  for (const [mat, list] of tparts) {
+    const m = new Mesh(merged(list), mat);
+    m.castShadow = !c.world.lowEnd && !mat.transparent && mat.type !== "MeshBasicMaterial";
+    m.receiveShadow = true;
+    tg.add(m);
+  }
+  // the table's centre in the hall, its long axis (and the aquarium's end) toward Clark Drive
+  tg.position.set(...c.L(-8.5, 41.2, top));
+  tg.rotation.y = (zs * Math.PI) / 2;
+  tg.scale.setScalar(0.9);
+  tg.updateMatrix();
+  c.group.add(tg);
+  const inHall = (v: Vector3) => v.applyMatrix4(tg.matrix);
+  return {
+    anchors: [inHall(dc.clone().setY(dc.y + 1.2)), inHall(new Vector3(...t.L(-12, L0 - 8, top + 0.8))), inHall(new Vector3(...t.L(12, L0 + 8, top + 0.8)))],
+    focus: inHall(new Vector3(...t.L(0, L0 - 3, top + 2))),
+    update: (time) => {
+      const k = Math.floor(time / 0.8) % 12;
+      const ta = -9 + (k % 4) * 6;
+      const tl = L0 - 5.3 + Math.floor(k / 4) * (16 / 3);
+      tile.position.set(...t.L(ta, tl, top + 0.2));
+      dets.forEach((m, j) => {
+        const [a, l] = boats[j];
+        const near = Math.abs(a - ta) < 3.4 && Math.abs(L0 + l - tl) < 3.6;
+        const s = m.scale.x + ((near || m.scale.x > 0.5 ? 1 : 0) - m.scale.x) * 0.2;
+        m.scale.set(s, s, s);
+        if (k === 0) m.scale.setScalar(0);
+      });
+      drone.position.copy(dc).add(new Vector3(Math.sin(time * 0.5) * 3, Math.sin(time * 1.3) * 0.4, Math.cos(time * 0.4) * 2));
+      swim(time);
+      jetAt.forEach((p, j) => {
+        const v = Math.max(0, Math.sin(time * 2.4 - j * 0.8));
+        jets.setMatrixAt(j, jm.compose(p, jq, js.set(1, 0.2 + 2.2 * v, 1)));
+      });
+      jets.instanceMatrix.needsUpdate = true;
+    },
+    shot: { from: [38, 74, 34], to: [26, 64, 24], look: [-6, 42, 0] },
+  };
+}
+
+/**
+ * The community garden round the berry greenhouse (Nanaimo's set, toward the street): raised allotment beds of many
+ * crops (lettuce, kale, tomatoes on stakes, corn, squash, sunflowers, flowers), a small orchard, a pollinator meadow
+ * with beehives, a herb spiral, a pond with a boardwalk, a tool shed under a green roof with compost bays and a rain
+ * tank, gravel paths, and a gate with the garden's name. Built in the set's frame (along, lateral).
+ */
+function communityGarden(c: Ctx): void {
+  const G = (a: number, l: number) => c.G(a, l);
+  // every plant, bed and path in one vertex-coloured mesh
+  const veg = new MeshStandardMaterial({ vertexColors: true, roughness: 0.9, flatShading: true });
+  const soil = 0x4a3626;
+  const gravel = 0xcdbfa6;
+  const leaf = 0x5f9a3c;
+  const darkLeaf = 0x2f5f35;
+  const paleLeaf = 0x9cc96b;
+  const red = 0xd93b2b;
+  const orange = 0xe8862a;
+  const yellow = 0xf4c430;
+  const corn = 0x9db84a;
+  const plum = 0x6b2a6e;
+  const wood = 0xb98a5a;
+  const stone = 0x8a8378;
+  const flowers = [0xe86fa5, 0xb07cd8, 0xf2f2f2, 0xf4c430, 0xe8862a];
+  const v = (hex: number, geo: BufferGeometry, pos: V3, rot?: V3, scale?: V3) => c.add(veg, paint(geo, hex), pos, rot, scale);
+  const ball = (r: number) => new SphereGeometry(r, 6, 4);
+  // the garden's ground, laid in tiles that follow the slope: mown grass round the beds, longer meadow by the greenhouse
+  // (each tile a little larger than its spacing and sunk into the slope, so neighbours overlap without a seam)
+  for (let a = -22; a <= 22; a += 4) for (let l = 38; l <= 48; l += 4) v(0x7f9f58, new BoxGeometry(4.6, 0.5, 4.6), c.L(a, l, G(a, l) - 0.2));
+  for (let a = 16.5; a <= 22.5; a += 3) for (let l = 15.5; l <= 34; l += 3.7) v(0x8daa5c, new BoxGeometry(4.2, 0.5, 3.5), c.L(a, l, G(a, l) - 0.2));
+  // the gravel paths (box sizes: lateral, up, along): in from the gate past the greenhouse, along the beds' near side,
+  // and up the middle of the beds
+  v(gravel, new BoxGeometry(23.6, 0.08, 1.6), c.L(-16, 26, G(-16, 26) + 0.04));
+  v(gravel, new BoxGeometry(1.6, 0.08, 44), c.L(0, 37.6, G(0, 37.6) + 0.04));
+  v(gravel, new BoxGeometry(12, 0.08, 1.6), c.L(-1, 44, G(-1, 44) + 0.04));
+  // the allotment beds: a timber frame, the soil, and its crop
+  const crops = ["lettuce", "kale", "tomato", "corn", "squash", "sunflower", "flowers", "lettuce", "tomato", "flowers"] as const;
+  let n = 0;
+  for (let l = 39.5; l <= 48.5; l += 3) {
+    for (let a = -17; a <= 11; a += 4) {
+      if (Math.abs(a + 1) < 2.2) continue;
+      const g = G(a, l);
+      v(wood, new BoxGeometry(1.8, 0.45, 3.2), c.L(a, l, g + 0.22));
+      v(soil, new BoxGeometry(1.6, 0.06, 3.0), c.L(a, l, g + 0.47));
+      const crop = crops[n++ % crops.length];
+      for (let k = -1; k <= 1; k++) {
+        for (const s of [-0.45, 0.45]) {
+          const pa = a + k * 0.95;
+          const pl = l + s;
+          const y = g + 0.5;
+          if (crop === "lettuce") v(paleLeaf, ball(0.32), c.L(pa, pl, y + 0.15), [0, 0, 0], [1, 0.6, 1]);
+          else if (crop === "kale") v(darkLeaf, ball(0.38), c.L(pa, pl, y + 0.3), [0, 0, 0], [1, 1.2, 1]);
+          else if (crop === "tomato") {
+            v(wood, new BoxGeometry(0.05, 1.5, 0.05), c.L(pa, pl, y + 0.75));
+            v(leaf, ball(0.35), c.L(pa, pl, y + 0.8), [0, 0, 0], [0.9, 1.4, 0.9]);
+            v(red, ball(0.1), c.L(pa + 0.15, pl, y + 0.9));
+            v(red, ball(0.1), c.L(pa - 0.12, pl + 0.1, y + 0.6));
+          } else if (crop === "corn") {
+            v(corn, new CylinderGeometry(0.05, 0.08, 2.2, 5), c.L(pa, pl, y + 1.1));
+            v(corn, new ConeGeometry(0.35, 1.0, 5), c.L(pa, pl, y + 1.4), [0, 0, 0], [1, 1, 0.3]);
+          } else if (crop === "squash") {
+            v(leaf, ball(0.5), c.L(pa, pl, y + 0.15), [0, 0, 0], [1.2, 0.4, 1.2]);
+            if (k !== 0) v(orange, ball(0.22), c.L(pa + 0.2, pl, y + 0.2), [0, 0, 0], [1.2, 0.9, 1.2]);
+          } else if (crop === "sunflower") {
+            v(leaf, new CylinderGeometry(0.04, 0.06, 2.4, 5), c.L(pa, pl, y + 1.2));
+            v(yellow, new CylinderGeometry(0.32, 0.32, 0.08, 10), c.L(pa, pl, y + 2.4), [Math.PI / 2.4, 0, 0]);
+          } else {
+            v(leaf, ball(0.3), c.L(pa, pl, y + 0.15), [0, 0, 0], [1, 0.7, 1]);
+            v(flowers[(n + k + 2) % flowers.length], ball(0.12), c.L(pa, pl, y + 0.4));
+          }
+        }
+      }
+    }
+  }
+  // the orchard: apple and plum trees in rows, their fruit showing, toward the station's end
+  for (let k = 0; k < 6; k++) {
+    const a = -22.5 + (k % 2) * 3.5;
+    const l = 16 + Math.floor(k / 2) * 7;
+    const g = G(a, l);
+    v(wood, new CylinderGeometry(0.16, 0.22, 2.0, 6), c.L(a, l, g + 1.0));
+    v(leaf, new IcosahedronGeometry(1.5, 0), c.L(a, l, g + 2.8), [0, k, 0], [1, 0.85, 1]);
+    for (let f = 0; f < 4; f++) v(k % 2 ? red : plum, ball(0.14), c.L(a + Math.cos(f * 1.7) * 1.1, l + Math.sin(f * 1.7) * 1.1, g + 2.6 + (f % 2) * 0.4));
+  }
+  // the pollinator meadow and its beehives, at the far end
+  for (let k = 0; k < 90; k++) {
+    const a = 15.5 + ((k * 37) % 75) / 10;
+    const l = 14.5 + ((k * 53) % 200) / 10;
+    const g = G(a, l);
+    // a tuft, and its flowers held above it
+    v(k % 3 ? leaf : paleLeaf, ball(0.38), c.L(a, l, g + 0.2), [0, 0, 0], [1, 0.8, 1]);
+    v(flowers[k % flowers.length], ball(0.16), c.L(a + 0.15, l, g + 0.6));
+    if (k % 2) v(flowers[(k + 2) % flowers.length], ball(0.14), c.L(a - 0.2, l + 0.15, g + 0.52));
+  }
+  for (const [a, l] of [
+    [17, 35.3],
+    [19.5, 35.3],
+    [22, 35.3],
+  ]) {
+    const g = G(a, l);
+    v(0xf2f2ee, new BoxGeometry(1.0, 1.2, 1.0), c.L(a, l, g + 0.6));
+    v(yellow, new BoxGeometry(1.1, 0.12, 1.1), c.L(a, l, g + 1.26));
+  }
+  // the herb spiral by the gate: a stone spiral climbing to its middle, herbs along it
+  const sa = -11;
+  const sl = 14.8;
+  const sg = G(sa, sl);
+  for (let k = 0; k < 14; k++) {
+    const th = k * 0.75;
+    const r = 1.9 - k * 0.12;
+    const hgt = 0.2 + k * 0.08;
+    v(stone, new BoxGeometry(0.5, hgt, 0.5), c.L(sa + Math.cos(th) * r, sl + Math.sin(th) * r, sg + hgt / 2));
+    v(k % 2 ? leaf : paleLeaf, ball(0.24), c.L(sa + Math.cos(th) * r, sl + Math.sin(th) * r, sg + hgt + 0.15));
+  }
+  // the pond with its boardwalk
+  const pa = 18.5;
+  const pl = 45.5;
+  const pg = G(pa, pl);
+  c.add(c.world.mats.water, new CylinderGeometry(3, 3, 0.06, 20), c.L(pa, pl, pg + 0.05));
+  v(stone, new TorusGeometry(3.05, 0.18, 4, 24).rotateX(Math.PI / 2), c.L(pa, pl, pg + 0.08));
+  v(wood, new BoxGeometry(1.2, 0.15, 7.6), c.L(pa, pl - 0.5, pg + 0.35));
+  for (const s of [-1, 1]) v(paleLeaf, new CylinderGeometry(0.6, 0.6, 0.05, 8), c.L(pa + s * 1.6, pl + 1.5, pg + 0.1));
+  // the tool shed under a green roof, the compost bays and the rain tank
+  const ha = -21.5;
+  const hl = 47.5;
+  const hg = G(ha, hl);
+  v(wood, new BoxGeometry(3.2, 2.6, 4.4), c.L(ha, hl, hg + 1.3));
+  v(0x5b8a45, new BoxGeometry(3.8, 0.3, 5.0), c.L(ha, hl, hg + 2.75));
+  for (let k = 0; k < 3; k++) {
+    v(wood, new BoxGeometry(1.4, 0.9, 1.4), c.L(ha + (k - 1) * 1.6, 43.5, G(ha, 43.5) + 0.45));
+    v(soil, new BoxGeometry(1.2, 0.05, 1.2), c.L(ha + (k - 1) * 1.6, 43.5, G(ha, 43.5) + 0.92));
+  }
+  v(0x3d6b8a, new CylinderGeometry(0.9, 0.9, 2.2, 12), c.L(ha, 40.3, G(ha, 40.3) + 1.1));
+  // gardeners at work among the beds and the orchard
+  const clothes = [0x2f6db0, 0xc0392b, 0x2e8b57, 0xe0b020, 0x7d5ba6];
+  [
+    [-15.2, 41],
+    [-7.2, 44],
+    [4.8, 41],
+    [9, 47],
+    [-20.7, 23],
+  ].forEach(([a, l], k) => {
+    const g = G(a, l);
+    v(clothes[k], new CylinderGeometry(0.26, 0.32, 1.1, 6), c.L(a, l, g + 0.55));
+    v(0xd9a782, ball(0.2), c.L(a, l, g + 1.3));
+    v(0xe8d8a8, new CylinderGeometry(0.34, 0.34, 0.06, 8), c.L(a, l, g + 1.48));
+  });
+  // the gate: a timber arch over the path with the garden's name
+  const ga = -16;
+  const gl = 14.2;
+  const gg = G(ga, gl);
+  for (const s of [-1.6, 1.6]) v(wood, new BoxGeometry(0.3, 3.2, 0.3), c.L(ga + s, gl, gg + 1.6));
+  v(wood, new BoxGeometry(0.4, 0.4, 4.2), c.L(ga, gl, gg + 3.3));
+  const fonts = fontOf();
+  const name = canvasTex(512, 128, (g) => {
+    g.fillStyle = "#3d5a2a";
+    g.fillRect(0, 0, 512, 128);
+    g.fillStyle = "#f4efe2";
+    g.font = `500 56px ${fonts.serif}`;
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.fillText("Community Garden", 256, 66);
+  });
+  const sign = new Mesh(new PlaneGeometry(3.8, 0.95), new MeshBasicMaterial({ map: name }));
+  sign.position.set(...c.L(ga, gl - 0.25, gg + 2.75));
+  sign.rotation.y = -Math.PI / 2;
+  c.group.add(sign);
+  const back = sign.clone();
+  back.position.set(...c.L(ga, gl + 0.25, gg + 2.75));
+  back.rotation.y = Math.PI / 2;
+  c.group.add(back);
+}
+
+// ------------------------------------------------------------------ 06 AI Weed Detector · Nanaimo: the berry greenhouse
+function weed(c: Ctx): Partial<BuiltSet> {
+  const { mats } = c.world;
+  const L0 = 26;
+  let gmax = -1e9;
+  for (let a = -12; a <= 12; a += 4) for (let l = L0 - 8; l <= L0 + 8; l += 4) gmax = Math.max(gmax, c.G(a, l));
+  const base = gmax + 0.2;
+  c.add(mats.concrete, new BoxGeometry(18, 0.4, 28), c.L(0, L0, base));
+  communityGarden(c);
+  // the glass gridshell
+  // a half cylinder lying along the line (its open half turned up), ribbed every 3 units
+  const vault = new CylinderGeometry(8, 8, 26, 24, 1, true, -Math.PI / 2, Math.PI);
+  c.add(mats.pane, vault, c.L(0, L0, base), [-Math.PI / 2, 0, 0], [1, 1, 0.9]);
+  for (let k = -12; k <= 12; k += 3) c.add(mats.girder, new TorusGeometry(8, 0.08, 4, 24, Math.PI), c.L(k, L0, base), [0, 0, 0], [1, 0.9, 1]);
+  // rows of blueberry bushes with weeds between them
+  const bushes = new InstancedMesh(new IcosahedronGeometry(0.75, 1), new MeshStandardMaterial({ color: 0x35553a, roughness: 0.9, flatShading: true }), 60);
+  const m4 = new Matrix4();
+  let n = 0;
+  const weedsAt: V3[] = [];
+  const weedsAlong: number[] = [];
+  for (let row = -2; row <= 2; row++) {
+    for (let k = 0; k < 12; k++) {
+      const a = -11 + k * 2;
+      const l = L0 + row * 2.6;
+      m4.compose(new Vector3(...c.L(a, l, base + 0.75)), new Quaternion(), new Vector3(1, 0.8 + ((k * 7 + row) % 3) * 0.12, 1));
+      bushes.setMatrixAt(n++, m4);
+      if ((k + row * 5) % 7 === 3 && row < 2) {
+        weedsAt.push(c.L(a + 1, l + 1.3, base + 0.4));
+        weedsAlong.push(a + 1);
+      }
+    }
+  }
+  c.group.add(bushes);
+  const weedMat = new MeshStandardMaterial({ color: 0x8bc34a, roughness: 0.9 });
+  for (const p of weedsAt) c.add(weedMat, new ConeGeometry(0.35, 0.9, 6), p);
+  const boxes = weedsAt.map((p) => {
+    const m = new Mesh(new BoxGeometry(1.1, 1.3, 1.1), new MeshBasicMaterial({ color: 0xf59e0b, wireframe: true }));
+    m.position.set(p[0], p[1] + 0.3, p[2]);
+    m.scale.setScalar(0);
+    c.group.add(m);
+    return m;
+  });
+  // the scanning gantry riding along the house
+  const gantry = new Group();
+  gantry.add(new Mesh(new BoxGeometry(14, 0.35, 0.5), mats.girder));
+  const beamLine = new Mesh(new BoxGeometry(13, 0.06, 0.06), glowMat(0x7dd3fc, 2.6));
+  beamLine.position.y = -0.25;
+  gantry.add(beamLine);
+  c.group.add(gantry);
+  const gStart = new Vector3(...c.L(-11, L0, base + 5.6));
+  const gEnd = new Vector3(...c.L(11, L0, base + 5.6));
+  return {
+    anchors: [new Vector3(...c.L(0, L0 - 7, base + 6.6)), new Vector3(...c.L(4, L0 - 4, base + 2.6)), new Vector3(...c.L(0, L0, base + 8.6))],
+    focus: new Vector3(...c.L(0, L0 - 4, base + 3)),
+    update: (t) => {
+      const u = Math.sin(t * 0.35) * 0.5 + 0.5;
+      gantry.position.lerpVectors(gStart, gEnd, u);
+      const ga = -11 + u * 22;
+      boxes.forEach((m, j) => {
+        const hit = Math.abs(weedsAlong[j] - ga) < 1.4 || m.scale.x > 0.95;
+        const s = m.scale.x + ((hit ? 1 : 0) - m.scale.x) * 0.25;
+        m.scale.setScalar(u < 0.03 ? 0 : s);
+      });
+    },
+    shot: { from: [-40, 50, 6], to: [-12, 58, 20], look: [0, 22, 2], fromLook: [0, 26, 2] },
+  };
+}
+
+// ------------------------------------------------------------------ 07 ABCKidz · 29th Avenue: the Wonder Grounds
+/**
+ * A family recreation park by the station: an observation wheel with lit gondolas, a corkscrew slide tower, a
+ * carousel under a striped canopy, a climbing-net dome, a splash pad with dancing jets and a rainbow arch at the gate,
+ * on a lawn crossed by coloured paths. The wheel, the carousel and the jets move; the bulbs light up after dark.
+ */
+function abckidz(c: Ctx): Partial<BuiltSet> {
+  const { mats } = c.world;
+  const L0 = 27;
+  let gmax = -1e9;
+  for (let a = -18; a <= 18; a += 6) for (let l = 14; l <= 39; l += 5) gmax = Math.max(gmax, c.G(a, l));
+  const base = gmax + 0.1;
+  // the lawn and its paths, on a plinth that meets the ground
+  const lawnTex = canvasTex(512, 380, (g) => {
+    g.fillStyle = "#5f9a48";
+    g.fillRect(0, 0, 512, 380);
+    for (let k = 0; k < 400; k++) {
+      g.fillStyle = `rgba(${k % 2 ? "255,255,255" : "0,40,0"},0.05)`;
+      g.fillRect((k * 97) % 512, (k * 61) % 380, 14, 10);
+    }
+    // the paths (u across the park from the gate, v along it): a spine from the gate and a loop joining the rides,
+    // in warm paving with a coloured line down the middle
+    g.lineCap = "round";
+    for (const [col, w] of [
+      ["#e9dcc4", 30],
+      ["#f2b33d", 6],
+    ] as const) {
+      g.strokeStyle = col;
+      g.lineWidth = w;
+      g.beginPath();
+      g.ellipse(270, 190, 190, 150, 0, 0, Math.PI * 2);
+      g.moveTo(0, 190);
+      g.lineTo(420, 190);
+      g.stroke();
+    }
+  });
+  const W = 40;
+  const D = 27;
+  const lawn = new Mesh(new PlaneGeometry(D, W), new MeshStandardMaterial({ map: lawnTex, roughness: 1 }));
+  lawn.rotation.x = -Math.PI / 2;
+  lawn.position.set(...c.L(0, L0, base + 0.16));
+  c.group.add(lawn);
+  c.add(mats.plat, new BoxGeometry(D, 4, W), c.L(0, L0, base - 1.85));
+
+  const white = new MeshStandardMaterial({ color: 0xf6f6f3, roughness: 0.45 });
+  const bulbMat = new MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
+  const rainbow = [0xef4444, 0xf97316, 0xfacc15, 0x22c55e, 0x3b82f6, 0xa855f7];
+  const colMats = rainbow.map((col) => new MeshStandardMaterial({ color: col, roughness: 0.5, emissive: col, emissiveIntensity: 0.12 }));
+
+  // the observation wheel: an A-frame each side, a rim of lights, sixteen gondolas that stay level as it turns
+  const WA = -9;
+  const WL = 34;
+  const HUB = 12.5;
+  const WR = 9.5;
+  for (const s of [-1, 1]) {
+    for (const t of [-1, 1]) {
+      const foot = new Vector3(...c.L(WA + t * 5, WL + s * 1.6, base));
+      const hub = new Vector3(...c.L(WA, WL + s * 1.2, base + HUB));
+      const d = hub.clone().sub(foot);
+      const leg = new Mesh(new CylinderGeometry(0.28, 0.4, d.length(), 8), white);
+      leg.position.copy(foot).add(hub).multiplyScalar(0.5);
+      leg.quaternion.setFromUnitVectors(UP, d.normalize());
+      c.group.add(leg);
+    }
+  }
+  const wheel = new Group();
+  wheel.position.set(...c.L(WA, WL, base + HUB));
+  // the wheel turns about the lateral axis (local x)
+  const rim = new Mesh(new TorusGeometry(WR, 0.22, 6, 72).rotateY(Math.PI / 2), white);
+  const rim2 = new Mesh(new TorusGeometry(WR - 0.9, 0.12, 5, 72).rotateY(Math.PI / 2), white);
+  wheel.add(rim, rim2, new Mesh(new CylinderGeometry(0.7, 0.7, 2.8, 16).rotateZ(Math.PI / 2), white));
+  for (let k = 0; k < 16; k++) {
+    const a = (k / 16) * Math.PI * 2;
+    const spoke = new Mesh(new CylinderGeometry(0.06, 0.06, WR, 4), white);
+    spoke.position.set(0, (Math.sin(a) * WR) / 2, (Math.cos(a) * WR) / 2);
+    spoke.rotation.x = -a + Math.PI / 2;
+    wheel.add(spoke);
+  }
+  const NBULB = 64;
+  const bulbs = new InstancedMesh(new SphereGeometry(0.16, 6, 4), bulbMat, NBULB);
+  const m4 = new Matrix4();
+  for (let k = 0; k < NBULB; k++) {
+    const a = (k / NBULB) * Math.PI * 2;
+    m4.makeTranslation(0.3, Math.sin(a) * (WR + 0.3), Math.cos(a) * (WR + 0.3));
+    bulbs.setMatrixAt(k, m4);
+    bulbs.setColorAt(k, new Color(rainbow[k % rainbow.length]));
+  }
+  wheel.add(bulbs);
+  c.group.add(wheel);
+  const gondolas: Mesh[] = [];
+  for (let k = 0; k < 16; k++) {
+    const g = new Mesh(new CylinderGeometry(0.9, 0.9, 1.4, 10), colMats[k % colMats.length]);
+    const roof = new Mesh(new SphereGeometry(0.95, 10, 5, 0, Math.PI * 2, 0, Math.PI / 2), white);
+    roof.position.y = 0.7;
+    g.add(roof);
+    c.group.add(g);
+    gondolas.push(g);
+  }
+
+  // the corkscrew: a glass tower with two slides winding down round it, a red cap and a lookout
+  const TA = 7;
+  const TL = 33;
+  const TH = 15;
+  c.add(mats.pane, new CylinderGeometry(2.3, 2.3, TH, 20, 1, true), c.L(TA, TL, base + TH / 2));
+  for (let k = 0; k <= 5; k++) c.add(white, new TorusGeometry(2.35, 0.12, 5, 24).rotateX(Math.PI / 2), c.L(TA, TL, base + k * 3));
+  c.add(white, new CylinderGeometry(2.9, 2.9, 0.4, 24), c.L(TA, TL, base + TH));
+  c.add(colMats[0], new ConeGeometry(3.1, 3, 20), c.L(TA, TL, base + TH + 1.7));
+  ([
+    [0, colMats[2], 2.6],
+    [Math.PI, colMats[4], 2.2],
+  ] as const).forEach(([phase, mat, turns]) => {
+    const pts: Vector3[] = [];
+    for (let k = 0; k <= 80; k++) {
+      const u = k / 80;
+      const ang = phase + u * turns * Math.PI * 2;
+      const [x, , z] = c.L(TA + Math.cos(ang) * 3.7, TL + Math.sin(ang) * 3.7, 0);
+      pts.push(new Vector3(x, base + 0.8 + (TH - 1.2) * (1 - u), z));
+    }
+    c.add(mat, new TubeGeometry(new CatmullRomCurve3(pts), 160, 0.55, 8, false));
+  });
+
+  // the carousel: a disc, a centre column, a striped canopy, horses on poles; it turns
+  const CA = 10;
+  const CL = 19;
+  const carousel = new Group();
+  carousel.position.set(...c.L(CA, CL, base));
+  const stripes = canvasTex(256, 32, (g) => {
+    for (let k = 0; k < 16; k++) {
+      g.fillStyle = k % 2 ? "#fef3c7" : "#ef4444";
+      g.fillRect(k * 16, 0, 16, 32);
+    }
+  });
+  const canopy = new Mesh(new ConeGeometry(4.6, 2.4, 32, 1, true), new MeshStandardMaterial({ map: stripes, roughness: 0.6, side: DoubleSide }));
+  canopy.position.y = 5.2;
+  const disc = new Mesh(new CylinderGeometry(4.2, 4.3, 0.5, 32), white);
+  disc.position.y = 0.25;
+  const column = new Mesh(new CylinderGeometry(0.8, 0.8, 4, 12), colMats[2]);
+  column.position.y = 2.3;
+  carousel.add(canopy, disc, column);
+  for (let k = 0; k < 12; k++) {
+    const a = (k / 12) * Math.PI * 2;
+    const x = Math.cos(a) * 3.2;
+    const z = Math.sin(a) * 3.2;
+    const pole = new Mesh(new CylinderGeometry(0.06, 0.06, 3.6, 5), white);
+    pole.position.set(x, 2.3, z);
+    const horse = new Mesh(new BoxGeometry(0.5, 0.7, 1.4), colMats[k % colMats.length]);
+    horse.position.set(x, 1.4 + (k % 2) * 0.4, z);
+    horse.rotation.y = -a;
+    carousel.add(pole, horse);
+  }
+  const ringBulbs = new InstancedMesh(new SphereGeometry(0.13, 6, 4), bulbMat, 24);
+  for (let k = 0; k < 24; k++) {
+    const a = (k / 24) * Math.PI * 2;
+    m4.makeTranslation(Math.cos(a) * 4.5, 4.05, Math.sin(a) * 4.5);
+    ringBulbs.setMatrixAt(k, m4);
+    ringBulbs.setColorAt(k, new Color(k % 2 ? 0xffe7a8 : 0xffffff));
+  }
+  carousel.add(ringBulbs);
+  c.group.add(carousel);
+
+  // the climbing dome: a geodesic net of rope over a soft floor
+  const DA = -6;
+  const DL = 20;
+  const ico = new IcosahedronGeometry(3.6, 1);
+  const ip = ico.attributes.position;
+  const ropeMat = new MeshStandardMaterial({ color: 0xc2410c, roughness: 0.7 });
+  const seen = new Set<string>();
+  for (let i = 0; i < ip.count; i += 3) {
+    for (let k = 0; k < 3; k++) {
+      const A = new Vector3(ip.getX(i + k), ip.getY(i + k), ip.getZ(i + k));
+      const B = new Vector3(ip.getX(i + ((k + 1) % 3)), ip.getY(i + ((k + 1) % 3)), ip.getZ(i + ((k + 1) % 3)));
+      if (A.y < -0.1 || B.y < -0.1) continue;
+      const key = [A, B].map((v) => v.toArray().map((n) => n.toFixed(2)).join(",")).sort().join("|");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const d = B.clone().sub(A);
+      const [cx, cy, cz] = c.L(DA, DL, base);
+      const mid = A.clone().add(B).multiplyScalar(0.5).add(new Vector3(cx, cy, cz));
+      const e = new Euler().setFromQuaternion(new Quaternion().setFromUnitVectors(UP, d.clone().normalize()));
+      c.add(ropeMat, new CylinderGeometry(0.08, 0.08, d.length(), 5), [mid.x, mid.y, mid.z], [e.x, e.y, e.z]);
+    }
+  }
+  ico.dispose();
+  c.add(colMats[4], new CylinderGeometry(3.7, 3.7, 0.2, 24), c.L(DA, DL, base + 0.1));
+
+  // the splash pad: a shallow pool and a ring of jets that rise and fall in turn
+  const SA = -15;
+  const SL = 21;
+  c.add(new MeshStandardMaterial({ color: 0x38bdf8, roughness: 0.15, metalness: 0.2, emissive: 0x0ea5e9, emissiveIntensity: 0.25 }), new CylinderGeometry(3.4, 3.4, 0.12, 28), c.L(SA, SL, base + 0.2));
+  const jetMat = new MeshStandardMaterial({ color: 0xe0f7ff, transparent: true, opacity: 0.6, roughness: 0.1, depthWrite: false });
+  const jets: Mesh[] = [];
+  for (let k = 0; k < 8; k++) {
+    const a = (k / 8) * Math.PI * 2;
+    const jet = new Mesh(new CylinderGeometry(0.12, 0.2, 1, 6).translate(0, 0.5, 0), jetMat);
+    jet.position.set(...c.L(SA + Math.cos(a) * 2.2, SL + Math.sin(a) * 2.2, base + 0.25));
+    c.group.add(jet);
+    jets.push(jet);
+  }
+
+  // the rainbow gate on the station side, a band of each colour arching over the path
+  colMats.forEach((m, j) => c.add(m, new TorusGeometry(5.6 - j * 0.42, 0.21, 6, 40, Math.PI).rotateY(Math.PI / 2), c.L(0, 14.5, base)));
+  // soft mats under the carousel and the wheel
+  c.add(colMats[3], new CylinderGeometry(5.2, 5.2, 0.12, 32), c.L(CA, CL, base + 0.18));
+  c.add(colMats[5], new CylinderGeometry(6.5, 6.5, 0.12, 32), c.L(WA, WL, base + 0.18));
+
+  const city = c.world.buildings.solid;
+  return {
+    anchors: [new Vector3(...c.L(WA, WL, base + HUB + WR + 1)), new Vector3(...c.L(TA, TL, base + TH + 3.5)), new Vector3(...c.L(CA, CL, base + 7))],
+    focus: new Vector3(...c.L(0, L0, base + 7)),
+    update: (t) => {
+      const turn = t * 0.12;
+      wheel.rotation.x = turn;
+      // round the rim as the wheel turns (a turn about x carries the angle back), hanging level beneath it
+      gondolas.forEach((g, k) => {
+        const a = (k / 16) * Math.PI * 2 - turn;
+        g.position.set(wheel.position.x, wheel.position.y + Math.sin(a) * WR - 1.2, wheel.position.z + Math.cos(a) * WR);
+      });
+      carousel.rotation.y = t * 0.5;
+      jets.forEach((j, k) => j.scale.set(1, 0.4 + 2.2 * (0.5 + 0.5 * Math.sin(t * 2.2 + k * 0.8)) ** 2, 1));
+      // the bulbs come up with the city's windows, and the gondolas' lights with them
+      const night = Math.min(1, city.emissiveIntensity * 1.2);
+      bulbMat.color.setScalar(0.35 + 1.4 * night);
+      for (const m of colMats) m.emissiveIntensity = 0.12 + 0.45 * night;
+    },
+    // high over the far corner of the park, the wheel and the tower to either side of the line of sight
+    shot: { from: [40, 84, 46], to: [24, 70, 41], look: [0, 27, 6] },
+  };
+}
+
+// ------------------------------------------------------------------ 08 More projects · Joyce–Collingwood: the Project Gallery
+/**
+ * The Project Gallery, an exhibition hall by the station: two storeys of timber and glass, the ground floor a skylit
+ * gallery where each of the other projects is an exhibit (a model on a white plinth under its spotlight, a lit panel
+ * with its name and what it is, its banner on the front and the back), the name of the gallery on all four sides; the
+ * upper floor, a workshop reached by a glazed skybridge from the platform; a saw-tooth roof with solar panels on its
+ * slopes and north lights between, a green wall at one end, a timber canopy along the front and a plaza of planters.
+ */
+function more(c: Ctx): Partial<BuiltSet> {
+  const { mats } = c.world;
+  const A0 = -18;
+  const A1 = 18;
+  const LF = 17;
+  const LB = 33;
+  let gmax = -1e9;
+  for (let a = A0; a <= A1; a += 6) for (let l = LF - 3; l <= LB; l += 4) gmax = Math.max(gmax, c.G(a, l));
+  const base = gmax + 0.1;
+  // the upper floor meets the platform's level, so the bridge runs level; the market below is as tall as that makes it
+  const UP1 = Math.max(base + 4.6, 1.4);
+  const TOP = UP1 + 4.4;
+  const LM = (LF + LB) / 2;
+  const LW = LB - LF;
+  const AW = A1 - A0;
+  // the plinth and the plaza in front, down to the ground
+  c.add(mats.plat, new BoxGeometry(LW + 8, 3, AW + 6), c.L(0, LM - 3, base - 1.5));
+  // the market floor: glass between timber columns all round
+  c.add(mats.pane, new BoxGeometry(LW, UP1 - base, AW), c.L(0, LM, (base + UP1) / 2));
+  for (let a = A0; a <= A1 + 0.01; a += 4) {
+    for (const l of [LF, LB]) c.add(mats.timber, new BoxGeometry(0.5, UP1 - base, 0.5), c.L(a, l, (base + UP1) / 2));
+  }
+  for (const a of [A0, A1]) for (let l = LF; l <= LB + 0.01; l += 4) c.add(mats.timber, new BoxGeometry(0.5, UP1 - base, 0.5), c.L(a, l, (base + UP1) / 2));
+  // a stall for each of the other projects (data moreProjects), side by side along the hall: a counter in the stall's
+  // colour, a lit board behind it with the project's name and what it is, and over its bay on the hall's front a
+  // shop sign with the name, reading from the train and the plaza
+  const fonts = fontOf();
+  const STALL_COLS = [0xef4444, 0xf59e0b, 0x6366f1, 0x10b981, 0xec4899, 0x06b6d4, 0xfacc15];
+  const hex = (n: number) => `#${n.toString(16).padStart(6, "0")}`;
+  const n = moreProjects.length;
+  const bay = AW / n;
+  const shopMats: MeshStandardMaterial[] = [];
+  const anchors: Vector3[] = [];
+  const H1 = UP1 - base;
+  // wrap a line of copy into at most `max` lines of `width` px
+  const wrap = (g: CanvasRenderingContext2D, text: string, width: number, max: number) => {
+    const out: string[] = [];
+    let line = "";
+    for (const w of text.split(" ")) {
+      const t = line ? `${line} ${w}` : w;
+      if (g.measureText(t).width > width && line) {
+        out.push(line);
+        line = w;
+      } else line = t;
+    }
+    if (line) out.push(line);
+    if (out.length > max) out[max - 1] = `${out.slice(max - 1).join(" ").slice(0, 34)}…`;
+    return out.slice(0, max);
+  };
+  const facing = -Math.PI / 2;
+  const stallLight = glowMat(0xffe2b0, 0.6);
+  // the exhibits' models, each painted its project's colour, in one mesh
+  const modelMat = new MeshStandardMaterial({ vertexColors: true, roughness: 0.35, metalness: 0.3 });
+  moreProjects.forEach((pr, j) => {
+    const col = STALL_COLS[j % STALL_COLS.length];
+    const a = A0 + bay * (j + 0.5);
+    const accent = new MeshStandardMaterial({ color: 0x1b1d22, emissive: col, emissiveIntensity: 0.5, roughness: 0.5 });
+    shopMats.push(accent);
+    // the exhibit: a white plinth with a lit band at its foot, the model on it in the project's colour (each a shape of
+    // its own), its spotlight over it, and a white wall between bays
+    c.add(mats.plat, new BoxGeometry(1.6, 1.0, 1.6), c.L(a, LM - 1, base + 0.5));
+    c.add(accent, new BoxGeometry(1.64, 0.08, 1.64), c.L(a, LM - 1, base + 0.06));
+    const model = [new IcosahedronGeometry(0.55, 0), new TorusGeometry(0.45, 0.16, 8, 20), new OctahedronGeometry(0.6, 0), new ConeGeometry(0.5, 1.1, 6), new BoxGeometry(0.75, 0.75, 0.75).rotateY(0.6).rotateX(0.5)][j % 5];
+    c.add(modelMat, paint(model, col), c.L(a, LM - 1, base + 1.65));
+    c.add(stallLight, new CylinderGeometry(0.25, 0.4, 0.3, 10), c.L(a, LM - 1, UP1 - 0.35));
+    if (j > 0) c.add(mats.plat, new BoxGeometry(LW - 4, Math.min(3, H1 - 0.4), 0.2), c.L(A0 + bay * j, LM + 1, base + Math.min(3, H1 - 0.4) / 2));
+    // the panel on the wall behind it: the name and the line about it, lit, in a white frame
+    const board = canvasTex(512, 256, (g) => {
+      g.fillStyle = "#14161b";
+      g.fillRect(0, 0, 512, 256);
+      g.fillStyle = hex(col);
+      g.fillRect(0, 0, 512, 14);
+      g.fillStyle = "#f4f2ec";
+      g.font = `500 64px ${fonts.serif}`;
+      g.textBaseline = "top";
+      g.fillText(pr.title, 28, 40, 456);
+      g.fillStyle = "#b9bcc4";
+      g.font = `400 26px ${fonts.sans}`;
+      wrap(g, pr.copy, 456, 3).forEach((ln, k) => g.fillText(ln, 28, 130 + k * 34));
+    });
+    const boardMat = new MeshBasicMaterial({ map: board, toneMapped: false });
+    const bh = Math.min(2.6, H1 - 1.2);
+    // two faces back to back: the board reads from the counter and through the glass from behind
+    for (const [ry, dl] of [
+      [facing, 0],
+      [-facing, 0.03],
+    ]) {
+      const bm = new Mesh(new PlaneGeometry(bay - 1.6, bh), boardMat);
+      bm.position.set(...c.L(a, LB - 4 + dl, base + 1.2 + bh / 2));
+      bm.rotation.y = ry;
+      c.group.add(bm);
+    }
+    // a warm lamp over the stall, under the upper floor
+    c.add(stallLight, new BoxGeometry(LW - 6, 0.12, 0.5), c.L(a, LM, UP1 - 0.4));
+    // the shop sign over the bay on the front, facing out
+    const sign = canvasTex(512, 128, (g) => {
+      g.fillStyle = "#101216";
+      g.fillRect(0, 0, 512, 128);
+      g.fillStyle = hex(col);
+      g.fillRect(0, 110, 512, 18);
+      g.fillStyle = "#ffffff";
+      g.font = `500 62px ${fonts.serif}`;
+      g.textAlign = "center";
+      g.textBaseline = "middle";
+      g.fillText(pr.title, 256, 56, 480);
+    });
+    // over the bay on the front (toward the line) and again on the back (toward the street)
+    const signMat = new MeshBasicMaterial({ map: sign, toneMapped: false });
+    for (const [l, ry] of [
+      [LF - 0.3, facing],
+      [LB + 0.3, -facing],
+    ]) {
+      const sm = new Mesh(new PlaneGeometry(bay - 0.8, (bay - 0.8) / 4), signMat);
+      sm.position.set(...c.L(a, l, UP1 - 0.6));
+      sm.rotation.y = ry;
+      c.group.add(sm);
+    }
+    anchors.push(new Vector3(...c.L(a, LF - 0.4, UP1 + 0.4)));
+  });
+  // the floor between the storeys, and the upper floor: timber fins over glass
+  c.add(mats.plat, new BoxGeometry(LW + 0.6, 0.5, AW + 0.6), c.L(0, LM, UP1));
+  c.add(mats.pane, new BoxGeometry(LW - 0.4, TOP - UP1, AW - 0.4), c.L(0, LM, (UP1 + TOP) / 2));
+  for (let a = A0 + 1; a < A1; a += 1.5) for (const l of [LF + 0.2, LB - 0.2]) c.add(mats.timber, new BoxGeometry(0.25, TOP - UP1, 0.25), c.L(a, l, (UP1 + TOP) / 2));
+  // what the building is, on all four sides of the upper floor, lit: its name, and what it holds
+  const nameTex = (w: number) =>
+    canvasTex(w, 256, (g) => {
+      g.fillStyle = "#101216";
+      g.fillRect(0, 0, w, 256);
+      g.fillStyle = "#a78bfa";
+      g.fillRect(0, 236, w, 20);
+      g.textBaseline = "middle";
+      g.fillStyle = "#ffffff";
+      g.font = `400 150px ${fonts.serif}`;
+      g.textAlign = w > 1500 ? "left" : "center";
+      g.fillText("Project Gallery", w > 1500 ? 60 : w / 2, w > 1500 ? 122 : 100, w - 80);
+      g.fillStyle = "#c9c4f2";
+      g.font = `500 44px ${fonts.mono}`;
+      if (w > 1500) {
+        g.textAlign = "right";
+        g.fillText(`SIDE PROJECTS · ${n} EXHIBITS`, w - 60, 122);
+      } else g.fillText("SIDE PROJECTS", w / 2, 200, w - 60);
+    });
+  const longName = new MeshBasicMaterial({ map: nameTex(2048), toneMapped: false });
+  const endName = new MeshBasicMaterial({ map: nameTex(1024), toneMapped: false });
+  const bandY = UP1 + 2.2;
+  // on the front it stands clear of the skybridge's doorway (along -8 to -4); on the back it runs the whole hall
+  for (const [l, ry, a, w] of [
+    [LF - 0.15, facing, 6.5, 19],
+    [LB + 0.15, -facing, 0, AW - 8],
+  ]) {
+    const m = new Mesh(new PlaneGeometry(w, w / 8), longName);
+    m.position.set(...c.L(a, l, bandY));
+    m.rotation.y = ry;
+    c.group.add(m);
+  }
+  const zs = Math.sign(c.L(1, 0, 0)[2]) || 1;
+  for (const [a, out] of [
+    [A0 - 0.3, -1],
+    [A1 + 0.85, 1],
+  ]) {
+    const m = new Mesh(new PlaneGeometry(LW - 3, (LW - 3) / 4), endName);
+    m.position.set(...c.L(a, LM, bandY));
+    // facing out along the hall (local z is along × zs)
+    m.rotation.y = out * zs > 0 ? 0 : Math.PI;
+    c.group.add(m);
+  }
+  // upstairs, a workshop for whoever builds the next one: long tables under lamps, a screen at the end
+  for (let a = A0 + 4; a <= A1 - 4; a += 7) {
+    c.add(mats.timber, new BoxGeometry(LW - 7, 0.15, 1.6), c.L(a, LM, UP1 + 1.05));
+    for (const s of [-1, 1]) c.add(mats.timber, new BoxGeometry(LW - 7, 0.12, 0.4), c.L(a + s * 1.3, LM, UP1 + 0.7));
+    c.add(stallLight, new BoxGeometry(LW - 8, 0.1, 0.3), c.L(a, LM, TOP - 0.5));
+  }
+  // the saw-tooth roof: across the hall, each tooth a slope of solar panels facing the sun and a north light
+  const solar = new MeshStandardMaterial({ color: 0x23365c, roughness: 0.3, metalness: 0.5, envMap: c.world.envTex, envMapIntensity: 0.6 });
+  const TEETH = 6;
+  const tw = AW / TEETH;
+  const rise = 2.4;
+  const slope = Math.hypot(tw, rise);
+  const ang = Math.atan2(rise, tw);
+  for (let k = 0; k < TEETH; k++) {
+    const a = A0 + tw * (k + 0.5);
+    // tilted so its high edge meets the north light at the tooth's far side (a turn about x lowers +z)
+    c.add(solar, new BoxGeometry(LW + 0.8, 0.18, slope), c.L(a, LM, TOP + rise / 2), [-ang * Math.sign(c.L(1, 0, 0)[2]), 0, 0]);
+    c.add(mats.pane, new BoxGeometry(LW + 0.8, rise, 0.12), c.L(a + tw / 2, LM, TOP + rise / 2));
+  }
+  // a green wall at the end facing the street, and a planted strip along the roof's edge
+  c.add(mats.roofGreen, new BoxGeometry(LW - 2, TOP - base - 1, 0.5), c.L(A1 + 0.5, LM, (base + TOP - 1) / 2));
+  c.add(mats.roofGreen, new BoxGeometry(1, 0.6, AW), c.L(0, LB + 0.6, TOP + 0.3));
+  // the timber canopy along the front, on slim columns
+  c.add(mats.timber, new BoxGeometry(3.4, 0.3, AW + 2), c.L(0, LF - 1.7, UP1 - 0.9));
+  for (let a = A0; a <= A1 + 0.01; a += 6) c.add(mats.girder, new CylinderGeometry(0.12, 0.12, UP1 - 0.9 - base, 8), c.L(a, LF - 3.2, (base + UP1 - 0.9) / 2));
+  // the skybridge from the platform to the upper floor: glazed walls and roof on timber frames, between two of the
+  // station gridshell's ribs (2.58 apart from the platform's end) and reaching in under its glass to meet it, fare gates
+  // where it comes into the hall (box sizes: lateral, up, along)
+  {
+    const BA = -6.46;
+    const BW = 2.0;
+    const l0 = 11.5;
+    const lIn = 9.7;
+    const roofY = Math.max(UP1, 1.4) + 2.55;
+    const deckL = LF - l0;
+    c.add(mats.plat, new BoxGeometry(deckL, 0.4, BW + 0.2), c.L(BA, l0 + deckL / 2, UP1 - 0.2));
+    const wallL = LF - lIn;
+    for (const sd of [-1, 1]) {
+      c.add(mats.pane, new BoxGeometry(wallL, roofY - UP1, 0.06), c.L(BA + (sd * BW) / 2, lIn + wallL / 2, (UP1 + roofY) / 2));
+      for (let l = lIn; l <= LF + 0.01; l += wallL / 5) c.add(mats.timber, new BoxGeometry(0.14, roofY - UP1, 0.14), c.L(BA + (sd * BW) / 2, l, (UP1 + roofY) / 2));
+      c.add(mats.timber, new BoxGeometry(wallL, 0.22, 0.2), c.L(BA + (sd * BW) / 2, lIn + wallL / 2, roofY));
+    }
+    c.add(mats.pane, new BoxGeometry(wallL, 0.06, BW), c.L(BA, lIn + wallL / 2, roofY + 0.08));
+    for (let l = lIn; l <= LF + 0.01; l += wallL / 5) c.add(mats.timber, new BoxGeometry(0.16, 0.18, BW + 0.2), c.L(BA, l, roofY + 0.02));
+  }
+  // the plaza's planters and benches
+  for (let a = A0 + 2; a <= A1 - 2; a += 8) {
+    c.add(mats.planter, new BoxGeometry(2.2, 0.8, 2.2), c.L(a, LF - 5.5, base + 0.4));
+    c.add(mats.roofGreen, new SphereGeometry(1.2, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), c.L(a, LF - 5.5, base + 0.8));
+    c.add(mats.timber, new BoxGeometry(0.6, 0.45, 2.6), c.L(a + 4, LF - 5.5, base + 0.25));
+  }
+  const city = c.world.buildings.solid;
+  return {
+    anchors,
+    focus: new Vector3(...c.L(0, LM - 2, (base + TOP) / 2)),
+    update: () => {
+      // the shopfronts glow brighter after dark
+      const n = Math.min(1, city.emissiveIntensity * 1.2);
+      for (const m of shopMats) m.emissiveIntensity = 0.5 + 1.3 * n;
+      stallLight.emissiveIntensity = 0.4 + 1.6 * n;
+    },
+    // from across the line, looking over the station at the hall's lit front
+    shot: { from: [-10, -34, 36], to: [-6, -26, 30], look: [0, 23, 0] },
+  };
+}
+
+// ------------------------------------------------------------------ 09 Contact · Patterson: the forest lookout
+/**
+ * Patterson's wellness park round the lookout (sets/wellness.ts):
+ * - two tennis courts on a level terrace with a stone retaining wall where the ground falls away, fenced in green
+ *   mesh, with nets and lines;
+ * - a timber pergola between them over benches and a drinking fountain;
+ * - an outdoor gym on a rubber pad: pull-up bars, parallel bars, monkey bars, sit-up benches and a bouldering rock;
+ * - a yoga lawn with mats in rows facing the instructor's deck;
+ * - a red running path joining them, and the park's name on a board where the path from the station comes in.
+ *
+ * Plain colours (folded into the set's painted material) but for the fences' mesh and the sign.
+ */
+function wellnessPark(c: Ctx): void {
+  const G = (a: number, l: number) => c.G(a, l);
+  const zs = c.L(1, 0, 0)[2];
+  /** A plain material per colour (the set folds them into one painted mesh). */
+  const cols = new Map<number, MeshStandardMaterial>();
+  const col = (hex: number) => {
+    let m = cols.get(hex);
+    if (!m) cols.set(hex, (m = new MeshStandardMaterial({ color: hex, roughness: 0.8 })));
+    return m;
+  };
+  /** A box laid in the frame: across (lateral), up, along, centred at (a, l) with its foot at height y. */
+  const put = (hex: number, w: number, h: number, d: number, a: number, l: number, y: number, rot?: V3) => c.add(col(hex), new BoxGeometry(w, h, d), c.L(a, l, y + h / 2), rot);
+  /** The ground under a box at its highest and lowest (local heights). */
+  const span = (b: FrameBox) => {
+    let hi = -Infinity;
+    let lo = Infinity;
+    for (let a = b.a0; a <= b.a1 + 0.01; a += (b.a1 - b.a0) / 6) {
+      for (let l = b.l0; l <= b.l1 + 0.01; l += (b.l1 - b.l0) / 6) {
+        hi = Math.max(hi, G(a, l));
+        lo = Math.min(lo, G(a, l));
+      }
+    }
+    return { hi, lo };
+  };
+  const mesh = new MeshStandardMaterial({ color: 0x1f3d2b, transparent: true, opacity: 0.35, side: DoubleSide, depthWrite: false, roughness: 1 });
+
+  // ------------------------------------------------ the tennis courts on their terrace
+  for (const b of COURTS) {
+    const { hi, lo } = span(b);
+    const top = hi + 0.15;
+    const am = (b.a0 + b.a1) / 2;
+    const lm = (b.l0 + b.l1) / 2;
+    const A = b.a1 - b.a0;
+    const Lw = b.l1 - b.l0;
+    // the terrace: a stone wall round a level pad, the court's green surround and its blue court
+    put(0xa9a49a, Lw + 0.6, top - (lo - 0.6), A + 0.6, am, lm, lo - 0.6);
+    put(0x3f7d5a, Lw, 0.06, A, am, lm, top);
+    put(0x2f6db0, 6.6, 0.07, 14.2, am, lm, top);
+    // the lines: baselines, sidelines (doubles and singles), service lines and the centre line
+    const line = (w: number, d: number, a: number, l: number) => put(0xf4f4f0, w, 0.02, d, a, l, top + 0.075);
+    for (const s of [-1, 1]) {
+      line(6.6, 0.1, am + s * 7.05, lm);
+      line(0.1, 14.2, am, lm + s * 3.25);
+      line(0.1, 14.2, am, lm + s * 2.45);
+      line(4.9, 0.1, am + s * 3.4, lm);
+    }
+    line(0.1, 6.8, am, lm);
+    // the net across the middle, on its posts
+    for (const s of [-1, 1]) put(0x2a3039, 0.12, 1.1, 0.12, am, lm + s * 3.6, top);
+    c.add(col(0x1d2228), new BoxGeometry(7.2, 0.8, 0.04), c.L(am, lm, top + 0.55));
+    put(0xf4f4f0, 7.2, 0.08, 0.06, am, lm, top + 0.95);
+    // the fence: posts and a top rail round the edge, green mesh between (a gap toward the pergola for the gate)
+    const gateA = b.a0 < 0 ? b.a1 : b.a0;
+    const posts: [number, number][] = [];
+    for (let k = 0; k <= 5; k++) posts.push([b.a0 + (A * k) / 5, b.l0], [b.a0 + (A * k) / 5, b.l1]);
+    for (let k = 1; k < 3; k++) posts.push([b.a0, b.l0 + (Lw * k) / 3], [b.a1, b.l0 + (Lw * k) / 3]);
+    for (const [a, l] of posts) put(0x2a3a30, 0.12, 3, 0.12, a, l, top);
+    for (const l of [b.l0, b.l1]) {
+      put(0x2a3a30, 0.08, 0.08, A, am, l, top + 2.95);
+      c.add(mesh, new PlaneGeometry(A, 3).rotateY(Math.PI / 2), c.L(am, l, top + 1.5));
+    }
+    for (const a of [b.a0, b.a1]) {
+      put(0x2a3a30, Lw, 0.08, 0.08, a, lm, top + 2.95);
+      // the end toward the pergola leaves its middle open for the gate
+      if (a === gateA) {
+        for (const s of [-1, 1]) c.add(mesh, new PlaneGeometry(Lw / 2 - 1.2, 3), c.L(a, lm + s * (Lw / 4 + 0.6), top + 1.5));
+      } else c.add(mesh, new PlaneGeometry(Lw, 3), c.L(a, lm, top + 1.5));
+    }
+    // a bench by the gate
+    put(0x9a7048, 1.8, 0.45, 0.5, gateA + (b.a0 < 0 ? -1 : 1), b.l0 + 1.4, top);
+  }
+
+  // ------------------------------------------------ the pergola between the courts: timber posts and slatted roof
+  {
+    const b = PERGOLA;
+    const { hi, lo } = span(b);
+    const top = hi + 0.12;
+    const am = (b.a0 + b.a1) / 2;
+    const lm = (b.l0 + b.l1) / 2;
+    put(0x9c8f7c, b.l1 - b.l0, top - (lo - 0.5), b.a1 - b.a0, am, lm, lo - 0.5);
+    for (const a of [b.a0 + 0.5, b.a1 - 0.5]) for (const l of [b.l0 + 0.6, b.l1 - 0.6]) put(0xa98260, 0.28, 3.2, 0.28, a, l, top);
+    for (const a of [b.a0 + 0.5, b.a1 - 0.5]) put(0x8a6a4a, b.l1 - b.l0, 0.3, 0.3, a, lm, top + 3.2);
+    for (let l = b.l0 + 0.4; l <= b.l1 - 0.39; l += 0.9) put(0xa98260, 0.18, 0.2, b.a1 - b.a0 + 0.6, am, l, top + 3.5);
+    // benches facing each court, and a drinking fountain
+    for (const s of [-1, 1]) put(0x9a7048, b.l1 - b.l0 - 2, 0.45, 0.6, am + s * 2, lm, top);
+    c.add(col(0x8f9298), new CylinderGeometry(0.3, 0.35, 1.0, 10), c.L(am, b.l0 + 0.9, top + 0.5));
+  }
+
+  // ------------------------------------------------ the outdoor gym
+  {
+    const b = GYM;
+    const { hi } = span(b);
+    const top = hi + 0.1;
+    const am = (b.a0 + b.a1) / 2;
+    const lm = (b.l0 + b.l1) / 2;
+    put(0xb5523b, b.l1 - b.l0, 0.4, b.a1 - b.a0, am, lm, top - 0.3);
+    const BLUE = 0x2d6cb0;
+    const YEL = 0xf2b632;
+    // pull-up bars: three bars at three heights between four posts, along the lateral
+    for (let k = 0; k < 4; k++) put(BLUE, 0.14, 2.9, 0.14, b.a0 + 1.4, b.l0 + 1.2 + k * 1.4, top);
+    for (let k = 0; k < 3; k++) c.add(col(YEL), new CylinderGeometry(0.05, 0.05, 1.4, 6).rotateX(Math.PI / 2).rotateY(Math.PI / 2), c.L(b.a0 + 1.4, b.l0 + 1.9 + k * 1.4, top + 2.1 + k * 0.35));
+    // parallel bars
+    for (const s of [-0.3, 0.3]) {
+      for (const d of [-1, 1]) put(BLUE, 0.1, 1.1, 0.1, b.a0 + 4.6 + d, b.l0 + 2 + s, top);
+      put(YEL, 0.08, 0.08, 2.3, b.a0 + 4.6, b.l0 + 2 + s, top + 1.1);
+    }
+    // monkey bars: two rails on posts, rungs across
+    for (const s of [-0.45, 0.45]) {
+      for (const d of [-2.2, 2.2]) put(BLUE, 0.14, 2.4, 0.14, b.a0 + 7.6 + d, b.l0 + 2.4 + s, top);
+      put(BLUE, 0.1, 0.1, 4.6, b.a0 + 7.6, b.l0 + 2.4 + s, top + 2.35);
+    }
+    for (let d = -2; d <= 2.01; d += 0.5) put(YEL, 1.0, 0.06, 0.06, b.a0 + 7.6 + d, b.l0 + 2.4, top + 2.42);
+    // sit-up benches, inclined
+    for (const k of [0, 1]) {
+      const a = b.a0 + 2 + k * 2.6;
+      const l = b.l1 - 2.2;
+      c.add(col(0x2a3039), new BoxGeometry(0.6, 0.12, 2.0), c.L(a, l, top + 0.55), [0.35 * zs, 0, 0]);
+      put(BLUE, 0.1, 0.5, 0.1, a, l - 0.8, top);
+      put(BLUE, 0.1, 0.9, 0.1, a, l + 0.8, top);
+    }
+    // a bouldering rock with coloured holds
+    const ra = b.a1 - 2.6;
+    const rl = b.l1 - 3;
+    c.add(col(0x8c8a85), new IcosahedronGeometry(1.9, 0), c.L(ra, rl, top + 1.2), [0.3, 0.5, 0.2], [1.2, 1, 1]);
+    [0xd2452f, 0xf2b632, 0x2a9d8f, 0xe84393, 0x2d6cb0, 0xd2452f, 0xf2b632].forEach((hex, k) => {
+      const th = k * 0.9;
+      c.add(col(hex), new BoxGeometry(0.2, 0.14, 0.2), c.L(ra + Math.cos(th) * 1.95, rl + Math.sin(th) * 1.75, top + 0.6 + (k % 4) * 0.5));
+    });
+  }
+
+  // ------------------------------------------------ the park's lawn, cell by cell on the ground, round what stands on it
+  {
+    const inBox = (bx: FrameBox, a: number, l: number, pad: number) => a > bx.a0 - pad && a < bx.a1 + pad && l > bx.l0 - pad && l < bx.l1 + pad;
+    for (let a = -22; a < 22; a += 2.2) {
+      for (let l = 7; l < 36; l += 2.2) {
+        const ca = a + 1.1;
+        const cl = l + 1.1;
+        if (inBox(GYM, ca, cl, 0.5) || COURTS.some((bx) => inBox(bx, ca, cl, 0.5)) || inBox(PERGOLA, ca, cl, 0.5)) continue;
+        // its top a little under the paths' (theirs a hand over the ground at their middles)
+        put(0x5f8f45, 2.25, 0.2, 2.25, ca, cl, G(ca, cl) - 0.15);
+      }
+    }
+  }
+
+  // ------------------------------------------------ the yoga lawn: mats in rows facing the instructor's deck
+  {
+    const MAT = [0x7c6bd6, 0x2a9d8f, 0xe8663a, 0xf2b632, 0xe84393, 0x3f8a5a];
+    MATS.forEach(([a, l], k) => put(MAT[k % MAT.length], 0.8, 0.04, 1.9, a, l, G(a, l) + 0.1));
+    const [da, dl] = YOGA_DECK;
+    put(0xa98260, 3.2, 0.32, 2.6, da, dl, G(da, dl) + 0.02);
+  }
+
+  // ------------------------------------------------ the running path, red rubber laid on the ground
+  for (let k = 1; k < RUN_PATH.length; k++) {
+    const [a0, l0] = RUN_PATH[k - 1];
+    const [a1, l1] = RUN_PATH[k];
+    const L = Math.hypot(a1 - a0, l1 - l0);
+    const steps = Math.max(1, Math.ceil(L / 2));
+    const ry = Math.atan2(l1 - l0, (a1 - a0) * zs);
+    for (let s = 0; s < steps; s++) {
+      const u = (s + 0.5) / steps;
+      const a = a0 + (a1 - a0) * u;
+      const l = l0 + (l1 - l0) * u;
+      c.add(col(0xa8453a), new BoxGeometry(1.8, 0.1, L / steps + 0.08), c.L(a, l, G(a, l) + 0.07), [0, ry, 0]);
+    }
+  }
+
+  // ------------------------------------------------ the park's name on a board where the station's path comes in
+  {
+    const a = -2.6;
+    const l = 10.5;
+    const g = G(a, l);
+    put(0x3a3f46, 0.14, 2.6, 0.14, a, l, g);
+    put(0x3a3f46, 0.14, 2.6, 0.14, a - 2.8, l, g);
+    const fonts = fontOf();
+    const tex = canvasTex(1024, 300, (gx) => {
+      gx.fillStyle = "#1f3d2b";
+      gx.fillRect(0, 0, 1024, 300);
+      gx.fillStyle = "#f6efe2";
+      gx.font = `500 96px ${fonts.serif}`;
+      gx.textAlign = "center";
+      gx.textBaseline = "middle";
+      gx.fillText("Patterson Wellness Park", 512, 120, 980);
+      gx.fillStyle = "#b9e4c9";
+      gx.font = `500 40px ${fonts.mono}`;
+      gx.fillText("TENNIS · OUTDOOR GYM · YOGA · RUN LOOP", 512, 228, 980);
+    });
+    const board = [Math.PI / 2, -Math.PI / 2].map((ry) => new PlaneGeometry(3.4, 1.0).rotateY(ry).translate(...c.L(a - 1.4, l + (ry > 0 ? 0.03 : -0.03), g + 2.1)));
+    c.group.add(new Mesh(mergeGeometries(board, false), new MeshBasicMaterial({ map: tex, toneMapped: false })));
+    for (const p of board) p.dispose();
+  }
+}
+
+/** The forest lookout with its words and signposts, in Patterson's wellness park. */
+function contactSet(c: Ctx): Partial<BuiltSet> {
+  const { mats } = c.world;
+  const L0 = 26;
+  const g = c.G(0, L0);
+  const deck = Math.max(g + 1.2, c.G(0, L0 + 6) + 1.2);
+  wellnessPark(c);
+  // paved paths across the lawn: from the station's foot to the lookout, and on to the bus exchange on Beresford,
+  // with benches, lamps and a coffee kiosk along them
+  {
+    const walk = new MeshStandardMaterial({ color: 0xcfc6b4, roughness: 0.95 });
+    // a box's long side (local z) turned onto the path: local x is lateral, local z is along by the frame's sign
+    const zs = c.L(1, 0, 0)[2];
+    const ex = busNetwork().stops.find((st) => st.station === c.i && st.exchange);
+    const pts: [number, number][] = [[0, 12], [0, L0 - 8.5]];
+    if (ex) {
+      const [ea, el] = toStation(c.i, ex.x, ex.z);
+      if (Math.hypot(ea, el - L0) < 60) pts.push([Math.max(-30, Math.min(30, ea * 0.5)), L0 - 8.5], [Math.max(-40, Math.min(40, ea)), Math.max(10, Math.min(44, el))]);
+    }
+    for (let k = 1; k < pts.length; k++) {
+      const [a0, l0] = pts[k - 1];
+      const [a1, l1] = pts[k];
+      const L = Math.hypot(a1 - a0, l1 - l0);
+      const steps = Math.max(1, Math.ceil(L / 3));
+      for (let s = 0; s < steps; s++) {
+        const u = (s + 0.5) / steps;
+        const a = a0 + (a1 - a0) * u;
+        const l = l0 + (l1 - l0) * u;
+        // a slab square to the path (its own turn in the set's frame)
+        const ry = Math.atan2(l1 - l0, (a1 - a0) * zs);
+        c.add(walk, new BoxGeometry(2.4, 0.12, L / steps + 0.1), c.L(a, l, c.G(a, l) + 0.06), [0, ry, 0]);
+        if (s % 3 === 1) {
+          // a bench on one side, a lamp on the other
+          const na = -(l1 - l0) / L;
+          const nl = (a1 - a0) / L;
+          c.add(mats.timber, new BoxGeometry(0.5, 0.45, 1.6), c.L(a + na * 2, l + nl * 2, c.G(a + na * 2, l + nl * 2) + 0.25), [0, ry, 0]);
+          c.add(mats.post, new CylinderGeometry(0.06, 0.08, 3.2, 6), c.L(a - na * 1.8, l - nl * 1.8, c.G(a - na * 1.8, l - nl * 1.8) + 1.6));
+          c.add(mats.lamp, new SphereGeometry(0.22, 8, 6), c.L(a - na * 1.8, l - nl * 1.8, c.G(a - na * 1.8, l - nl * 1.8) + 3.3));
+        }
+      }
+    }
+    // the coffee kiosk where the paths meet below the lookout
+    const ka = 6;
+    const kl = L0 - 10;
+    const kg = c.G(ka, kl);
+    c.add(mats.timber, new BoxGeometry(2.6, 2.4, 2.6), c.L(ka, kl, kg + 1.2));
+    c.add(new MeshStandardMaterial({ color: 0x2f6e5d, roughness: 0.7 }), new BoxGeometry(3.6, 0.15, 3.4), c.L(ka, kl, kg + 2.55), [0.08, 0, 0]);
+    c.add(glowMat(0xffd7a0, 1.2), new BoxGeometry(0.06, 0.5, 1.8), c.L(ka, kl - 1.32, kg + 1.6));
+  }
+  c.add(mats.timber, new BoxGeometry(12, 0.5, 16), c.L(0, L0, deck));
+  legs(c, mats.timber, [
+    [-6, L0 - 5],
+    [6, L0 - 5],
+    [-6, L0 + 5],
+    [6, L0 + 5],
+  ], deck - 0.25, 0.3);
+  for (const s of [-1, 1]) c.add(mats.timber, new BoxGeometry(0.15, 1, 16), c.L(0, L0 + s * 5.9, deck + 0.75), [0, 0, 0]);
+  // a stand of cedar, fir and hemlock round the deck, in three dimensions since the shot comes close; none on a street
+  stand(
+    c,
+    SET_TREES.filter((t) => t.i === c.i && !isRoad(...fromStation(t.i, t.a, t.l), 2.5)),
+  );
+  // the light sculpture
+  const fonts = fontOf();
+  const tex = canvasTex(1024, 256, (gx) => {
+    gx.clearRect(0, 0, 1024, 256);
+    gx.font = `400 170px ${fonts.serif}`;
+    gx.textAlign = "center";
+    gx.textBaseline = "middle";
+    gx.shadowColor = "#a78bfa";
+    gx.shadowBlur = 30;
+    gx.fillStyle = "#f5f3ff";
+    gx.fillText("Let's talk.", 512, 132);
+  });
+  // two faces back to back, so the words read from the train and from the lookout
+  const signMat = new MeshBasicMaterial({ map: tex, transparent: true, toneMapped: false, depthWrite: false });
+  for (const ry of [-Math.PI / 2, Math.PI / 2]) {
+    const sign = new Mesh(new PlaneGeometry(12, 3), signMat);
+    sign.position.set(...c.L(0, L0 + 2, deck + 4.4));
+    sign.rotation.y = ry;
+    c.group.add(sign);
+  }
+  c.add(glowMat(0xa78bfa, 2.2), new BoxGeometry(0.1, 0.1, 12.4), c.L(0, L0 + 2, deck + 2.7));
+  // four lit signposts
+  const post = glowMat(0xc4b5fd, 1.2);
+  const anchors: Vector3[] = [];
+  [-5.4, -1.8, 1.8, 5.4].forEach((a, k) => {
+    const h = 2.2 + (k % 2) * 1.4;
+    c.add(mats.timber, new BoxGeometry(0.2, h, 0.2), c.L(a, L0 - 5, deck + 0.25 + h / 2));
+    c.add(post, new BoxGeometry(0.15, 0.5, 1.6), c.L(a, L0 - 5, deck + h + 0.1));
+    anchors.push(new Vector3(...c.L(a, L0 - 5, deck + h + 0.9)));
+  });
+  return { anchors, focus: new Vector3(...c.L(0, L0 - 2, deck + 3)), shot: { from: [-12, 46, 4], to: [0, 50, 11], look: [0, 22, 5], fromLook: [0, 30, 6] } };
+}
+
+const BUILDERS = [depart, about, null, awdon, planktoneer, vessel, weed, abckidz, more, contactSet] as const;
+
+/** Build every station's set. */
+export function buildSets(world: World): BuiltSet[] {
+  const { mats } = world;
+  // the colours the look keeps changing (lookModel.ts): these stay their own materials
+  const LOOKED = new Set<Material>([mats.plat, mats.concrete, mats.landmark, mats.dome, mats.sail, mats.park, mats.forestFloor, mats.ground, mats.water, mats.mountain]);
+  return stations.map((_, i) => {
+    const fr = STATION_FRAMES[i];
+    const side = SET_SIDE[i];
+    const group = new Group();
+    const n = new Vector3(fr.rx * side, 0, fr.rz * side);
+    const t = new Vector3(fr.tx, 0, fr.tz);
+    const z = n.clone().cross(UP);
+    group.matrixAutoUpdate = false;
+    // the Granville portals are placed in world space, square to the track where each stands; a set that stands along
+    // the platform from its station (SET_SHIFT) has its origin moved there
+    const A0 = SET_SHIFT[i];
+    if (i !== 2) group.matrix.makeBasis(n, UP, z).setPosition(fr.x + t.x * A0, fr.y, fr.z + t.z * A0);
+    group.matrixWorldNeedsUpdate = true;
+    // local z runs along z = n × UP, which is ±t depending on the side
+    const zs = z.dot(t) > 0 ? 1 : -1;
+    const parts = new Map<Material, Part[]>();
+    // a material that is one plain colour (no map, glow, transparency, vertex colours, second side, nor a colour the
+    // look or the events change) draws the same painted, so they all share one painted material: a draw call each saved
+    const painted = new MeshStandardMaterial({ vertexColors: true, roughness: 0.75 });
+    const plainHex = (mat: Material): number | null => {
+      if (!(mat instanceof MeshStandardMaterial) || mat.type !== "MeshStandardMaterial" || LOOKED.has(mat)) return null;
+      if (mat.map || mat.emissiveMap || mat.transparent || mat.vertexColors || mat.side !== FrontSide || mat.emissive.getHex() !== 0) return null;
+      return mat.color.getHex();
+    };
+    const c: Ctx = {
+      i,
+      side,
+      world,
+      lowEnd: world.lowEnd,
+      group,
+      L: (a, l, u) => [l, u, a * zs],
+      G: (a, l) => groundAt(fr.x + t.x * (a + A0) + n.x * l, fr.z + t.z * (a + A0) + n.z * l) - fr.y,
+      S: (a, l) => surfaceAt(fr.x + t.x * (a + A0) + n.x * l, fr.z + t.z * (a + A0) + n.z * l, world.lowEnd ? 2 : 1) - fr.y,
+      add: (mat, geo, pos = [0, 0, 0], rot = [0, 0, 0], scale = [1, 1, 1]) => {
+        const hex = plainHex(mat);
+        const into = hex === null ? mat : painted;
+        const list = parts.get(into);
+        const p: Part = { geo: hex === null ? geo : paint(geo, hex), position: pos, rotation: rot, scale };
+        if (list) list.push(p);
+        else parts.set(into, [p]);
+      },
+    };
+    const b = i === 2 ? experience(c, world) : (BUILDERS[i]?.(c) ?? {});
+    for (const [mat, list] of parts) {
+      const m = new Mesh(merged(list), mat);
+      // glass, light and what glows cast no shadow (and so cost no shadow pass)
+      const sm = mat as MeshStandardMaterial;
+      const glows = mat.type === "MeshBasicMaterial" || (sm.emissiveIntensity > 0.5 && sm.color?.getHex() === 0x111111);
+      m.castShadow = !world.lowEnd && !mat.transparent && !glows;
+      m.receiveShadow = true;
+      // the squares' stalls, pavilions and paving are too small and low to show in the water
+      m.userData.lowInMirror = mat.userData.square === true;
+      group.add(m);
+    }
+    group.updateMatrixWorld(true);
+    // anchors and focus are local except for the world-built Granville portals
+    const toWorld = (v: Vector3) => (i === 2 ? v.clone() : v.clone().applyMatrix4(group.matrix));
+    return {
+      group,
+      anchors: (b.anchors ?? []).map(toWorld),
+      focus: b.focus ? toWorld(b.focus) : new Vector3(fr.x, fr.y + 4, fr.z),
+      update: b.update,
+      shot: b.shot ?? DEFAULT_SHOT,
+    };
+  });
+}
