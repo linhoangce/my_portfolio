@@ -458,7 +458,7 @@ function layOut(rng: Rng, lowEnd: boolean): CityGeometry {
       built = "salishHall";
     } else if (ROUND_ARCH.has(chosen) && ctx.avoidRound) {
       // too near another round banded tower: its numbers drawn as it would have been, another tower built instead
-      BUILD[chosen as Exclude<ArchId, "house">]({ ...ctx, sink: scratchSink(), terrace: () => undefined, wall: undefined, report: undefined });
+      BUILD[chosen as Exclude<ArchId, "house">]({ ...ctx, sink: scratchSink(), terrace: () => undefined, wall: undefined, pad: undefined, report: undefined });
       built = variantAt(x, z);
       VARIANTS[built]({ ...ctx, rng: new CityRng(Math.floor(hash01(x * 1.31 - 7.7, z * 0.83 + 2.9) * 2 ** 31)), report: undefined });
     } else BUILD[chosen as Exclude<ArchId, "house">](ctx);
