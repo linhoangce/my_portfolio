@@ -88,7 +88,8 @@ const corners = (d: number, ay: number, dz = d): [number, number, number, number
 ];
 export const ART_LIGHTS: Record<string, ArtLight> = {
   // the culture sites (Culture.tsx)
-  monument: { spots: corners(2.5, 7.4), cone: 0.8, gain: 0.85, pool: 7.5, ly: 0.45 },
+  // dark bronze takes more light to read after dark than the painted cedar
+  monument: { spots: corners(2.5, 7.4), cone: 0.8, gain: 1.6, pool: 7.5, ly: 0.45 },
   welcome: {
     spots: [
       [1.0, 2.0, 0, 5.4, 0],
