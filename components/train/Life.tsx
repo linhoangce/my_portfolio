@@ -313,21 +313,18 @@ export function Life() {
     const docks = new Mesh(merged(moorings.docks), boatMat);
     docks.receiveShadow = true;
 
-    // a floatplane circling the harbour, clear of the vertiports and under the taxis (airways.ts): fuselage and floats,
-    // wing and tail, three meshes
+    // a floatplane circling the harbour, clear of the vertiports and under the taxis (airways.ts): fuselage, wing and
+    // tail, and floats, painted into one mesh
     const plane = new Group();
     plane.add(
-      new Mesh(merged([{ geo: new CylinderGeometry(0.5, 0.35, 7, 10), rotation: [0, 0, Math.PI / 2] }]), new MeshStandardMaterial({ color: 0xf4f4f4, roughness: 0.5 })),
       new Mesh(
         merged([
-          { geo: new BoxGeometry(1.6, 0.12, 10), position: [0.2, 0.7, 0] },
-          { geo: new BoxGeometry(1.2, 1.2, 0.1), position: [-3.2, 0.7, 0] },
+          { geo: paint(new CylinderGeometry(0.5, 0.35, 7, 10), 0xf4f4f4), rotation: [0, 0, Math.PI / 2] },
+          { geo: paint(new BoxGeometry(1.6, 0.12, 10), 0xe8b23a), position: [0.2, 0.7, 0] },
+          { geo: paint(new BoxGeometry(1.2, 1.2, 0.1), 0xe8b23a), position: [-3.2, 0.7, 0] },
+          ...[-1.1, 1.1].map((z) => ({ geo: paint(new CylinderGeometry(0.25, 0.25, 5, 8), 0x9aa3ad), position: [0, -1.1, z] as [number, number, number], rotation: [0, 0, Math.PI / 2] as [number, number, number] })),
         ]),
-        new MeshStandardMaterial({ color: 0xe8b23a, roughness: 0.6 }),
-      ),
-      new Mesh(
-        merged([-1.1, 1.1].map((z) => ({ geo: new CylinderGeometry(0.25, 0.25, 5, 8), position: [0, -1.1, z] as [number, number, number], rotation: [0, 0, Math.PI / 2] as [number, number, number] }))),
-        new MeshStandardMaterial({ color: 0x9aa3ad }),
+        new MeshStandardMaterial({ vertexColors: true, roughness: 0.55 }),
       ),
     );
     boatMeshes.forEach((m, kind) => (m.count = perKind[kind]));
