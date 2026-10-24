@@ -5,7 +5,7 @@ import { stations } from "@/data";
 import { ASSIST_RADIUS, DRAG, LANE } from "./constants";
 import { hasSidebar } from "./scene/copy";
 import { type EventId, LOOK_CYCLE, type Season, SEASONS, type Weather, WEATHERS, cycleNext } from "./lookTypes";
-import type { LandmarkKey } from "./sites";
+import type { MonumentKey } from "./monumentData";
 
 /** idle → cut (dip to black) → establish (the authored shot) → hold (orbit the set) → exit (blend back to the chase). */
 export type ScenePhase = "idle" | "cut" | "establish" | "hold" | "exit";
@@ -80,8 +80,8 @@ export type TrainState = {
   sceneStage: number;
   /** false with ?film=0: arrivals open the overlay without the film. */
   filmOn: boolean;
-  monument: LandmarkKey | null;
-  hoverMon: LandmarkKey | null;
+  monument: MonumentKey | null;
+  hoverMon: MonumentKey | null;
   ui: UiPanel;
   nextIdx: number | null;
   kmh: number;
@@ -123,9 +123,9 @@ export type TrainState = {
   hideOverlay: () => void;
   toggleOverlay: () => void;
   setFilmOn: (on: boolean) => void;
-  openMonument: (key: LandmarkKey) => void;
+  openMonument: (key: MonumentKey) => void;
   closeMonument: () => void;
-  setHoverMon: (key: LandmarkKey | null) => void;
+  setHoverMon: (key: MonumentKey | null) => void;
   setUi: (ui: UiPanel) => void;
   setEvent: (event: EventId | null) => void;
   dismissIntro: () => void;

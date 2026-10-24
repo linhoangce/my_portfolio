@@ -12,6 +12,8 @@
 import { BufferGeometry, CanvasTexture, Float32BufferAttribute, MeshStandardMaterial, SRGBColorSpace } from "three";
 import { BLACK, eye, ovoid, RED, salmon, trigon, uform } from "./formline";
 import { MURALS, paintMural } from "./muralArt";
+import { shopGlow } from "./pavilion";
+import type { World } from "./world";
 
 /** What each cell holds. */
 export const ART = {
@@ -40,8 +42,19 @@ export const ART = {
   /** A second welcome figure's face and chest: a woman, cheeks painted, a cedar-bark headband, a necklace. */
   welcome2: 19,
 } as const;
-/** The plaques' quarters of the plaque cell: Hogan's Alley, Powell Street, the big house, the spindle whorl. */
-export const PLAQUE = { hogan: 0, powell: 1, bighouse: 2, whorl: 3 } as const;
+/**
+ * The plaques' places in the plaque cell, a grid two across and three down (each half the cell wide, a third high):
+ * Hogan's Alley, Powell Street, the big house, the spindle whorl, the reconciliation monument.
+ */
+export const PLAQUE = { hogan: 0, powell: 1, bighouse: 2, whorl: 3, monument: 4 } as const;
+/** A plaque's sub-rectangle of the plaque cell (x0, y0, x1, y1 from its top-left, 0–1), as intoCell takes it. */
+export function plaqueRect(q: number): [number, number, number, number] {
+  const x = (q % 2) * 0.5;
+  const y = Math.floor(q / 2) / 3;
+  return [x, y, x + 0.5, y + 1 / 3];
+}
+/** A plaque's width over its height: the grid's places are half again as wide as they are high. */
+export const PLAQUE_ASPECT = 1.5;
 
 /** The atlas's cells: COLS across, ROWS down, square; under them the murals, MURAL_COLS across at half the size. */
 const COLS = 4;
@@ -126,11 +139,14 @@ export function artAtlas(lowEnd: boolean): CanvasTexture {
   return t;
 }
 
-/** The material every culture piece shares: the atlas, tinted by vertex colours (white where the art shows). */
-export function artMaterial(lowEnd: boolean): MeshStandardMaterial {
+/**
+ * The material every culture piece shares: the atlas, tinted by vertex colours (white where the art shows). After dark
+ * the pieces glow where their fixtures light them (uplight.ts), in the art's own colours.
+ */
+export function artMaterial(lowEnd: boolean, world: World): MeshStandardMaterial {
   const map = artAtlas(lowEnd);
   if (material && material.map === map) return material;
-  material = new MeshStandardMaterial({ map, vertexColors: true, roughness: 0.82 });
+  material = shopGlow(new MeshStandardMaterial({ map, vertexColors: true, roughness: 0.82 }), world, { albedo: true });
   return material;
 }
 
@@ -712,7 +728,7 @@ function rangoliMural(g: CanvasRenderingContext2D): void {
   }
 }
 
-/** The plaques' quarters. */
+/** The plaques, each in its place of the grid (plaqueRect). */
 function plaques(g: CanvasRenderingContext2D, serif: string, sans: string): void {
   const texts: [string, string][] = [
     [
@@ -723,18 +739,38 @@ function plaques(g: CanvasRenderingContext2D, serif: string, sans: string): void
     ["The Big House", "A gathering house in the tradition of the xʷməθkʷəy̓əm, Sḵwx̱wú7mesh and səlilwətaɬ Nations. Its carving and painting are inspired by Coast Salish art."],
     ["Spindle Whorl", "Coast Salish weavers spun wool on whorls like this one. Its salmon circling the centre are inspired by that tradition."],
   ];
-  texts.forEach(([title, body], k) => {
-    const x = (k % 2) * 0.5;
-    const y = Math.floor(k / 2) * 0.5;
-    bronze(g, x, y, 0.5, 0.5);
+  texts.forEach(([title, body], q) => {
+    const [x, y] = plaqueRect(q);
+    bronze(g, x, y, 0.5, 1 / 3);
     inPx(g, (k) => {
       g.fillStyle = "#e9d8b4";
       g.textAlign = "center";
-      g.font = `600 ${0.04 * k}px ${serif}`;
-      g.fillText(title, (x + 0.25) * k, (y + 0.09) * k);
-      g.font = `400 ${0.024 * k}px ${sans}`;
-      wrap(g, body, (x + 0.25) * k, (y + 0.15) * k, 0.4 * k, 0.034 * k);
+      g.font = `600 ${0.034 * k}px ${serif}`;
+      g.fillText(title, (x + 0.25) * k, (y + 0.065) * k, 0.44 * k);
+      g.font = `400 ${0.021 * k}px ${sans}`;
+      wrap(g, body, (x + 0.25) * k, (y + 0.11) * k, 0.43 * k, 0.029 * k);
     });
+  });
+  // the reconciliation monument's: its title, the dedication naming the three Nations, the orange shirt's words
+  const [x, y] = plaqueRect(PLAQUE.monument);
+  bronze(g, x, y, 0.5, 1 / 3);
+  inPx(g, (k) => {
+    g.textAlign = "center";
+    g.fillStyle = "#e9d8b4";
+    g.font = `600 ${0.03 * k}px ${serif}`;
+    g.fillText("TRUTH AND RECONCILIATION", (x + 0.25) * k, (y + 0.06) * k, 0.44 * k);
+    g.font = `400 ${0.0195 * k}px ${sans}`;
+    wrap(
+      g,
+      "Raised on the unceded territories of the xʷməθkʷəy̓əm (Musqueam), Sḵwx̱wú7mesh (Squamish) and səlilwətaɬ (Tsleil-Waututh) Nations, in honour of First Nations, Inuit and Métis peoples, and of every child who did not come home.",
+      (x + 0.25) * k,
+      (y + 0.1) * k,
+      0.43 * k,
+      0.027 * k,
+    );
+    g.fillStyle = "#f08a3c";
+    g.font = `700 ${0.026 * k}px ${sans}`;
+    g.fillText("EVERY CHILD MATTERS", (x + 0.25) * k, (y + 0.305) * k, 0.44 * k);
   });
 }
 

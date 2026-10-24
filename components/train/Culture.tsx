@@ -1,21 +1,24 @@
 "use client";
 
+import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo } from "react";
-import { BoxGeometry, type BufferGeometry, CylinderGeometry, Mesh, PlaneGeometry } from "three";
+import { AdditiveBlending, BoxGeometry, type BufferGeometry, CylinderGeometry, Group, Mesh, MeshBasicMaterial, PlaneGeometry } from "three";
 
 import { getCityData } from "./cityData";
 import { FEATURES, type Feature } from "./commonsLayout";
 import { SEA } from "./constants";
-import { artMaterial, MURAL0 } from "./cultureArt";
+import { artMaterial, MURAL0, PLAQUE_ASPECT, plaqueRect } from "./cultureArt";
 import { PIER_COUNT, PIER_R, pierAt } from "./Guideway";
 import { muralsOf } from "./muralArt";
 import { makeFrame } from "./track";
 import { SCULPTURES, towerFace, TOWERS } from "./buildings/senakw";
-import { A, banner, bigHouse, canoeHull, carvedPost, fireCircle, flagPole, longhouse, moonGate, muralWall, P, plaque, spindleWhorl, taikoStage, towerForm, welcomeFigure } from "./cultureKit";
+import { A, banner, bigHouse, canoeHull, carvedPost, fireCircle, flagPole, moonGate, muralWall, P, plaque, reconciliationMonument, spindleWhorl, taikoStage, towerForm, welcomeFigure } from "./cultureKit";
+import { drapeDisc } from "./drape";
 import { junction, roads, WALK } from "./roadNetwork";
-import { inLandmark, inPark } from "./sites";
+import { inLandmark, inPark, LANDMARKS } from "./sites";
 import { merge } from "./shapes";
 import { groundAt, inWater, sdfAt, surfaceAt } from "./terrain";
+import { ART_LIGHTS, placeLight, type Pool, poolOf, uplight } from "./uplight";
 import { skipInMirror } from "./waterMirror";
 import { useWorld } from "./world";
 
@@ -154,12 +157,12 @@ const SLEEVES = { x: 94, z: 159, r: 110, n: 5 };
 const ON_PAVING = new Set(["waterfront", "harbour", "commercial"]);
 
 /** A culture piece's parts, about its own origin. */
-function partsOf(f: Feature): BufferGeometry[] {
+function partsOf(f: Feature, lowEnd: boolean): BufferGeometry[] {
   switch (f.kind) {
     case "welcome":
       return welcomeFigure(f.quarter ?? 0);
     case "plaque":
-      return plaque(f.cell ?? 0, f.quarter === undefined ? undefined : [(f.quarter % 2) * 0.5, Math.floor(f.quarter / 2) * 0.5, (f.quarter % 2) * 0.5 + 0.5, Math.floor(f.quarter / 2) * 0.5 + 0.5], f.w ?? 1.4, f.w ?? 1.4);
+      return f.quarter === undefined ? plaque(f.cell ?? 0, undefined, f.w ?? 1.4, f.w ?? 1.4) : plaque(f.cell ?? 0, plaqueRect(f.quarter), f.w ?? 1.4, (f.w ?? 1.4) / PLAQUE_ASPECT);
     case "flag":
       return flagPole(f.cell ?? 0);
     case "whorl":
@@ -174,8 +177,8 @@ function partsOf(f: Feature): BufferGeometry[] {
       return banner(f.cell ?? 0);
     case "mural":
       return muralWall(f.cell ?? 0, f.w);
-    case "longhouse":
-      return longhouse(f.w, f.d);
+    case "monument":
+      return reconciliationMonument(lowEnd);
     case "post":
       return carvedPost();
     case "fire":
@@ -185,17 +188,37 @@ function partsOf(f: Feature): BufferGeometry[] {
   }
 }
 
+/** The pools of light round the lit pieces, merged per 240-unit tile so each tile culls by its own bounds. */
+const POOL_TILE = 240;
+/** The pools' warm light, at full strength at their centres. */
+const POOL_RGB: [number, number, number] = [0.5, 0.33, 0.16];
+
 /**
  * The city's culture in public (commonsLayout.ts lists the sites, cultureKit.ts builds their pieces, cultureArt.ts
  * paints their art), with every mural on the city's side walls (city.ts picks the walls) and the Pride crosswalks: a
  * few thousand triangles in all, so one mesh on the art atlas's one material, one draw wherever the camera is.
+ *
+ * After dark the public art is lit from fixtures on the ground (uplight.ts), and each lit piece, here, in the Commons
+ * and on the harbourfront, stands in a warm pool of light: the pools are drawn additively, a tile at a time, and only
+ * at night.
  */
 export function Culture() {
   const world = useWorld();
   const { lowEnd } = world;
-  const mesh = useMemo(() => {
+  const built = useMemo(() => {
     const stride = lowEnd ? 2 : 1;
     const parts: BufferGeometry[] = [];
+    const pools: Pool[] = [];
+    // a lit piece: its fixtures on the ground (or on its own step), their light baked into its parts, its pool
+    const light = (kind: string, piece: BufferGeometry[], x: number, y: number, z: number, ry: number, lift: number) => {
+      const spec = ART_LIGHTS[kind];
+      if (!spec) return;
+      const { spots, parts: fixtures } = placeLight(spec, x, y, z, ry, (px, pz) => surfaceAt(px, pz, stride) + lift, P);
+      uplight(piece, spots, spec.gain);
+      parts.push(...fixtures);
+      const pool = poolOf(spec, x, z, ry);
+      if (pool) pools.push(pool);
+    };
     for (const f of FEATURES) {
       if (!f.site) continue;
       if (f.kind === "landing") {
@@ -203,14 +226,33 @@ export function Culture() {
         continue;
       }
       // on a slope (the forecourt's), a piece stands on the highest ground under it: its platform reaches down
-      const y = f.site === "forecourt" ? highest(f.x, f.z, (f.w ?? 2) / 2 + 0.6, (f.d ?? 2) / 2 + 0.6, lowEnd) + 0.05 : surfaceAt(f.x, f.z, stride) + (ON_PAVING.has(f.site) ? 0.12 : 0.02);
-      for (const g of partsOf(f)) parts.push(g.rotateY(f.ry ?? 0).translate(f.x, y, f.z));
+      const forecourt = f.site === "forecourt";
+      const lift = forecourt ? 0.13 : ON_PAVING.has(f.site) ? 0.12 : 0.02;
+      const y = forecourt ? highest(f.x, f.z, (f.w ?? 2) / 2 + 0.6, (f.d ?? 2) / 2 + 0.6, lowEnd) + 0.05 : surfaceAt(f.x, f.z, stride) + lift;
+      const piece = partsOf(f, lowEnd).map((g) => g.rotateY(f.ry ?? 0).translate(f.x, y, f.z));
+      light(f.kind, piece, f.x, y, f.z, f.ry ?? 0, lift);
+      parts.push(...piece);
     }
-    // the sculpted forms on the towers after senákw, standing out from their faces
+    // the sculpted forms on the towers after senákw, standing out from their faces, each lit from two fixtures held
+    // out from the face below it
     for (const sc of SCULPTURES) {
       const f = towerFace(TOWERS[sc.tower], sc.face, sc.at, lowEnd);
       const out = 0.12;
-      parts.push(towerForm(sc.white, sc.flip).rotateY(Math.atan2(f.nx, f.nz)).translate(f.x + f.nx * out, f.y, f.z + f.nz * out));
+      const ry = Math.atan2(f.nx, f.nz);
+      const form = [towerForm(sc.white, sc.flip).rotateY(ry).translate(f.x + f.nx * out, f.y, f.z + f.nz * out)];
+      light("form", form, f.x, f.y, f.z, ry, 0);
+      parts.push(...form);
+    }
+    // the Commons' sculptures and the harbourfront's (lit where they are drawn) stand in their pools too
+    for (const f of FEATURES) {
+      const spec = !f.site ? ART_LIGHTS[f.kind] : undefined;
+      const pool = spec && poolOf(spec, f.x, f.z, f.ry ?? 0);
+      if (pool) pools.push(pool);
+    }
+    for (const l of LANDMARKS) {
+      const spec = l.key === "orca" || l.key === "cauldron" ? ART_LIGHTS[l.key] : undefined;
+      const pool = spec && poolOf(spec, l.px, l.pz, l.yaw ?? 0);
+      if (pool) pools.push(pool);
     }
     // the Expo Line's columns round Main Street–Science World station painted in weavings, after the Musqueam weavers
     // who paint the city's columns: each its own blanket (the last of the weavings, the city's walls take the first)
@@ -235,16 +277,53 @@ export function Culture() {
     // the murals, square, each facing out from its wall, and the Pride crosswalks
     for (const m of getCityData(lowEnd).murals) parts.push(A(new PlaneGeometry(m.w ?? m.s, m.s), m.cell).rotateY(m.ry).translate(m.x, m.y, m.z));
     parts.push(...prideCrossings(stride));
-    const m = new Mesh(merge(parts), artMaterial(lowEnd));
+    const m = new Mesh(merge(parts), artMaterial(lowEnd, world));
     m.name = "culture";
     m.receiveShadow = true;
     m.castShadow = !lowEnd;
-    return m;
-  }, [lowEnd]);
+    // the pools: a disc draped on the drawn ground under each lit piece, its light fading to its rim, a mesh per tile
+    const poolMat = new MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, fog: false, toneMapped: false });
+    const tiles = new Map<string, BufferGeometry[]>();
+    for (const p of pools) {
+      const key = `${Math.floor(p.x / POOL_TILE)},${Math.floor(p.z / POOL_TILE)}`;
+      const disc = drapeDisc(p.x, p.z, p.r, 0.18, stride, POOL_RGB, lowEnd ? 3 : 4, lowEnd ? 14 : 20);
+      tiles.set(key, [...(tiles.get(key) ?? []), disc]);
+    }
+    const group = new Group();
+    group.name = "artPools";
+    for (const geos of tiles.values()) {
+      const tile = new Mesh(merge(geos), poolMat);
+      tile.renderOrder = 2;
+      group.add(tile);
+    }
+    group.visible = false;
+    return { mesh: m, pools: group, poolMat };
+  }, [lowEnd, world]);
+
+  // after dark only, as bright as the shops' lights
+  useFrame(() => {
+    const v = world.shopGlow.value;
+    built.pools.visible = v > 0.03;
+    built.poolMat.opacity = Math.min(1, v);
+  });
 
   // low or flat on walls: none of it shows in the water at the distance it would
-  useEffect(() => skipInMirror(mesh), [mesh]);
-  useEffect(() => () => mesh.geometry.dispose(), [mesh]);
+  useEffect(() => skipInMirror(built.mesh, built.pools), [built]);
+  useEffect(
+    () => () => {
+      built.mesh.geometry.dispose();
+      built.pools.traverse((o) => {
+        if (o instanceof Mesh) o.geometry.dispose();
+      });
+      built.poolMat.dispose();
+    },
+    [built],
+  );
 
-  return <primitive object={mesh} />;
+  return (
+    <>
+      <primitive object={built.mesh} />
+      <primitive object={built.pools} />
+    </>
+  );
 }
