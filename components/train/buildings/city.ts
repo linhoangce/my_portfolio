@@ -30,15 +30,17 @@ import { inYard } from "../railYard";
 import { inSenakw, PAVILION, podiumLevels, PODIUMS, towerBase, towerPoly, TOWERS } from "./senakw";
 import { ARCH_BY_ERA, ARCH_DENSE, ARCH_LOWRISE, type ArchId, hood, type Hood, HOUSE_MIX, TOWERISH, ZONES } from "./eras";
 import { HEROES } from "./heroes";
+import { VARIANTS, variantAt, type VariantId } from "./variants";
 import { type HouseInst, type HouseKind } from "./houses";
 import { GeoBuilder, type V3 } from "./meshBuilder";
 import type { Sink } from "./parts";
 
 /**
  * A built lot: its centre and its extent on the axes (w, d: the box the city's quick tests use), height and top; the
- * footprint itself is fw × fd turned by ry to face its street. `arch` names what stands on it, for the debug probes.
+ * footprint itself is fw × fd turned by ry to face its street. `arch` names what stands on it, `round` the round banded
+ * form it is (if it is one) and `look` its skin, glass and plan, for the debug probes.
  */
-export type Lot = { x: number; z: number; w: number; d: number; h: number; top: number; arch?: ArchId; ry?: number; fw?: number; fd?: number };
+export type Lot = { x: number; z: number; w: number; d: number; h: number; top: number; arch?: ArchId | VariantId; ry?: number; fw?: number; fd?: number; round?: string; look?: string };
 /** A mural on a building's blank side wall: its centre, the turn that faces its plane out, its size, the atlas cell. */
 export type Mural = { x: number; y: number; z: number; ry: number; s: number; cell: number; w?: number };
 
@@ -278,6 +280,15 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
   const DENSE = new Set<Hood>(["downtown", "westend", "yaletown", "mainst"]);
   /** Downtown's highest ground for towers, round Burrard and Georgia. */
   const CORE = { x: -55, z: 25 };
+  /**
+   * The round towers in floor bands (and their kin), kept apart: none within ROUND_GAP of another. Where one would stand
+   * too near, its numbers are drawn as before (into the scratch sink) and one of the other towers (variants.ts) stands
+   * there instead; a point or downtown tower near one takes a square plan (`avoidRound`). The Cascadia Twins count.
+   */
+  const ROUND_ARCH = new Set<ArchId>(["curvedBands", "butterfly", "twins", "darkEllipse", "wave", "helix"]);
+  const ROUND_GAP = 160;
+  const rounds: { x: number; z: number; form: string }[] = HEROES.filter((h) => h.name === "Cascadia Twins").map((h) => ({ x: h.x, z: h.z, form: "twins" }));
+  const roundNear = (x: number, z: number) => rounds.some((r) => (r.x - x) ** 2 + (r.z - z) ** 2 < ROUND_GAP * ROUND_GAP);
   /** Archetypes that keep under a low height limit by themselves. */
   const LOW_OK = new Set<ArchId>(["midrise", "colourPanels", "heritageBrick", "warehouse", "chinatownBlock", "salishHall"]);
   let buildMs = 0;
@@ -397,7 +408,14 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
     const builders = [sink.solid, sink.glass, sink.crownA, sink.crownB, sink.dome, sink.neon];
     const starts = builders.map((b) => b.vertices);
     const t0 = terrace.length;
-    const ctx: Ctx = { rng, sink, x, z, w, d, yb, yt, H, hood: name, terrace: addTerrace, wall: (lx, lz, len, y0, y1, subject, front) => muralAt(x, z, ry, name, dist, lx, lz, len, y0, y1, subject, front) };
+    // what the tower turns out to be (archetypes report it): its look, and its form if it is a round banded one
+    let round: string | undefined;
+    let look: string | undefined;
+    const report = (l: string, r?: string) => {
+      look = l;
+      round = r;
+    };
+    const ctx: Ctx = { rng, sink, x, z, w, d, yb, yt, H, hood: name, terrace: addTerrace, wall: (lx, lz, len, y0, y1, subject, front) => muralAt(x, z, ry, name, dist, lx, lz, len, y0, y1, subject, front), avoidRound: roundNear(x, z), report };
     const tb = now();
     // some of today's and 2100's low and mid-rise blocks are halls after Coast Salish plank houses, chosen by place;
     // the block a hall stands for still draws its numbers (into a scratch sink), so the rest of the city is as it was
@@ -406,12 +424,19 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
       return;
     }
     const hall = era > 0 && SALISH_FROM.has(chosen) && hash01(x * 0.73 + 5.1, z * 1.91 - 2.3) < (HALL_RATE[name] ?? 0);
+    let built: ArchId | VariantId = chosen;
     if (hall) {
       BUILD[chosen as Exclude<ArchId, "house">]({ ...ctx, sink: scratchSink(), terrace: () => undefined, wall: undefined });
       H = Math.min(H, 6 * 1.9 + 3.7);
       BUILD.salishHall({ ...ctx, H, rng: new CityRng(Math.floor(hash01(z, x) * 2 ** 31)) });
-      chosen = "salishHall";
+      built = "salishHall";
+    } else if (ROUND_ARCH.has(chosen) && ctx.avoidRound) {
+      // too near another round banded tower: its numbers drawn as it would have been, another tower built instead
+      BUILD[chosen as Exclude<ArchId, "house">]({ ...ctx, sink: scratchSink(), terrace: () => undefined, wall: undefined, report: undefined });
+      built = variantAt(x, z);
+      VARIANTS[built]({ ...ctx, rng: new CityRng(Math.floor(hash01(x * 1.31 - 7.7, z * 0.83 + 2.9) * 2 ** 31)), report: undefined });
     } else BUILD[chosen as Exclude<ArchId, "house">](ctx);
+    if (round) rounds.push({ x, z, form: round });
     builders.forEach((b, i) => b.rotateFrom(starts[i], x, z, ry));
     const c = Math.cos(ry);
     const s = Math.sin(ry);
@@ -423,9 +448,9 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
       tr.z = z - dx * s + dz * c;
     }
     const dtb = now() - tb;
-    archMs[chosen] = (archMs[chosen] ?? 0) + dtb;
+    archMs[built] = (archMs[built] ?? 0) + dtb;
     buildMs += dtb;
-    lots.push({ x, z, w: aw, d: ad, h: H + (yt - yb), top: yt + H + 3, arch: chosen, ry, fw: w, fd: d });
+    lots.push({ x, z, w: aw, d: ad, h: H + (yt - yb), top: yt + H + 3, arch: built, ry, fw: w, fd: d, round, look });
   };
 
   // the points a lot is tested at: corners, mid-sides and centre of its turned footprint
