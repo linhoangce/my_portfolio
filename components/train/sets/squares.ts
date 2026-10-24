@@ -5,11 +5,13 @@
  * The set builder makes them, the tree layer plants their trees, the crowd fills them and keeps off their pavilions.
  *
  * Commercial–Broadway: the block between Broadway, Commercial Drive and Clark Drive is one square.
- * - The Ocean Science Centre is raised on columns at platform height in its northern half, square to Broadway, with
- *   cafés and restaurants in glass pavilions under it.
+ * - Coast Watch, the control room of the coast's cameras, is raised on columns at platform height in its northern half,
+ *   square to Broadway, with cafés and restaurants in glass pavilions under it.
  * - East 12th Avenue runs through the square as a market street of stalls under festoon lights; Woodland Drive is a
  *   lane across it.
  * - The southern half holds restaurants on their decks, food trucks, a splash fountain and trees.
+ * - Across the way, on Clark Park's lawn, the Clark Park Vertiport: the interchange's air-taxi station for the routes
+ *   east to Coquitlam and Surrey (airways.ts flies them).
  *
  * Waterfront: the Harbour Market. It fills the ground the line loops round, from the harbour's edge past the cedar's
  * canopy to Granville:
@@ -20,7 +22,8 @@
  *
  * Pure layout, no three.js.
  */
-import { fromStation, SET_SHIFT } from "./zones";
+import { groundAt } from "../terrain";
+import { fromStation, SET_SHIFT, toStation } from "./zones";
 import type { SpeciesId } from "../trees/species";
 
 /** A pavilion: its glass box's centre, width across its front, depth, and which way its front faces (da, dl). */
@@ -43,8 +46,49 @@ export type Square = {
   crowds: { box: [number, number, number, number]; n: number }[];
 };
 
-/** The Ocean Science Centre's hall over the square (Commercial–Broadway's frame). */
-export const OCEAN_HALL = { a0: -17, a1: 0, l0: 29.5, l1: 57.5 };
+/** Coast Watch over the square (Commercial–Broadway's frame). */
+export const WATCH = { a0: -17, a1: 0, l0: 29.5, l1: 57.5 };
+
+/**
+ * The Clark Park Vertiport (Commercial–Broadway's frame), on the park's lawn between the square, Commercial Drive,
+ * Knight Street and East 15th Avenue: a deck a storey over a glass hall, as two boxes (a0, a1, l0, l1) reaching a
+ * little over the sidewalk of 15th; its four taxi pads two by two, 8 apart (the Coquitlam service's pair nearer the
+ * square, Surrey's beyond); the lounge on the deck at its west end. The deck stands `DECK_UP` over the highest lawn
+ * under it.
+ */
+export const VERTIPORT = {
+  deck: [
+    [29.8, 43.8, 28.6, 44.2],
+    [29.8, 40.2, 44.2, 54.4],
+  ] as [number, number, number, number][],
+  pads: [
+    [33, 33],
+    [33, 41],
+    [41, 33],
+    [41, 41],
+  ] as [number, number][],
+  lounge: { a0: 30.6, a1: 39.4, l0: 46.4, l1: 53.6, h: 2.8 },
+};
+const DECK_UP = 4.6;
+const portXZ = (a: number, l: number): [number, number] => fromStation(5, a + SET_SHIFT[5], l);
+/** The vertiport deck's top (world). */
+export const VERTIPORT_TOP = (() => {
+  let g = -Infinity;
+  for (const [a0, a1, l0, l1] of VERTIPORT.deck) for (let a = a0; a <= a1 + 0.01; a += (a1 - a0) / 6) for (let l = l0; l <= l1 + 0.01; l += (l1 - l0) / 6) g = Math.max(g, groundAt(...portXZ(a, l)));
+  return g + DECK_UP;
+})();
+/** The vertiport's taxi pads in the world, their tops (vertiports.ts PAD_R across). */
+export const vertiportPads = (): { x: number; y: number; z: number }[] =>
+  VERTIPORT.pads.map(([a, l]) => {
+    const [x, z] = portXZ(a, l);
+    return { x, y: VERTIPORT_TOP + 0.14, z };
+  });
+/** Under the vertiport's deck, grown by `pad` (a world point): the trees keep out. */
+export function inVertiport(x: number, z: number, pad = 0): boolean {
+  const [sa, l] = toStation(5, x, z);
+  const a = sa - SET_SHIFT[5];
+  return VERTIPORT.deck.some(([a0, a1, l0, l1]) => a > a0 - pad && a < a1 + pad && l > l0 - pad && l < l1 + pad);
+}
 
 /**
  * East 12th Avenue across the square, as the street data has it, from Commercial Drive to Clark Drive (the set's
@@ -171,7 +215,7 @@ export const SQUARES: Square[] = [
   {
     i: 5,
     pavilions: CB_PAVILIONS,
-    stalls: marketStalls((a, l) => l < 26.5 || l > 60 || CB_PAVILIONS.some((p) => inDeck(p, a, l, 1.4)) || (a < OCEAN_HALL.a1 + 0.6 && l > OCEAN_HALL.l0 - 1)),
+    stalls: marketStalls((a, l) => l < 26.5 || l > 60 || CB_PAVILIONS.some((p) => inDeck(p, a, l, 1.4)) || (a < WATCH.a1 + 0.6 && l > WATCH.l0 - 1)),
     trucks: [
       { a: -13, l: 60.4, face: [0, -1], hex: 0xf2b632 },
       { a: -6, l: 60.4, face: [0, -1], hex: 0x2a9d8f },
@@ -180,7 +224,6 @@ export const SQUARES: Square[] = [
     trees: [
       ...[14, 20, 26].map((a) => ({ a, l: 43.2, sp: "smaple" as SpeciesId, s: 0.7 })),
       { a: 25.5, l: 27.9, sp: "cherry", s: 0.62 },
-      ...[30, 37, 44, 52].map((l) => ({ a: 29.5, l, sp: (l % 2 ? "hornbeam" : "magnolia") as SpeciesId, s: 0.62 })),
       { a: -19.6, l: 31, sp: "cherry", s: 0.6 },
       { a: -19.8, l: 41, sp: "cherry", s: 0.6 },
       { a: -20.2, l: 57, sp: "cherry", s: 0.6 },

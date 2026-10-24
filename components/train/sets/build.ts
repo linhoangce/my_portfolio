@@ -14,7 +14,6 @@ import {
   ConeGeometry,
   CylinderGeometry,
   DoubleSide,
-  EdgesGeometry,
   Euler,
   ExtrudeGeometry,
   Float32BufferAttribute,
@@ -22,8 +21,6 @@ import {
   Group,
   IcosahedronGeometry,
   LatheGeometry,
-  LineBasicMaterial,
-  LineSegments,
   InstancedMesh,
   type Material,
   Matrix4,
@@ -60,14 +57,14 @@ import { useTrain } from "../store";
 import { groundAt, sdfAt, surfaceAt } from "../terrain";
 import { dotTexture } from "../textures";
 import { frameAt, makeFrame, PATH_SAMPLES, stationS, UP } from "../track";
-import { sailboat, seabus, yacht } from "../vessels";
+import { glassBox, nets, pad as taxiPad, windsock } from "../vertiports";
 import { barkTexture, type Conifer, coniferSkeleton, crownFromOf, DETAIL_FULL, DETAIL_LOW, frondTexture, limbGeometry, sprayCard, sprayMatrix, trunkGeometry } from "../trees/conifer";
 import type { World } from "../world";
 import { bench, bollard, festoon, foodTruck, lit, type Pieces, pavilion, planter, shopGlow, stall, umbrellaTable, warmLights } from "../pavilion";
 import { inLandmark } from "../sites";
 import { COURTS, type FrameBox, GYM, MATS, PERGOLA, RUN_PATH, YOGA_DECK } from "./wellness";
 import { type BannerArt, boardsAtlas, galleryAtlas, PLAQUE_RATIO, screenTextures } from "./galleryArt";
-import { along, inCbSquare, lineLength, MARKET_HALF, MARKET_STREET, OCEAN_HALL, type Square, SQUARES, WOODLAND_LANE } from "./squares";
+import { along, inCbSquare, lineLength, MARKET_HALF, MARKET_STREET, type Square, SQUARES, VERTIPORT, VERTIPORT_TOP, WATCH, WOODLAND_LANE } from "./squares";
 import { fromStation, MAIN_COLUMN, SET_RECT, SET_SHIFT, SET_SIDE, SET_TREES, STATION_FRAMES, toStation } from "./zones";
 
 type V3 = [number, number, number];
@@ -1358,24 +1355,227 @@ function planktoneer(c: Ctx): Partial<BuiltSet> {
   };
 }
 
-// ------------------------------------------------------------------ 05 Vessel Vision · Commercial–Broadway: the Ocean Science Centre
+// ------------------------------------------------------------------ 05 Vessel Vision · Commercial–Broadway: Coast Watch
+/** A boat in the coast camera's frame (1024 × 256): its waterline's middle, length, kind and the detector's score. */
+type FeedBoat = { x: number; y: number; len: number; kind: "ferry" | "freighter" | "sail" | "speed" | "skiff"; score: number };
 /**
- * The Ocean Science Centre: a public museum of the coast in a glass hall under a roof like a swell, an aquarium wall and
- * an orca's skeleton inside, and at its heart the live harbour, the project at work: an aerial view of a harbour (a
- * working shore of docks and container stacks, open water with ships and their wakes), the detector's tiles sweeping
- * across it and a frame closing round each ship as a tile finds it, under the drone that took the picture.
- *
- * The hall stands at platform height on timber columns in the station's square (sets/squares.ts), square to Broadway,
- * its bridge from the platform's south end over Commercial Drive, cafés and restaurants in glass pavilions under it.
- * The square round it is paved, East 12th Avenue through it a market street under festoon lights.
+ * The camera's frame: a ferry, a freighter, a sailboat and a speedboat, and skiffs a few pixels long far out that only
+ * the tiles find.
+ */
+const FEED_BOATS: FeedBoat[] = [
+  { x: 214, y: 176, len: 88, kind: "ferry", score: 0.94 },
+  { x: 318, y: 141, len: 14, kind: "skiff", score: 0.71 },
+  { x: 462, y: 196, len: 40, kind: "sail", score: 0.88 },
+  { x: 598, y: 138, len: 11, kind: "skiff", score: 0.64 },
+  { x: 716, y: 182, len: 36, kind: "speed", score: 0.91 },
+  { x: 872, y: 150, len: 112, kind: "freighter", score: 0.96 },
+  { x: 968, y: 222, len: 20, kind: "skiff", score: 0.82 },
+];
+/** How tall each kind stands over its waterline, as a share of its length. */
+const BOAT_H = { ferry: 0.42, freighter: 0.36, sail: 1.5, speed: 0.3, skiff: 0.45 } as const;
+/**
+ * The frame's bar along the top, and SAHI's tiles over the rest: six across and two down, each a fifth of the width and
+ * 0.55 of the height, overlapping.
+ */
+const FEED_BAR = 24;
+const TILE = { cols: 6, rows: 2, w: 1024 * 0.2, h: (256 - FEED_BAR) * 0.55, stepX: 1024 * 0.16, stepY: (256 - FEED_BAR) * 0.45 };
+const tileBox = (k: number): [number, number, number, number] => {
+  const x = (k % TILE.cols) * TILE.stepX;
+  const y = FEED_BAR + Math.floor(k / TILE.cols) * TILE.stepY;
+  return [x, y, x + TILE.w, y + TILE.h];
+};
+/** A boat's box in the frame (x0, y0, x1, y1), a little round it. */
+const boatBox = (b: FeedBoat): [number, number, number, number] => [b.x - b.len / 2 - 3, b.y - b.len * BOAT_H[b.kind] - 3, b.x + b.len / 2 + 3, b.y + 4];
+
+/**
+ * The coast camera's frame, 1024 × 256, as the detector sees it: the inlet from the shore, the North Shore's ridges
+ * over the far shore, the boats with their wakes, SAHI's tiles marked faintly over it, the camera's bar along the top.
+ * By day in colour; after dark the same frame in thermal, false-coloured: the water coldest, the shore's rocks warm from
+ * the day, every hull orange and every engine white hot.
+ */
+function coastFeed(thermal: boolean): CanvasTexture {
+  const fonts = fontOf();
+  const T = (day: string, heat: string) => (thermal ? heat : day);
+  return canvasTex(1024, 256, (g) => {
+    let grd = g.createLinearGradient(0, FEED_BAR, 0, 124);
+    grd.addColorStop(0, T("#8fbfe0", "#1b0b33"));
+    grd.addColorStop(1, T("#d8ebf4", "#33124f"));
+    g.fillStyle = grd;
+    g.fillRect(0, FEED_BAR, 1024, 110);
+    const ridge = (base: number, amp: number, seed: number, fill: string) => {
+      g.fillStyle = fill;
+      g.beginPath();
+      g.moveTo(0, 132);
+      for (let x = 0; x <= 1024; x += 16) g.lineTo(x, base - amp * (0.55 + 0.45 * Math.sin(x * 0.011 + seed) * Math.sin(x * 0.004 + seed * 2)));
+      g.lineTo(1024, 132);
+      g.closePath();
+      g.fill();
+    };
+    ridge(100, 52, 1.3, T("#8ea3b6", "#4a1866"));
+    ridge(118, 34, 4.1, T("#5f7a6c", "#6a1f6e"));
+    g.fillStyle = T("#2f4a3a", "#93306a");
+    g.fillRect(0, 120, 1024, 10);
+    grd = g.createLinearGradient(0, 128, 0, 256);
+    grd.addColorStop(0, T("#4f7f9c", "#1a0838"));
+    grd.addColorStop(1, T("#24506e", "#0c0424"));
+    g.fillStyle = grd;
+    g.fillRect(0, 128, 1024, 128);
+    // ripples, longer toward the camera
+    g.strokeStyle = T("rgba(255,255,255,0.14)", "rgba(150,90,220,0.25)");
+    g.lineWidth = 1;
+    for (let k = 0; k < 80; k++) {
+      const y = 132 + ((k * 37) % 124);
+      const x = (k * 151) % 1024;
+      g.beginPath();
+      g.moveTo(x, y);
+      g.lineTo(x + 8 + (y - 128) * 0.3, y);
+      g.stroke();
+    }
+    // the near shore's rocks, bottom left
+    g.fillStyle = T("#857d70", "#b8445a");
+    g.beginPath();
+    g.moveTo(0, 256);
+    g.lineTo(0, 204);
+    g.lineTo(44, 212);
+    g.lineTo(96, 228);
+    g.lineTo(150, 242);
+    g.lineTo(186, 256);
+    g.closePath();
+    g.fill();
+    // the boats, bows to the right: their wakes, then their hulls and what stands on them
+    const hot = "#fff8d6";
+    for (const b of FEED_BOATS) {
+      const L = b.len;
+      const x0 = b.x - L / 2;
+      const y = b.y;
+      if (b.kind !== "sail") {
+        const trail = b.kind === "speed" ? L * 1.6 : L * 0.7;
+        g.fillStyle = T("rgba(240,248,255,0.75)", "rgba(196,64,110,0.85)");
+        g.beginPath();
+        g.moveTo(x0 + 2, y - 1);
+        g.lineTo(x0 - trail, y - 1 - L * 0.04);
+        g.lineTo(x0 - trail, y + 2 + L * 0.06);
+        g.closePath();
+        g.fill();
+      }
+      const box = (fx: number, fy: number, fw: number, fh: number, day: string, heat: string) => {
+        g.fillStyle = T(day, heat);
+        g.fillRect(x0 + fx * L, y - fy * L, fw * L, fh * L);
+      };
+      if (b.kind === "ferry") {
+        box(0, 0.12, 1, 0.12, "#f4f4f2", "#f08a24");
+        box(0, 0.05, 1, 0.03, "#1d3a6b", "#e0662a");
+        box(0.12, 0.26, 0.74, 0.14, "#f7f7f5", "#ffb43c");
+        box(0.28, 0.38, 0.42, 0.12, "#f7f7f5", "#ffd04a");
+        box(0.2, 0.22, 0.6, 0.03, "#2a3440", "#ffe27a");
+        box(0.08, 0.1, 0.1, 0.06, "#f4f4f2", hot);
+      } else if (b.kind === "freighter") {
+        box(0, 0.1, 1, 0.1, "#7a1f1f", "#d9562e");
+        const cols = ["#c0392b", "#2d6cb0", "#e0b020", "#2e8b57", "#d35400", "#7f8c8d"];
+        for (let k = 0; k < 10; k++) for (let r = 0; r < 2; r++) box(0.06 + k * 0.068, 0.16 + r * 0.06, 0.062, 0.058, cols[(k * 3 + r) % cols.length], "#a83a6a");
+        box(0.8, 0.34, 0.12, 0.24, "#f2f2f0", "#ffb43c");
+        box(0.84, 0.4, 0.04, 0.06, "#2a2a2a", hot);
+      } else if (b.kind === "sail") {
+        box(0, 0.12, 1, 0.12, "#f4f4f2", "#f08a24");
+        g.fillStyle = T("#3a3a3a", "#8a2a72");
+        g.fillRect(b.x - 0.5, y - L * 1.46, 1.2, L * 1.34);
+        g.fillStyle = T("#fbfbf8", "#5b1a74");
+        g.beginPath();
+        g.moveTo(b.x - 1, y - L * 1.4);
+        g.lineTo(b.x - 1, y - L * 0.16);
+        g.lineTo(b.x - L * 0.46, y - L * 0.16);
+        g.closePath();
+        g.fill();
+        g.beginPath();
+        g.moveTo(b.x + 1.5, y - L * 1.3);
+        g.lineTo(b.x + L * 0.46, y - L * 0.16);
+        g.lineTo(b.x + 1.5, y - L * 0.16);
+        g.closePath();
+        g.fill();
+      } else if (b.kind === "speed") {
+        box(0, 0.14, 0.86, 0.14, "#f6f6f4", "#ffb43c");
+        g.beginPath();
+        g.moveTo(x0 + L * 0.86, y - L * 0.14);
+        g.lineTo(x0 + L, y - L * 0.1);
+        g.lineTo(x0 + L * 0.86, y);
+        g.closePath();
+        g.fill();
+        box(0.4, 0.26, 0.2, 0.12, "#22303c", "#ff8a2a");
+        box(0, 0.12, 0.08, 0.08, "#f6f6f4", hot);
+      } else {
+        box(0, 0.2, 1, 0.2, "#5a4a3a", "#ffa035");
+        box(0.55, 0.45, 0.2, 0.25, "#d9822b", hot);
+      }
+    }
+    // SAHI's tiles, faint and dashed
+    g.strokeStyle = "rgba(167,139,250,0.45)";
+    g.lineWidth = 1.5;
+    g.setLineDash([6, 5]);
+    for (let k = 0; k < TILE.cols * TILE.rows; k++) {
+      const [x0, y0, x1, y1] = tileBox(k);
+      g.strokeRect(x0 + 1, y0 + 1, x1 - x0 - 2, y1 - y0 - 2);
+    }
+    g.setLineDash([]);
+    // the camera's bar
+    g.fillStyle = "#0b0f14";
+    g.fillRect(0, 0, 1024, FEED_BAR);
+    g.fillStyle = "#ff3b30";
+    g.beginPath();
+    g.arc(14, FEED_BAR / 2, 5, 0, Math.PI * 2);
+    g.fill();
+    g.font = `500 14px ${fonts.mono}`;
+    g.textBaseline = "middle";
+    g.fillStyle = "#e8ecef";
+    g.textAlign = "left";
+    g.fillText(`CAM 07 · BURRARD INLET · ${thermal ? "THERMAL" : "DAY"} · LIVE`, 26, FEED_BAR / 2 + 1);
+    g.textAlign = "right";
+    g.fillStyle = "#c4b5fd";
+    g.fillText(`VESSEL VISION · YOLO + SAHI · ${FEED_BOATS.length} BOATS`, 1012, FEED_BAR / 2 + 1);
+  });
+}
+
+/** The detector's boxes over the frame, each labelled with its score, on a clear ground (shown as each tile finds it). */
+function detectionsTexture(): CanvasTexture {
+  const fonts = fontOf();
+  return canvasTex(1024, 256, (g) => {
+    g.font = `600 11px ${fonts.mono}`;
+    g.textBaseline = "alphabetic";
+    for (const b of FEED_BOATS) {
+      const [x0, y0, x1, y1] = boatBox(b);
+      g.strokeStyle = "#3ee86a";
+      g.lineWidth = 2.5;
+      g.strokeRect(x0, y0, x1 - x0, y1 - y0);
+      g.fillStyle = "#3ee86a";
+      g.fillRect(x0 - 1.25, y0 - 14, 64, 13);
+      g.fillStyle = "#05230e";
+      g.fillText(`boat ${b.score.toFixed(2)}`, x0 + 3, y0 - 4);
+    }
+  });
+}
+
+/**
+ * Coast Watch: the control room of the coast's cameras, inland at the interchange as a control room can be, where the
+ * shore cameras' feeds come in and the detector finds every boat in them; the project at work on its face.
+ * - Raised on timber columns at platform height in the station's square (sets/squares.ts), square to Broadway, its
+ *   bridge from the platform's south end over Commercial Drive, cafés and restaurants in glass pavilions under it.
+ * - Glass to Broadway and to the station, the watch floor's desks and screens seen through it; white to the west.
+ * - Its wall to the square a screen the width of the building: the camera's frame across the inlet, SAHI's tiles
+ *   stepping across it one by one and a green box closing round each boat as its tile finds it, the far skiffs only a
+ *   tile can find among them, scores over the boxes; by day in colour, after dark the thermal feed.
+ * - On its roof a mast of drum dishes, the feeds' links from the cameras along the coast.
+ * The square round it is paved, East 12th Avenue through it a market street under festoon lights. Across the way, on
+ * Clark Park's lawn, the Clark Park Vertiport (built here too): a deck a storey over a glass hall, four taxi pads, the
+ * lounge, the charging posts, nets round the deck, the departures board and the sign.
  */
 function vessel(c: Ctx): Partial<BuiltSet> {
   const { mats } = c.world;
   const sq = SQUARES.find((s) => s.i === 5) as Square;
   const vc = shopGlow(new MeshStandardMaterial({ vertexColors: true, roughness: 0.75 }), c.world);
   const kit = squareKit(c, sq, vc);
-  const H = OCEAN_HALL;
+  const H = WATCH;
   const zs = c.L(1, 0, 0)[2];
+  // a piece's front (its local +z) turned toward (da, dl)
+  const turn = (f: [number, number]) => Math.atan2(f[1], f[0] * zs);
   // the square's paving: granite, the market street in brick, Woodland Drive's lane in grey setts
   paveSquare(c, vc, -24, 30, 20, 66, (a, l, i, j) => {
     if (!inCbSquare(a, l)) return null;
@@ -1432,7 +1632,7 @@ function vessel(c: Ctx): Partial<BuiltSet> {
   const jq = new Quaternion();
   const js = new Vector3();
 
-  // the hall's floor at platform height, its timber soffit lit from below
+  // the floor at platform height, its timber soffit lit from below
   let gmax = -Infinity;
   for (let a = H.a0; a <= H.a1; a += 4) for (let l = H.l0; l <= H.l1; l += 4) gmax = Math.max(gmax, c.G(a, l));
   const top = Math.max(1.4, gmax + 4.5);
@@ -1454,259 +1654,330 @@ function vessel(c: Ctx): Partial<BuiltSet> {
   c.add(mats.plat, new BoxGeometry(run, 0.3, 5), c.L(bridgeA, (H.l0 + 11.4) / 2, top - 0.15));
   for (const s of [-1, 1]) c.add(mats.pane, new BoxGeometry(run, 1.1, 0.06), c.L(bridgeA + s * 2.45, (H.l0 + 11.4) / 2, top + 0.55));
   legs(c, mats.girder, [[bridgeA, 25.6]], top - 0.3, 0.5);
-  // glass round the hall on timber mullions, a door where the bridge lands (box sizes: lateral, up, along)
+  // the walls (box sizes: lateral, up, along): glass to Broadway and to the station on timber mullions, the door where
+  // the bridge lands; white to the west, with fins, and to the square, where the screen hangs
   const WH = 7.2;
+  const WHITE = 0xe9e6df;
   const DOOR = [bridgeA - 1.8, bridgeA + 1.8];
-  c.add(mats.pane, new BoxGeometry(0.08, WH, H.a1 - H.a0), c.L(am, H.l1, top + WH / 2));
+  c.add(mats.pane, new BoxGeometry(H.l1 - H.l0, WH, 0.08), c.L(H.a0, lm, top + WH / 2));
   c.add(mats.pane, new BoxGeometry(0.08, WH, DOOR[0] - H.a0), c.L((H.a0 + DOOR[0]) / 2, H.l0, top + WH / 2));
   c.add(mats.pane, new BoxGeometry(0.08, WH, H.a1 - DOOR[1]), c.L((DOOR[1] + H.a1) / 2, H.l0, top + WH / 2));
   c.add(mats.pane, new BoxGeometry(0.08, WH - 3, DOOR[1] - DOOR[0]), c.L(bridgeA, H.l0, top + 3 + (WH - 3) / 2));
-  for (const a of [H.a0, H.a1]) c.add(mats.pane, new BoxGeometry(H.l1 - H.l0, WH, 0.08), c.L(a, lm, top + WH / 2));
-  for (let l = H.l0; l <= H.l1 + 0.01; l += (H.l1 - H.l0) / 12) for (const a of [H.a0, H.a1]) c.add(mats.timber, new BoxGeometry(0.16, WH, 0.16), c.L(a, l, top + WH / 2));
-  for (let a = H.a0 + (H.a1 - H.a0) / 6; a < H.a1 - 0.01; a += (H.a1 - H.a0) / 6) for (const l of [H.l0, H.l1]) c.add(mats.timber, new BoxGeometry(0.16, WH, 0.16), c.L(a, l, top + WH / 2));
-  // the roof: a swell rolling along the hall, a little beyond its walls; sea glass, the live harbour shows through it
-  {
-    const nl = 28;
-    const na = 12;
-    const pos: number[] = [];
-    const idx: number[] = [];
-    for (let i = 0; i <= nl; i++) {
-      for (let j = 0; j <= na; j++) {
-        const l = H.l0 - 1.5 + ((H.l1 - H.l0 + 3) * i) / nl;
-        const a = H.a0 - 1.5 + ((H.a1 - H.a0 + 3) * j) / na;
-        pos.push(...c.L(a, l, top + WH + 1.15 + 0.8 * Math.sin(l * 0.36 + 0.6) + 0.3 * Math.sin(a * 0.4)));
-        if (i < nl && j < na) {
-          const k = i * (na + 1) + j;
-          idx.push(k, k + 1, k + na + 1, k + 1, k + na + 2, k + na + 1);
-        }
-      }
+  for (let l = H.l0; l <= H.l1 + 0.01; l += (H.l1 - H.l0) / 12) c.add(mats.timber, new BoxGeometry(0.16, WH, 0.16), c.L(H.a0, l, top + WH / 2));
+  for (let a = H.a0 + (H.a1 - H.a0) / 6; a < H.a1 - 0.01; a += (H.a1 - H.a0) / 6) c.add(mats.timber, new BoxGeometry(0.16, WH, 0.16), c.L(a, H.l0, top + WH / 2));
+  c.add(vc, paint(new BoxGeometry(0.3, WH, H.a1 - H.a0), WHITE), c.L(am, H.l1 - 0.15, top + WH / 2));
+  c.add(vc, paint(new BoxGeometry(H.l1 - H.l0, WH, 0.3), WHITE), c.L(H.a1 - 0.15, lm, top + WH / 2));
+  for (let a = H.a0 + 1; a < H.a1 - 0.5; a += 2) c.add(vc, paint(new BoxGeometry(0.5, WH - 0.4, 0.14), WHITE), c.L(a, H.l1 + 0.25, top + WH / 2));
+  // the roof: a white slab and parapet, sedum over most of it
+  const roofY = top + WH;
+  c.add(vc, paint(new BoxGeometry(H.l1 - H.l0 + 0.8, 0.5, H.a1 - H.a0 + 0.8), 0xf1f0ec), c.L(am, lm, roofY + 0.25));
+  c.add(vc, paint(new BoxGeometry(H.l1 - H.l0 - 10, 0.1, H.a1 - H.a0 - 1.6), 0x6f8f4e), c.L(am, H.l0 + (H.l1 - H.l0 - 10) / 2 + 0.8, roofY + 0.55));
+  for (const [a, w] of [
+    [H.a0 - 0.2, H.l1 - H.l0 + 0.8],
+    [H.a1 + 0.2, H.l1 - H.l0 + 0.8],
+  ])
+    c.add(vc, paint(new BoxGeometry(w, 0.5, 0.2), 0xf1f0ec), c.L(a, lm, roofY + 0.75));
+  for (const l of [H.l0 - 0.2, H.l1 + 0.2]) c.add(vc, paint(new BoxGeometry(0.2, 0.5, H.a1 - H.a0 + 0.8), 0xf1f0ec), c.L(am, l, roofY + 0.75));
+  // the plant on the roof's west end, by the mast
+  for (const [a, l, w, h, d] of [
+    [H.a1 - 4, H.l1 - 3, 3.4, 1.4, 2.6],
+    [H.a1 - 8, H.l1 - 2.6, 2.4, 1.0, 2.4],
+  ])
+    c.add(vc, paint(new BoxGeometry(w, h, d), 0xb9bcbf), c.L(a, l, roofY + 0.5 + h / 2));
+  // the mast: four legs tapering up, rings of bracing, three drum dishes facing the coast, a red light on top
+  const MA = H.a0 + 4.5;
+  const MLat = H.l1 - 4.5;
+  const MH = 9.5;
+  const mb = roofY + 0.5;
+  const halfAt = (h: number) => 1.1 - (0.75 * h) / MH;
+  for (const [da, dl] of [
+    [-1, -1],
+    [1, -1],
+    [1, 1],
+    [-1, 1],
+  ])
+    strut(c, mats.girder, c.L(MA + da * halfAt(0), MLat + dl * halfAt(0), mb), c.L(MA + da * halfAt(MH), MLat + dl * halfAt(MH), mb + MH), 0.07);
+  for (let h = 1.4; h < MH; h += 1.4) {
+    const r = halfAt(h);
+    for (const s of [-1, 1]) {
+      c.add(mats.girder, new BoxGeometry(2 * r, 0.06, 0.06), c.L(MA + s * r, MLat, mb + h));
+      c.add(mats.girder, new BoxGeometry(0.06, 0.06, 2 * r), c.L(MA, MLat + s * r, mb + h));
     }
-    const roof = new BG();
-    roof.setAttribute("position", new Float32BufferAttribute(pos, 3));
-    roof.setIndex(idx);
-    roof.computeVertexNormals();
-    c.group.add(new Mesh(roof, new MeshStandardMaterial({ color: 0x9fd0d6, roughness: 0.2, metalness: 0.3, side: DoubleSide, flatShading: true, transparent: true, opacity: 0.32, depthWrite: false })));
   }
-  // the name over the front, toward the station
+  for (const [h, da, dl] of [
+    [MH - 1.6, -1, 0],
+    [MH - 3.3, -0.6, 1],
+    [MH - 5, 0.3, 1],
+  ]) {
+    const n = Math.hypot(da, dl);
+    const r = halfAt(h) + 0.3;
+    const dish = new CylinderGeometry(0.75, 0.75, 0.45, 18).rotateX(Math.PI / 2).rotateY(Math.atan2(dl / n, (da / n) * zs));
+    c.add(vc, paint(dish, 0xf4f5f3), c.L(MA + (da / n) * r, MLat + (dl / n) * r, mb + h));
+  }
+  c.add(vc, lit(paint(new BoxGeometry(0.22, 0.22, 0.22), 0xff2a1f), 1.4), c.L(MA, MLat, mb + MH + 0.15));
+  // the watch floor seen through the glass: rows of desks, two screens on each
+  for (const a of [H.a0 + 3, H.a0 + 6.6, H.a0 + 10.2]) {
+    for (let l = H.l0 + 3; l < H.l1 - 6; l += 3.6) {
+      c.add(vc, paint(new BoxGeometry(2.4, 0.75, 0.9), 0x4a4038), c.L(a, l, top + 0.375));
+      for (const s of [-0.55, 0.55]) c.add(vc, lit(paint(new BoxGeometry(0.9, 0.55, 0.05), 0x7fc8ff), 0.9), c.L(a + 0.3, l + s, top + 1.1));
+    }
+  }
+  // its name over the door, toward the station
   const fontsO = fontOf();
   const nameTex = canvasTex(1024, 220, (g) => {
-    g.fillStyle = "#0e3a52";
+    g.fillStyle = "#14202b";
     g.fillRect(0, 0, 1024, 220);
     g.fillStyle = "#ffffff";
-    g.font = `500 88px ${fontsO.serif}`;
+    g.font = `500 92px ${fontsO.serif}`;
     g.textAlign = "center";
     g.textBaseline = "middle";
-    g.fillText("Ocean Science Centre", 512, 92);
-    g.fillStyle = "#8fd3e8";
-    g.font = `500 34px ${fontsO.mono}`;
-    g.fillText("LIVE HARBOUR · VESSEL VISION", 512, 172);
+    g.fillText("Coast Watch", 512, 92);
+    g.fillStyle = "#3ee86a";
+    g.font = `500 32px ${fontsO.mono}`;
+    g.fillText("THE COAST'S CAMERAS · VESSEL VISION LIVE", 512, 172);
   });
   const nm = new Mesh(new PlaneGeometry(14, 3.0), new MeshBasicMaterial({ map: nameTex, toneMapped: false }));
   nm.position.set(...c.L(am + 1.5, H.l0 - 0.12, top + WH - 1.7));
-  nm.rotation.y = -Math.PI / 2;
+  nm.rotation.y = turn([0, -1]);
   c.group.add(nm);
 
-  // the live harbour, the aquarium and the orca: built along the table's own axes (as the hall once stood, along the
-  // line about L0) and turned into the hall square to Broadway, a tenth smaller
-  const L0 = 33;
-  const tg = new Group();
-  const tparts = new Map<Material, Part[]>();
-  const t: Ctx = {
-    ...c,
-    group: tg,
-    L: (a, l, u) => [l - L0, u - top, a * zs],
-    add: (mat, geo, pos = [0, 0, 0], rot = [0, 0, 0], scale = [1, 1, 1]) => {
-      const list = tparts.get(mat);
-      const p: Part = { geo, position: pos, rotation: rot, scale };
-      if (list) list.push(p);
-      else tparts.set(mat, [p]);
-    },
+  // the screen on the wall to the square: the camera's frame, the tile at work, the boxes it has found; a dark bezel
+  const SW = H.l1 - H.l0 - 3;
+  const SH = SW / 4;
+  const wall = new Group();
+  wall.position.set(...c.L(H.a1 + 0.12, lm, top + 0.5 + SH / 2));
+  wall.rotation.y = turn([1, 0]);
+  c.group.add(wall);
+  c.add(vc, paint(new BoxGeometry(SW + 0.6, SH + 0.6, 0.12), 0x15181d), c.L(H.a1 + 0.02, lm, top + 0.5 + SH / 2));
+  const day = coastFeed(false);
+  const heat = coastFeed(true);
+  const feed = new MeshBasicMaterial({ map: day, color: 0xe6e6e6, toneMapped: false });
+  const X = (px: number) => (px / 1024 - 0.5) * SW;
+  const Y = (py: number) => (0.5 - py / 256) * SH;
+  wall.add(new Mesh(new PlaneGeometry(SW, SH), feed));
+  // the tile: a violet wash and its frame
+  const [t0x0, t0y0, t0x1, t0y1] = tileBox(0);
+  const tw = X(t0x1) - X(t0x0);
+  const th = Y(t0y0) - Y(t0y1);
+  const tile = new Group();
+  tile.add(new Mesh(new PlaneGeometry(tw, th), new MeshBasicMaterial({ color: 0xa78bfa, transparent: true, opacity: 0.16, depthWrite: false, toneMapped: false })));
+  const rim = 0.07;
+  tile.add(
+    new Mesh(
+      mergeGeometries([
+        new PlaneGeometry(tw, rim).translate(0, th / 2, 0),
+        new PlaneGeometry(tw, rim).translate(0, -th / 2, 0),
+        new PlaneGeometry(rim, th).translate(tw / 2, 0, 0),
+        new PlaneGeometry(rim, th).translate(-tw / 2, 0, 0),
+      ]),
+      new MeshBasicMaterial({ color: 0xc4b5fd, toneMapped: false }),
+    ),
+  );
+  tile.position.z = 0.015;
+  wall.add(tile);
+  // the boxes: a quad each over its box and label, cut from the detections' texture, scaled round its middle to show
+  const found = FEED_BOATS.map((b) => {
+    const [x0, y0, x1, y1] = boatBox(b);
+    const cx = (x0 + x1) / 2;
+    const cy = (y0 + y1) / 2;
+    for (let k = 0; k < TILE.cols * TILE.rows; k++) {
+      const [u0, v0, u1, v1] = tileBox(k);
+      if (cx > u0 && cx < u1 && cy > v0 && cy < v1) return k;
+    }
+    return 0;
+  });
+  const quads = FEED_BOATS.map((b) => {
+    const [x0, y0, x1, y1] = boatBox(b);
+    return [x0 - 2, y0 - 15, Math.max(x1, x0 + 63) + 1, y1 + 2];
+  });
+  const qPos = new Float32Array(quads.length * 12);
+  const qUv: number[] = [];
+  const qIdx: number[] = [];
+  quads.forEach(([x0, y0, x1, y1], i) => {
+    qUv.push(x0 / 1024, 1 - y0 / 256, x1 / 1024, 1 - y0 / 256, x0 / 1024, 1 - y1 / 256, x1 / 1024, 1 - y1 / 256);
+    qIdx.push(i * 4, i * 4 + 2, i * 4 + 1, i * 4 + 1, i * 4 + 2, i * 4 + 3);
+  });
+  const boxes = new BG();
+  boxes.setAttribute("position", new Float32BufferAttribute(qPos, 3));
+  boxes.setAttribute("uv", new Float32BufferAttribute(qUv, 2));
+  boxes.setIndex(qIdx);
+  const boxesMesh = new Mesh(boxes, new MeshBasicMaterial({ map: detectionsTexture(), transparent: true, depthWrite: false, toneMapped: false }));
+  boxesMesh.position.z = 0.03;
+  boxesMesh.frustumCulled = false;
+  wall.add(boxesMesh);
+  const qp = boxes.attributes.position as Float32BufferAttribute;
+  const showBoxes = (scale: (i: number) => number) => {
+    quads.forEach(([x0, y0, x1, y1], i) => {
+      const s = scale(i);
+      const cx = X((x0 + x1) / 2);
+      const cy = Y((y0 + y1) / 2);
+      const hx = ((X(x1) - X(x0)) / 2) * s;
+      const hy = ((Y(y0) - Y(y1)) / 2) * s;
+      qp.setXYZ(i * 4, cx - hx, cy + hy, 0);
+      qp.setXYZ(i * 4 + 1, cx + hx, cy + hy, 0);
+      qp.setXYZ(i * 4 + 2, cx - hx, cy - hy, 0);
+      qp.setXYZ(i * 4 + 3, cx + hx, cy - hy, 0);
+    });
+    qp.needsUpdate = true;
   };
-  // along (a), lateral (l) from the table's centre line, and heading, for the ships at sea
-  const boats: [number, number, number][] = [
-    [-7, -3, 0.3],
-    [-3, 5, 1.2],
-    [4, 1, 2.1],
-    [7.5, 5.5, 0.8],
-    [1, -4, 2.6],
+
+  // ---- the Clark Park Vertiport across the square: the deck over the glass hall, on columns kept off the streets
+  const V = VERTIPORT;
+  const D = VERTIPORT_TOP - STATION_FRAMES[5].y;
+  const portRoad = (a: number, l: number) => isRoad(...fromStation(5, a + SET_SHIFT[5], l), 0.4);
+  for (const [a0, a1, l0, l1] of V.deck) {
+    c.add(mats.plat, new BoxGeometry(l1 - l0, 0.5, a1 - a0), c.L((a0 + a1) / 2, (l0 + l1) / 2, D - 0.25));
+    for (let a = a0 + 1.8; a < a1 - 1; a += 3.6) for (let l = l0 + 1.8; l < l1 - 1; l += 3.6) c.add(kit.lit, paint(new CylinderGeometry(0.2, 0.2, 0.05, 8), 0xffd49a), c.L(a, l, D - 0.53));
+  }
+  const cols: [number, number][] = [];
+  for (const a of [30.4, 36.4, 42.4]) for (const l of [29.2, 36.8, 43.6]) cols.push([a, l]);
+  for (const a of [30.4, 39.6]) for (const l of [49, 53.8]) cols.push([a, l]);
+  legs(
+    c,
+    mats.girder,
+    cols.filter(([a, l]) => !portRoad(a, l)),
+    D - 0.5,
+    0.36,
+  );
+  // the hall under it: glass on white mullions between the lawn and the deck, a floor laid level inside
+  const HALL_RECTS: [number, number, number, number][] = [
+    [30.6, 42.2, 29.4, 44.2],
+    [30.6, 39.4, 44.2, 53.6],
   ];
-  // the table's picture: 16 across the lateral axis (u), 24 along (v); the working shore on one long side
-  const px = (a: number, l: number): [number, number] => [(l / 16 + 0.5) * 512, (0.5 + (a * zs) / 24) * 768];
-  const sea = canvasTex(512, 768, (g) => {
-    const grd = g.createLinearGradient(512, 0, 0, 0);
-    grd.addColorStop(0, "#163f5e");
-    grd.addColorStop(1, "#1f5d7f");
-    g.fillStyle = grd;
-    g.fillRect(0, 0, 512, 768);
-    // swell
-    g.strokeStyle = "rgba(255,255,255,0.07)";
-    g.lineWidth = 2;
-    for (let k = 0; k < 60; k++) {
-      const y = (k * 53) % 768;
-      g.beginPath();
-      g.moveTo(0, y);
-      g.bezierCurveTo(170, y + 8, 340, y - 8, 512, y + 4);
-      g.stroke();
-    }
-    // a wake behind each ship: its bow points along local +z turned by its heading, and the picture's v runs with local z
-    for (const [a, l, r] of boats) {
-      const [x, y] = px(a, l);
-      const dx = -Math.sin(r);
-      const dy = -Math.cos(r);
-      g.fillStyle = "rgba(235,245,250,0.55)";
-      g.beginPath();
-      g.moveTo(x, y);
-      g.lineTo(x + dx * 90 - dy * 22, y + dy * 90 + dx * 22);
-      g.lineTo(x + dx * 90 + dy * 22, y + dy * 90 - dx * 22);
-      g.closePath();
-      g.fill();
-    }
-    // the working shore: quay, container stacks in their colours, a shed, a pier reaching out
-    g.fillStyle = "#b9b4a8";
-    g.fillRect(0, 0, 66, 768);
-    g.fillStyle = "#8f8a80";
-    g.fillRect(64, 0, 5, 768);
-    const cols = ["#c0392b", "#2d6cb0", "#e0b020", "#2e8b57", "#d35400", "#7f8c8d"];
-    for (let y = 20; y < 470; y += 18) {
-      for (let x = 6; x < 56; x += 13) {
-        g.fillStyle = cols[(x * 7 + y) % cols.length];
-        g.fillRect(x, y, 11, 16);
+  let hLo = Infinity;
+  let hHi = -Infinity;
+  for (const [a0, a1, l0, l1] of HALL_RECTS) {
+    for (const a of [a0, (a0 + a1) / 2, a1]) {
+      for (const l of [l0, (l0 + l1) / 2, l1]) {
+        hLo = Math.min(hLo, c.G(a, l));
+        hHi = Math.max(hHi, c.G(a, l));
       }
     }
-    g.fillStyle = "#d6d2c8";
-    g.fillRect(8, 520, 50, 160);
-    g.fillStyle = "#a7a296";
-    g.fillRect(66, 560, 110, 34);
-  });
-  const floor = new Mesh(new PlaneGeometry(16, 24), new MeshStandardMaterial({ map: sea, emissiveMap: sea, emissive: 0xffffff, emissiveIntensity: 0.45, roughness: 0.35 }));
-  floor.rotation.x = -Math.PI / 2;
-  floor.position.set(...t.L(0, L0, top + 0.03));
-  tg.add(floor);
-  // the table's bezel (box sizes: lateral, up, along)
-  for (const [a, l, wl, wa] of [
-    [-12.2, 0, 16.8, 0.4],
-    [12.2, 0, 16.8, 0.4],
-    [0, -8.2, 0.4, 24.8],
-    [0, 8.2, 0.4, 24.8],
-  ] as const)
-    t.add(mats.trim, new BoxGeometry(wl, 0.4, wa), t.L(a, L0 + l, top + 0.18));
-  // the ships, small models of the real kinds (a ferry, sailboats, yachts)
-  const boatMat = new MeshStandardMaterial({ vertexColors: true, roughness: 0.5 });
-  const kinds = [seabus, sailboat, yacht, yacht, sailboat];
-  boats.forEach(([a, l, r], k) => t.add(boatMat, kinds[k](), t.L(a, L0 + l, top + 0.06), [0, r, 0], [0.12, 0.12, 0.12]));
-  // the SAHI tile grid (overlapping tiles) and one tile sweeping across
-  const gridMat = glowMat(0xa78bfa, 1.4);
-  for (let k = 0; k <= 4; k++) t.add(gridMat, new BoxGeometry(16, 0.05, 0.06), t.L(-12 + k * 6, L0, top + 0.12));
-  for (let k = 0; k <= 3; k++) t.add(gridMat, new BoxGeometry(0.06, 0.05, 24), t.L(0, L0 - 8 + k * (16 / 3), top + 0.12));
-  const tile = new Mesh(new BoxGeometry(5.9, 0.08, 6.6), new MeshBasicMaterial({ color: 0xa78bfa, transparent: true, opacity: 0.22, depthWrite: false }));
-  tg.add(tile);
-  // the detections: a bright frame closing round each ship as a tile finds it
-  const boxMat = new LineBasicMaterial({ color: 0x34d399, toneMapped: false });
-  const frameGeo = new EdgesGeometry(new BoxGeometry(2.2, 0.6, 2.2));
-  const dets: LineSegments[] = boats.map(([a, l]) => {
-    const m = new LineSegments(frameGeo, boxMat);
-    m.position.set(...t.L(a, L0 + l, top + 0.35));
-    m.scale.setScalar(0);
-    tg.add(m);
-    return m;
-  });
-  // the aquarium across the hall's far end: a tall tank of water, kelp swaying, and a shoal of fish
-  const tankA = 16.2;
-  t.add(new MeshStandardMaterial({ color: 0x2a86c8, transparent: true, opacity: 0.32, roughness: 0.1, depthWrite: false }), new BoxGeometry(14, 4.6, 2.2), t.L(tankA, L0, top + 2.5));
-  t.add(mats.planter, new BoxGeometry(14.4, 0.3, 2.6), t.L(tankA, L0, top + 0.15));
-  const kelp = new InstancedMesh(new BoxGeometry(0.5, 3.6, 0.12).translate(0, 1.8, 0), new MeshStandardMaterial({ color: 0x4a7a2a, roughness: 0.9 }), 9);
-  const kelpAt = Array.from({ length: 9 }, (_, k) => new Vector3(...t.L(tankA + ((k % 3) - 1) * 0.5, L0 - 6.4 + k * 1.6, top + 0.3)));
-  tg.add(kelp);
-  const kelpQ = new Quaternion();
-  const kelpE = new Euler();
-  const one = new Vector3(1, 1, 1);
-  const fish = new InstancedMesh(new ConeGeometry(0.22, 0.8, 6).rotateZ(-Math.PI / 2), new MeshStandardMaterial({ roughness: 0.4, metalness: 0.2 }), 24);
-  const fishCols = [0xf08a24, 0xf4d03f, 0x4ea8de, 0xe74c3c, 0xffffff];
-  for (let k = 0; k < 24; k++) fish.setColorAt(k, new Color(fishCols[k % fishCols.length]));
-  tg.add(fish);
-  // the orca's skeleton, hung on wires over the table: the spine, the skull, ribs and the flukes
-  const bone = new MeshStandardMaterial({ color: 0xece4d2, roughness: 0.7 });
-  const ou = top + 5.2;
-  for (let k = 0; k < 14; k++) {
-    const a = -7 + k;
-    const r = 0.32 - Math.abs(k - 5) * 0.015;
-    t.add(bone, new BoxGeometry(0.5, r * 2, 0.7), t.L(a, L0, ou + Math.sin(k * 0.3) * 0.3));
-    if (k > 2 && k < 9) t.add(bone, new TorusGeometry(0.9 - Math.abs(k - 5.5) * 0.08, 0.06, 4, 10, Math.PI), t.L(a, L0, ou), [0, 0, Math.PI]);
   }
-  t.add(bone, new BoxGeometry(1.3, 0.7, 2.6), t.L(-8.6, L0, ou + 0.1), [0.15, 0, 0]);
-  t.add(bone, new BoxGeometry(2.6, 0.12, 0.9), t.L(7.6, L0, ou + 0.4));
-  // the wires reach the hall's roof beam (the table's frame is a tenth smaller)
-  const wireTop = top + WH / 0.9;
-  for (const a of [-6, 0, 6]) t.add(mats.post, new BoxGeometry(0.03, wireTop - ou, 0.03), t.L(a, L0, (ou + wireTop) / 2));
-  const fishT = new Matrix4();
-  const fishQ = new Quaternion();
-  const fishP = new Vector3();
-  const swim = (time: number) => {
-    for (let k = 0; k < 24; k++) {
-      const sp = 0.6 + (k % 5) * 0.15;
-      const dir = k % 2 ? 1 : -1;
-      const l = ((((time * sp * dir + k * 3.1) % 13) + 13) % 13) - 6.5;
-      fishP.set(...t.L(tankA + ((k % 3) - 1) * 0.55, L0 + l, top + 0.9 + (k % 7) * 0.5 + Math.sin(time * 1.3 + k) * 0.15));
-      // headed along the tank (the table's lateral, local x) one way or the other
-      fishQ.setFromAxisAngle(UP, dir > 0 ? 0 : Math.PI);
-      fish.setMatrixAt(k, fishT.compose(fishP, fishQ, one));
-    }
-    fish.instanceMatrix.needsUpdate = true;
-    kelpAt.forEach((p, k) => kelp.setMatrixAt(k, fishT.compose(p, kelpQ.setFromEuler(kelpE.set(0, 0, Math.sin(time * 0.8 + k) * 0.12)), one)));
-    kelp.instanceMatrix.needsUpdate = true;
-  };
-  // a drone hovering over the table: body and rotors in one mesh
-  const drone = new Mesh(
-    merged([
-      { geo: paint(new BoxGeometry(1.2, 0.35, 1.2), 0x2a3039) },
-      ...[
-        [-0.9, -0.9],
-        [0.9, -0.9],
-        [-0.9, 0.9],
-        [0.9, 0.9],
-      ].map(([x, z]) => ({ geo: paint(new CylinderGeometry(0.45, 0.45, 0.05, 12), 0x7dd3fc), position: [x, 0.2, z] as V3 })),
-    ]),
-    new MeshBasicMaterial({ vertexColors: true }),
-  );
-  tg.add(drone);
-  const dc = new Vector3(...t.L(0, L0, top + 3.6));
-  for (const [mat, list] of tparts) {
-    const m = new Mesh(merged(list), mat);
-    m.castShadow = !c.world.lowEnd && !mat.transparent && mat.type !== "MeshBasicMaterial";
-    m.receiveShadow = true;
-    tg.add(m);
+  for (const [a0, a1, l0, l1] of HALL_RECTS) c.add(vc, paint(new BoxGeometry(l1 - l0, hHi - hLo + 0.4, a1 - a0), 0xcfc8bb), c.L((a0 + a1) / 2, (l0 + l1) / 2, (hHi + hLo) / 2 - 0.1));
+  const hallH = D - 0.5 - hLo;
+  // its faces: (a0, l0) to (a1, l1), one of them constant
+  const faces: [number, number, number, number][] = [
+    [30.6, 29.4, 30.6, 53.6],
+    [30.6, 29.4, 42.2, 29.4],
+    [42.2, 29.4, 42.2, 44.2],
+    [39.4, 44.2, 42.2, 44.2],
+    [39.4, 44.2, 39.4, 53.6],
+    [30.6, 53.6, 39.4, 53.6],
+  ];
+  for (const [a0, l0, a1, l1] of faces) {
+    const alongA = a0 !== a1;
+    const len = alongA ? a1 - a0 : l1 - l0;
+    c.add(mats.pane, alongA ? new BoxGeometry(0.08, hallH, len) : new BoxGeometry(len, hallH, 0.08), c.L((a0 + a1) / 2, (l0 + l1) / 2, hLo + hallH / 2));
+    const n = Math.max(2, Math.round(len / 2.4));
+    for (let k = 0; k <= n; k++) c.add(vc, paint(new BoxGeometry(0.14, hallH, 0.14), 0xf3f4f6), c.L(a0 + ((a1 - a0) * k) / n, l0 + ((l1 - l0) * k) / n, hLo + hallH / 2));
   }
-  // the table's centre in the hall, its long axis (and the aquarium's end) toward Clark Drive
-  tg.position.set(...c.L(-8.5, 41.2, top));
-  tg.rotation.y = (zs * Math.PI) / 2;
-  tg.scale.setScalar(0.9);
-  tg.updateMatrix();
-  c.group.add(tg);
-  const inHall = (v: Vector3) => v.applyMatrix4(tg.matrix);
+  // on the deck, in the station's frame (x lateral, z along): the pads, the lounge, the charging posts between the
+  // pads' rows, the nets round the edges (out from the deck), the windsock by the lounge, red lights at the corners
+  const port: BufferGeometry[] = [];
+  const at = (a: number, l: number): [number, number] => [l, a * zs];
+  for (const [a, l] of V.pads) taxiPad(port, ...c.L(a, l, D));
+  const Lo = V.lounge;
+  glassBox(port, { x0: Lo.l0, x1: Lo.l1, z0: Math.min(Lo.a0 * zs, Lo.a1 * zs), z1: Math.max(Lo.a0 * zs, Lo.a1 * zs) }, D, Lo.h);
+  for (const l of [33, 41]) {
+    port.push(paint(new BoxGeometry(0.9, 1.5, 0.6).translate(...c.L(37, l, D + 0.75)), 0x2f343c));
+    port.push(lit(paint(new BoxGeometry(0.3, 0.12, 0.62).translate(...c.L(37, l, D + 1.25)), 0x7ef0ff), 1.4));
+  }
+  const [dk1, dk2] = V.deck;
+  const edges: [number, number, number, number, number, number][] = [
+    [dk1[0], dk1[2], dk2[0], dk2[3], -1, 0],
+    [dk1[0], dk1[2], dk1[1], dk1[2], 0, -1],
+    [dk1[1], dk1[2], dk1[1], dk1[3], 1, 0],
+    [dk2[1], dk1[3], dk1[1], dk1[3], 0, 1],
+    [dk2[1], dk2[2], dk2[1], dk2[3], 1, 0],
+    [dk2[0], dk2[3], dk2[1], dk2[3], 0, 1],
+  ];
+  for (const [a0, l0, a1, l1, oa, ol] of edges) nets(port, ...at(a0, l0), ...at(a1, l1), D, ol, oa * zs);
+  windsock(port, ...c.L(dk2[1] - 0.6, dk2[3] - 0.5, D));
+  for (const [a, l] of [
+    [dk1[0] + 0.3, dk1[2] + 0.3],
+    [dk1[1] - 0.3, dk1[2] + 0.3],
+    [dk1[1] - 0.3, dk1[3] - 0.3],
+    [dk2[0] + 0.3, dk2[3] - 0.3],
+  ])
+    port.push(lit(paint(new BoxGeometry(0.22, 0.22, 0.22).translate(...c.L(a, l, D + 0.11)), 0xff2a1f), 1.4));
+  for (const g of port) c.add(vc, g);
+  // its name over the lounge, toward the square, and the departures board hung under the deck's edge over the way in
+  const portName = canvasTex(1024, 180, (g) => {
+    g.fillStyle = "#14202b";
+    g.fillRect(0, 0, 1024, 180);
+    g.fillStyle = "#ffffff";
+    g.font = `500 76px ${fontsO.serif}`;
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.fillText("Clark Park Vertiport", 512, 74);
+    g.fillStyle = "#5fd8ff";
+    g.font = `500 28px ${fontsO.mono}`;
+    g.fillText("AIR TAXIS EAST · COQUITLAM · SURREY", 512, 144);
+  });
+  const pn = new Mesh(new PlaneGeometry(7.2, 1.27), new MeshBasicMaterial({ map: portName, toneMapped: false }));
+  pn.position.set(...c.L(Lo.a0 - 0.12, (Lo.l0 + Lo.l1) / 2, D + Lo.h + 0.95));
+  pn.rotation.y = turn([-1, 0]);
+  c.group.add(pn);
+  const board = canvasTex(512, 176, (g) => {
+    g.fillStyle = "#0a0c10";
+    g.fillRect(0, 0, 512, 176);
+    g.font = `600 22px ${fontsO.mono}`;
+    g.textBaseline = "middle";
+    g.fillStyle = "#ffb648";
+    g.fillText("DEPARTURES", 18, 22);
+    g.font = `500 17px ${fontsO.mono}`;
+    [
+      ["12:04", "COQUITLAM CENTRAL", "1", "BOARDING"],
+      ["12:06", "SURREY CENTRAL", "3", "ON TIME"],
+      ["12:10", "COQUITLAM CENTRAL", "2", "ON TIME"],
+      ["12:12", "SURREY CENTRAL", "4", "ON TIME"],
+    ].forEach(([time, to, padNo, state], k) => {
+      const y = 58 + k * 32;
+      g.fillStyle = "#ffd9a0";
+      g.fillText(time, 18, y);
+      g.fillText(to, 90, y);
+      g.fillText(`PAD ${padNo}`, 316, y);
+      g.fillStyle = state === "BOARDING" ? "#3ee86a" : "#ffd9a0";
+      g.fillText(state, 400, y);
+    });
+  });
+  const bd = new Mesh(new PlaneGeometry(5.2, 1.79), new MeshBasicMaterial({ map: board, toneMapped: false }));
+  bd.position.set(...c.L(dk1[0] + 0.1, 38, D - 0.5 - 1.25));
+  bd.rotation.y = turn([-1, 0]);
+  c.group.add(bd);
+  for (const s of [-1, 1]) c.add(mats.post, new BoxGeometry(0.05, 0.4, 0.05), c.L(dk1[0] + 0.1, 38 + s * 2.2, D - 0.5 - 0.2));
+
+  const CYCLE = TILE.cols * TILE.rows + 4;
+  const STEP = 0.7;
   return {
-    anchors: [inHall(dc.clone().setY(dc.y + 1.2)), inHall(new Vector3(...t.L(-12, L0 - 8, top + 0.8))), inHall(new Vector3(...t.L(12, L0 + 8, top + 0.8)))],
-    focus: inHall(new Vector3(...t.L(0, L0 - 3, top + 2))),
+    anchors: [new Vector3(...c.L(H.a1 + 0.5, lm, top + 0.5 + SH)), new Vector3(...c.L(Lo.a0, (Lo.l0 + Lo.l1) / 2, D + Lo.h + 1.6)), new Vector3(...c.L(MA, MLat, mb + MH))],
+    focus: new Vector3(...c.L(14, 42, top + 2)),
     update: (time) => {
-      const k = Math.floor(time / 0.8) % 12;
-      const ta = -9 + (k % 4) * 6;
-      const tl = L0 - 5.3 + Math.floor(k / 4) * (16 / 3);
-      tile.position.set(...t.L(ta, tl, top + 0.2));
-      dets.forEach((m, j) => {
-        const [a, l] = boats[j];
-        const near = Math.abs(a - ta) < 3.4 && Math.abs(L0 + l - tl) < 3.6;
-        const s = m.scale.x + ((near || m.scale.x > 0.5 ? 1 : 0) - m.scale.x) * 0.2;
-        m.scale.set(s, s, s);
-        if (k === 0) m.scale.setScalar(0);
+      // by day the colour feed, after dark the thermal
+      const map = c.world.shopGlow.value > 0.45 ? heat : day;
+      if (feed.map !== map) feed.map = map;
+      // the tile steps across the frame, row by row; each boat's box closes round it as its tile reaches it, all held a
+      // while once the frame is done, then the next frame
+      const tau = time % (CYCLE * STEP);
+      const k = Math.floor(tau / STEP);
+      tile.visible = k < TILE.cols * TILE.rows;
+      if (tile.visible) {
+        const [x0, y0, x1, y1] = tileBox(k);
+        tile.position.x = X((x0 + x1) / 2);
+        tile.position.y = Y((y0 + y1) / 2);
+      }
+      showBoxes((i) => {
+        const since = tau - (found[i] + 0.5) * STEP;
+        return since < 0 ? 0 : 1 + 0.6 * Math.exp(-since * 7);
       });
-      drone.position.copy(dc).add(new Vector3(Math.sin(time * 0.5) * 3, Math.sin(time * 1.3) * 0.4, Math.cos(time * 0.4) * 2));
-      swim(time);
       jetAt.forEach((p, j) => {
         const v = Math.max(0, Math.sin(time * 2.4 - j * 0.8));
         jets.setMatrixAt(j, jm.compose(p, jq, js.set(1, 0.2 + 2.2 * v, 1)));
       });
       jets.instanceMatrix.needsUpdate = true;
     },
-    shot: { from: [38, 74, 34], to: [26, 64, 24], look: [-6, 42, 0] },
+    shot: { from: [64, 80, 46], to: [52, 70, 34], look: [12, 42, 4] },
   };
 }
 

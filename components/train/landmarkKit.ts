@@ -276,7 +276,8 @@ function insetRing(ring: P2[], d: number): P2[] {
  * - glass canopies down the promenades, white gangway towers reaching out to the ships berthed on both sides.
  * The pier's outline is the real one's: parallel sides from the shore out past the drum, then the west side angling
  * in to meet the straight east side in a rounded nose.
- * After dark each sail is floodlit in its own colour (or the event's), and the lamps come on.
+ * The Sails of Light: from dusk to dawn each sail is floodlit from both sides in its own colour, Canada Place's
+ * signature red, orange, white, green and blue from the prow in, or an event's colours; and the lamps come on.
  */
 export function buildCanadaPlace(l: PlacedLandmark, world: World): Built {
   const { events, lowEnd, envTex } = world;
@@ -527,11 +528,12 @@ export function buildCanadaPlace(l: PlacedLandmark, world: World): Built {
     const head = new Vector3(x, upper + peaks[k] + MAST_UP - 0.3, z);
     for (const dz of [-2.4, 2.4]) mastGeo.push(stay(head, new Vector3(x + Math.sign(x) * 2.6, upper - 0.2, z + dz)));
   });
-  // uplights along the sails' feet, in the event's colours (one mesh for each of the two colours)
-  for (const odd of [0, 1]) {
-    const ups = [...SAIL_Z.entries()].filter(([i]) => i % 2 === odd).map(([, z]) => new BoxGeometry(0.4, 0.2, 2.4).translate(odd ? SAIL_W + 0.6 : -SAIL_W - 0.6, upper + 0.15, z));
-    if (ups.length) g.add(new Mesh(merge(ups), odd ? events.glowB : events.glow));
-  }
+  // the floodlights at the sails' feet on both sides (the sails are lit to be seen from the east and the west), each
+  // bar in its own sail's colour: the signature colours, or the cause's
+  const ups = merge(SAIL_Z.flatMap((z) => [-1, 1].map((sx) => paint(new BoxGeometry(0.4, 0.2, 2.4).translate(sx * (SAIL_W + 0.6), upper + 0.15, z), 0xffffff))));
+  const upCol = ups.attributes.color as BufferAttribute;
+  const perSail = upCol.count / SAIL_Z.length;
+  g.add(new Mesh(ups, new MeshBasicMaterial({ vertexColors: true, toneMapped: false })));
   const solidMesh = new Mesh(merge([...solid, ...mastGeo]), cityToned(world, new MeshStandardMaterial({ vertexColors: true, roughness: 0.7 })));
   solidMesh.receiveShadow = true;
   // the cruise ship berthed on the east side, on the open inlet, bow to the sea, toward the pier's end so its stern
@@ -579,6 +581,13 @@ export function buildCanadaPlace(l: PlacedLandmark, world: World): Built {
     sailTint.value = n;
     const pal = ev ? EVENT_META[ev].colours : SAILS_LIT;
     sailCols.value.forEach((c, k) => c.setHex(pal[k % pal.length]));
+    // the floodlights dark by day
+    const v = 0.08 + 1.3 * n;
+    for (let i = 0; i < upCol.count; i++) {
+      const c = sailCols.value[Math.floor(i / perSail)];
+      upCol.setXYZ(i, c.r * v, c.g * v, c.b * v);
+    }
+    upCol.needsUpdate = true;
     lampMat.color.setHex(0xffe2b0).multiplyScalar(0.25 + 1.5 * n);
   });
   return { group: g };
