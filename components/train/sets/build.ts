@@ -2546,18 +2546,18 @@ function more(c: Ctx): Partial<BuiltSet> {
   }
 
   // the arcade: red lacquered columns on stone bases round the hall under the pent eave, a bracket set on each (stacked
-  // blocks in red, green and gold under a red beam), a red lantern hung from each
+  // blocks in red, green and gold under a red beam), a red lantern hung from each, its glow on the red after dark
   const COL_A = [-18, -13.5, -9, -4.5, 0, 4.5, 9, 13.5, 18];
   const colTop = UP1 - 0.95;
   const column = (a: number, l: number, alongA: boolean) => {
     part(new CylinderGeometry(0.34, 0.38, 0.28, 10), 0x8d8a83, a, l, base + 0.14);
-    part(new CylinderGeometry(0.2, 0.23, colTop - base - 0.28, 10), RED, a, l, (base + 0.28 + colTop) / 2);
+    part(new CylinderGeometry(0.2, 0.23, colTop - base - 0.28, 10), RED, a, l, (base + 0.28 + colTop) / 2, 0.45);
     // the brackets: each tier longer along the beam than the one under it
     const along = (len: number, w: number) => (alongA ? new BoxGeometry(w, 0.18, len) : new BoxGeometry(len, 0.18, w));
-    part(new BoxGeometry(0.5, 0.18, 0.5), RED, a, l, colTop + 0.09);
-    part(along(1.0, 0.42), GREEN, a, l, colTop + 0.27);
-    part(along(1.5, 0.36), RED, a, l, colTop + 0.45);
-    part(along(1.5, 0.38), GOLD, a, l, colTop + 0.36);
+    part(new BoxGeometry(0.5, 0.18, 0.5), RED, a, l, colTop + 0.09, 0.4);
+    part(along(1.0, 0.42), GREEN, a, l, colTop + 0.27, 0.4);
+    part(along(1.5, 0.36), RED, a, l, colTop + 0.45, 0.4);
+    part(along(1.5, 0.38), GOLD, a, l, colTop + 0.36, 0.4);
     // the lantern, on the column's outer face
     const [la, ll] = alongA ? [a, l + (l < LM ? -0.42 : 0.42)] : [a + (a < 0 ? -0.42 : 0.42), l];
     part(new CylinderGeometry(0.015, 0.015, 0.35, 3), 0x24272c, la, ll, colTop - 0.1);
@@ -2575,8 +2575,8 @@ function more(c: Ctx): Partial<BuiltSet> {
   }
   // the beams over the columns, round the arcade
   const beamY = colTop + 0.66;
-  for (const l of [LF - 1.3, LB + 1.3]) part(new BoxGeometry(0.3, 0.25, AW + 2.9), RED, 0, l, beamY);
-  for (const a of [A0 - 1.3, A1 + 1.3]) part(new BoxGeometry(LW + 2.9, 0.25, 0.3), RED, a, LM, beamY);
+  for (const l of [LF - 1.3, LB + 1.3]) part(new BoxGeometry(0.3, 0.25, AW + 2.9), RED, 0, l, beamY, 0.35);
+  for (const a of [A0 - 1.3, A1 + 1.3]) part(new BoxGeometry(LW + 2.9, 0.25, 0.3), RED, a, LM, beamY, 0.35);
 
   // the banners between the columns, five toward the line and five toward the street, on gold rods (the skybridge's
   // bay and the doors left open)
@@ -2623,10 +2623,12 @@ function more(c: Ctx): Partial<BuiltSet> {
       [-0.85, 0.85],
       [0.85, 0.85],
     ])
-      part(new CylinderGeometry(0.13, 0.16, 2.2, 8), SANDSTONE, a + da, l + dl, base + 1.5);
-    part(new BoxGeometry(2.7, 0.14, 2.7), 0xc9a878, a, l, base + 2.65);
-    part(new CylinderGeometry(0.85, 0.9, 0.3, 14), SANDSTONE, a, l, base + 2.87);
-    part(new SphereGeometry(0.9, 14, 7, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 1.15, 1), 0xe3c9a0, a, l, base + 3.0);
+      part(new CylinderGeometry(0.13, 0.16, 2.2, 8), SANDSTONE, a + da, l + dl, base + 1.5, 0.3);
+    part(new BoxGeometry(2.7, 0.14, 2.7), 0xc9a878, a, l, base + 2.65, 0.3);
+    part(new CylinderGeometry(0.85, 0.9, 0.3, 14), SANDSTONE, a, l, base + 2.87, 0.35);
+    part(new SphereGeometry(0.9, 14, 7, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 1.15, 1), 0xe3c9a0, a, l, base + 3.0, 0.35);
+    // a lamp hung under the dome, lighting the kiosk from within after dark
+    part(new SphereGeometry(0.2, 8, 6), 0xffe2b0, a, l, base + 2.2, 1.4);
     part(new ConeGeometry(0.12, 0.6, 8), GOLD, a, l, base + 4.35);
     part(new SphereGeometry(0.1, 8, 6), GOLD, a, l, base + 4.1);
   }

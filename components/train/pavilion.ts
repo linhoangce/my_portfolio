@@ -68,7 +68,8 @@ export function lit(g: BufferGeometry, v: number): BufferGeometry {
  */
 export function shopGlow<M extends Material>(mat: M, world: World, opts: { albedo?: boolean } = {}): M {
   const prev = mat.onBeforeCompile.bind(mat);
-  const tone = opts.albedo ? "diffuseColor.rgb * vec3( 1.0, 0.86, 0.66 )" : "vColor.rgb";
+  // a fixture's beam is far brighter than the night's ambient light, so lit albedo is doubled
+  const tone = opts.albedo ? "diffuseColor.rgb * vec3( 2.0, 1.72, 1.32 )" : "vColor.rgb";
   mat.onBeforeCompile = (sh, r) => {
     prev(sh, r);
     sh.uniforms.uShopGlow = world.shopGlow;
