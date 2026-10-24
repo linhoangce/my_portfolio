@@ -4,8 +4,7 @@ import { useThree } from "@react-three/fiber";
 import { useEffect } from "react";
 import { Raycaster, Sphere, Vector2, Vector3 } from "three";
 
-import { MONUMENTS, monumentFocus } from "../monuments";
-import type { LandmarkKey } from "../sites";
+import { MONUMENTS, monumentFocus, type MonumentKey } from "../monuments";
 import { pickBus } from "./pickBus";
 
 const ray = new Raycaster();
@@ -23,7 +22,7 @@ export function MonumentPicker() {
       const rect = gl.domElement.getBoundingClientRect();
       ndc.set(((cx - rect.left) / rect.width) * 2 - 1, -((cy - rect.top) / rect.height) * 2 + 1);
       ray.setFromCamera(ndc, camera);
-      let best: LandmarkKey | null = null;
+      let best: MonumentKey | null = null;
       let bd = Infinity;
       for (const m of MONUMENTS) {
         sphere.set(monumentFocus(m.key), m.r * 0.8);
