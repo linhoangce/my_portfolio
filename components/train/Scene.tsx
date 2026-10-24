@@ -23,6 +23,7 @@ import { WestCoastExpress } from "./WestCoastExpress";
 import { SeaBus } from "./SeaBus";
 import { Signals } from "./Signals";
 import { Landmarks } from "./Landmarks";
+import { AirTaxis } from "./AirTaxis";
 import { Life } from "./Life";
 import { Lights } from "./Lights";
 import { Look } from "./Look";
@@ -185,6 +186,7 @@ export default function Scene({ onContextLost }: { onContextLost?: () => void })
         </Stage>
         <Stage n={4}>
           <Life />
+          <AirTaxis />
           <Signals />
           <BusStops />
           <Events />

@@ -271,7 +271,7 @@ const RAW: Hero[] = [
         cap(s, "garden", top);
         box(s, "metal", x + tx, PODIUM + h, z + tz, w * 0.45, 1.1, d * 0.35, copper);
       }
-      skyport(s, x + BC_TOWERS[0][0], z + BC_TOWERS[0][1], PODIUM + BC_TOWERS[0][4]);
+      skyport(s, x + BC_TOWERS[0][0], z + BC_TOWERS[0][1], PODIUM + BC_TOWERS[0][4], BC_TOWERS[0][2], BC_TOWERS[0][3]);
       // trees on the podium's terraces, along its edges
       for (let k = 0; k < 14; k++) {
         const u = k / 14;

@@ -2,12 +2,14 @@
 
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect } from "react";
-import { type InstancedMesh, type Mesh, type MeshStandardMaterial, type Object3D, Vector3 } from "three";
+import { Box3, type InstancedMesh, type Mesh, type MeshStandardMaterial, type Object3D, Raycaster, Vector3 } from "three";
 
 import { stations } from "@/data";
 
 import type { EventId, Season, Weather } from "./lookTypes";
+import { type Round, track, type Track } from "./airspace";
 import { airTaxis } from "./airways";
+import { deliveryDrones } from "./droneways";
 import { skipToHold } from "./scene/director";
 import { shotFor } from "./scene/shots";
 import { orbitBy, zoomBy } from "./scene/view";
@@ -59,6 +61,15 @@ export type TrainDebug = {
   bg: () => string;
   /** The air taxis (airways.ts): x, y, z, service and phase round its cycle (0–1) of each. */
   hover: () => number[][];
+  /** The delivery drones (droneways.ts): x, y, z of each. */
+  drones: () => number[][];
+  /**
+   * The air network against what stands still: every taxi's and drone's round, a step a second, ray-tested along its
+   * centre line and `pad` to either side and below against the scene's meshes (not the instanced and batched ones,
+   * which move or are trees); each hit, by flier kind, round, round time, where, and what it hit. Its stays' spots
+   * (the pads and docks it stands on) are left out.
+   */
+  air: (pad?: number) => { kind: string; round: number; t: number; at: number[]; hit: string }[];
   state: () => Record<string, unknown>;
   /** The water's signed distance at a point (negative on water), for the shore checks. */
   sdf: (x: number, z: number) => number;
@@ -211,6 +222,72 @@ export function Debug() {
       },
       bg: () => world.scene.background.getHexString(),
       hover: () => airTaxis(st().env.lowEnd).taxis.map((c) => [c.x, c.y, c.z, c.service, c.phase]),
+      drones: () => deliveryDrones(st().env.lowEnd).drones.map((d) => [d.x, d.y, d.z]),
+      air: (pad = 0) => {
+        const lowEnd = st().env.lowEnd;
+        world.scene.updateMatrixWorld(true);
+        const meshes: Mesh[] = [];
+        world.scene.traverseVisible((o) => {
+          const m = o as Mesh;
+          if (!m.isMesh || (m as InstancedMesh).isInstancedMesh || (o as { isBatchedMesh?: boolean }).isBatchedMesh || m.geometry === world.sky.mesh.geometry) return;
+          const mat = Array.isArray(m.material) ? m.material[0] : m.material;
+          if (mat.transparent && mat.opacity < 0.5) return;
+          meshes.push(m);
+        });
+        const boxes = meshes.map((m) => {
+          if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+          return new Box3().copy(m.geometry.boundingBox as Box3).applyMatrix4(m.matrixWorld);
+        });
+        const name = (o: Object3D) => {
+          let p: Object3D | null = o;
+          while (p && !p.name) p = p.parent;
+          const m = o as Mesh;
+          const mat = Array.isArray(m.material) ? m.material[0] : m.material;
+          return `${p?.name ?? "?"} ${mat.type}${(mat as MeshStandardMaterial).color ? " #" + (mat as MeshStandardMaterial).color.getHexString() : ""} ${m.geometry.attributes.position.count}`;
+        };
+        const rays: { kind: string; round: Round; tr: Track }[] = [];
+        for (const s of airTaxis(lowEnd).services) s.rounds.forEach((r, k) => rays.push({ kind: `taxi ${s.name}`, round: r, tr: s.tracks[k] }));
+        for (const r of deliveryDrones(lowEnd).routes) rays.push({ kind: `drone port ${r.port}`, round: r.round, tr: track(r.round, () => false) });
+        const out: { kind: string; round: number; t: number; at: number[]; hit: string }[] = [];
+        const rc = new Raycaster();
+        const a = new Vector3();
+        const b = new Vector3();
+        const d = new Vector3();
+        const seg = new Box3();
+        const offsets = pad ? [[0, 0], [pad, 0], [-pad, 0], [0, -pad]] : [[0, 0]];
+        rays.forEach(({ kind, round, tr }, ri) => {
+          const spots = round.legs.flatMap((l) => (l.spot ? [l.spot] : []));
+          for (let u = 0; u < tr.c; u++) {
+            const w = (u + 1) % tr.c;
+            if (Number.isNaN(tr.x[u]) || Number.isNaN(tr.x[w])) continue;
+            a.set(tr.x[u], tr.y[u], tr.z[u]);
+            b.set(tr.x[w], tr.y[w], tr.z[w]);
+            const L = d.subVectors(b, a).length();
+            if (L < 0.05 || spots.some((p) => Math.hypot(p.x - a.x, p.y - a.y, p.z - a.z) < 1.5 || Math.hypot(p.x - b.x, p.y - b.y, p.z - b.z) < 1.5)) continue;
+            d.divideScalar(L);
+            // to the side of travel (right, over the ground) and below
+            const side = new Vector3(-d.z, 0, d.x).normalize();
+            for (const [sx, sy] of offsets) {
+              const o = a.clone().addScaledVector(side, sx).add(new Vector3(0, sy, 0));
+              seg.setFromPoints([o, o.clone().addScaledVector(d, L)]).expandByScalar(0.1);
+              rc.set(o, d);
+              rc.far = L;
+              let hit: { o: Object3D; p: Vector3 } | null = null;
+              meshes.forEach((m, k) => {
+                if (hit || !boxes[k].intersectsBox(seg)) return;
+                const h = rc.intersectObject(m, false)[0];
+                if (h) hit = { o: h.object, p: h.point };
+              });
+              if (hit) {
+                const h = hit as { o: Object3D; p: Vector3 };
+                out.push({ kind, round: ri, t: u, at: [h.p.x, h.p.y, h.p.z].map((v) => Math.round(v * 10) / 10), hit: name(h.o) });
+                break;
+              }
+            }
+          }
+        });
+        return out;
+      },
       sdf: (x, z) => sdfAt(x, z),
       geometry: () => {
         const city = getCityData(st().env.lowEnd);
