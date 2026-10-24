@@ -33,6 +33,7 @@ import { merged, type Part } from "./merge";
 import { roads } from "./roadNetwork";
 import { STREAM } from "./sites";
 import { dotTexture } from "./textures";
+import { deliveryDrones, flyDrones } from "./droneways";
 import { DRONE_LIGHT_POINTS, quadcopter, quadcopterLights } from "./vessels";
 import { useTrain } from "./store";
 import { groundAt, inWater, sdfAt, surfaceAt } from "./terrain";
@@ -63,8 +64,9 @@ function cloudTexture(): CanvasTexture {
 
 /**
  * Nature and the small infrastructure of 2100: the daylighted China Creek with its boardwalk, the BC Parkway path
- * under the guideway, birds over the parks and the creek, drones on lit lanes above the towers, orcas surfacing in
- * Burrard Inlet, seals off the shore and low cloud hanging on the North Shore.
+ * under the guideway, birds over the parks and the creek, the delivery drones flying their rounds between their ports
+ * and their drops (droneways.ts), orcas surfacing in Burrard Inlet, seals off the shore and low cloud hanging on the
+ * North Shore.
  */
 export function Nature() {
   const world = useWorld();
@@ -160,8 +162,9 @@ export function Nature() {
       const [cx, cz] = centres[i % centres.length];
       return { cx, cz, r: 20 + Math.random() * 50, h: 30 + Math.random() * 30, sp: (0.15 + Math.random() * 0.2) * (Math.random() < 0.5 ? 1 : -1), ph: Math.random() * Math.PI * 2, scale: i % 9 === 0 ? 2.4 : 1 };
     });
-    // drones on lanes over the towers and along the line
-    const DN = lowEnd ? 30 : 90;
+    // the delivery drones (droneways.ts: lite 24, full fewer than the 60 asked where their docks and drops are busy)
+    const net = deliveryDrones(lowEnd);
+    const DN = Math.max(1, net.drones.length);
     // quadcopters: a vertex-coloured frame and, as a second mesh, their lights (red to port, green to starboard), on
     // day and night like real drones; a few pixels per light as points too, so a drone reads from any distance, with
     // a white strobe flashing on top
@@ -170,6 +173,7 @@ export function Nature() {
     const droneMat = new MeshBasicMaterial({ vertexColors: true, toneMapped: false });
     const droneLights = new InstancedMesh(quadcopterLights(), droneMat, DN);
     droneLights.frustumCulled = false;
+    drones.count = droneLights.count = net.drones.length;
     const NP = DRONE_LIGHT_POINTS.length;
     const dotGeo = new BufferGeometry();
     dotGeo.setAttribute("position", new BufferAttribute(new Float32Array(DN * NP * 3), 3));
@@ -178,12 +182,6 @@ export function Nature() {
     const dotMat = new PointsMaterial({ size: 3, sizeAttenuation: false, vertexColors: true, map: dotTexture(), transparent: true, depthWrite: false, toneMapped: false });
     const droneDots = new Points(dotGeo, dotMat);
     droneDots.frustumCulled = false;
-    const droneData = Array.from({ length: DN }, (_, i) => {
-      const lane = i % 5;
-      const centres = [[-60, 50, 70], [-120, 80, 95], [60, 140, 60], [340, 300, 70], [640, 580, 80]];
-      const [cx, cz, h] = centres[lane];
-      return { cx, cz, h: h + (i % 3) * 6, r: 40 + (i % 4) * 18, ph: (i / DN) * Math.PI * 2 * 5, sp: 0.06 + (i % 4) * 0.015 };
-    });
     // orcas surfacing in Burrard Inlet, seals off the shore
     const orcas: Group[] = [];
     const orcaHome: [number, number][] = [];
@@ -227,7 +225,7 @@ export function Nature() {
     group.add(new Mesh(mergeGeometries(sheets, false), cloudMat));
     for (const g of sheets) g.dispose();
     group.add(birds, drones, droneLights, droneDots);
-    return { group, birds, birdData, drones, droneLights, droneData, droneMat, droneDots, dotCols, dotMat, orcas, orcaHome, seals, sealAt, cloudMat };
+    return { group, birds, birdData, drones, droneLights, net, droneMat, droneDots, dotCols, dotMat, orcas, orcaHome, seals, sealAt, cloudMat };
   }, [world, lowEnd]);
 
   useEffect(
@@ -248,7 +246,7 @@ export function Nature() {
   const dotPos = useMemo(() => new Vector3(), []);
   useFrame((state) => {
     const t = state.clock.elapsedTime;
-    const { birds, birdData, drones, droneData } = built;
+    const { birds, birdData, drones, net } = built;
     birdData.forEach((b, i) => {
       const a = b.ph + t * b.sp;
       v.set(b.cx + Math.cos(a) * b.r, b.h + Math.sin(t * 0.7 + i) * 2, b.cz + Math.sin(a) * b.r);
@@ -259,11 +257,12 @@ export function Nature() {
     });
     birds.instanceMatrix.needsUpdate = true;
     const lit = night.current ? 1.4 : 0.9;
-    droneData.forEach((d, i) => {
-      const a = d.ph + t * d.sp;
-      v.set(d.cx + Math.cos(a) * d.r, d.h + Math.sin(t + i) * 0.6, d.cz + Math.sin(a) * d.r * 0.7);
-      // nose along the flight path, pitched a little forward as quadcopters fly
-      e.set(0.14, Math.atan2(-Math.sin(a) * d.r, Math.cos(a) * d.r * 0.7), 0, "YXZ");
+    flyDrones(net, t);
+    net.drones.forEach((d, i) => {
+      v.set(d.x, d.y + (d.vh > 0.2 ? Math.sin(t * 2 + i) * 0.08 : 0), d.z);
+      // nose along the way it flies (built nose along +z), tipped forward as quadcopters fly, as much as its speed,
+      // banked into its turns
+      e.set(0.16 * Math.min(1, d.vh / 4), d.yaw + Math.PI / 2, d.roll, "YXZ");
       m4.compose(v, q.setFromEuler(e), s.set(1, 1, 1));
       drones.setMatrixAt(i, m4);
       built.droneLights.setMatrixAt(i, m4);

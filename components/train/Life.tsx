@@ -30,7 +30,7 @@ import { sdfAt } from "./terrain";
 import { groundAt, UP } from "./track";
 import { boatLights, busSection, sailboat, seabus, yacht } from "./vessels";
 import { asVehicle, canoe, carKinds, hoverCar } from "./vehicles";
-import { flyHover, laneGeometry, skyway } from "./hoverLanes";
+import { airTaxis, floatplaneAt, flyTaxis } from "./airways";
 import { SEABUS_A, SEABUS_B } from "./SeaBus";
 import { inNoSail } from "./waterfrontHub";
 import { skipInMirror } from "./waterMirror";
@@ -41,6 +41,7 @@ const CAR_COLOURS = [0xffffff, 0xe8e8e8, 0xc9ccd1, 0x2b2f36, 0x1f2a44, 0x8c1d1d,
 const m4 = new Matrix4();
 const q = new Quaternion();
 const one = new Vector3(1, 1, 1);
+const none = new Vector3(0, 0, 0);
 const p = new Vector3();
 const sc = new Vector3();
 const eu = new Euler();
@@ -176,8 +177,8 @@ function laneAt(u: number, out: { x: number; z: number; tx: number; tz: number }
 const lane = { x: 0, z: 0, tx: 0, tz: 0 };
 
 /**
- * Traffic on the street grid, people on platforms and sidewalks, boats on the inlet and on False Creek (under way,
- * moored and at anchor), a floatplane over the harbour.
+ * Traffic on the street grid, the air taxis (airways.ts), people on platforms and sidewalks, boats on the inlet and on
+ * False Creek (under way, moored and at anchor), a floatplane over the harbour.
  */
 export function Life() {
   const world = useWorld();
@@ -186,9 +187,9 @@ export function Life() {
 
   const built = useMemo(() => {
     const rng = new Rng(5);
-    // the vehicles: the five kinds of car, the buses' two sections and the hover cars (vehicles.ts), one batched mesh,
+    // the vehicles: the five kinds of car, the buses' two sections and the air taxis (vehicles.ts), one batched mesh,
     // one draw. The paint takes each one's colour; lamps, light bars and the buses' signs glow by an attribute,
-    // brighter after dark.
+    // brighter after dark; the taxis' tail strobes flash.
     const kinds = carKinds();
     const HOVER = kinds.length;
     const BUS_F = HOVER + 1;
@@ -199,22 +200,34 @@ export function Life() {
     const nCanoe = lowEnd ? 1 : 2;
     const cars = data.traffic.cars;
     const nb = data.traffic.buses.length;
-    const sky = skyway(lowEnd);
+    const air = airTaxis(lowEnd);
     const vehGlow = { value: 0.6 };
+    const strobeT = { value: 0 };
     const vehMat = new MeshStandardMaterial({ vertexColors: true, roughness: 0.36, metalness: 0.2, envMap: world.envTex, envMapIntensity: 0.55 });
     vehMat.onBeforeCompile = (sh) => {
       sh.uniforms.uGlow = vehGlow;
+      sh.uniforms.uStrobeT = strobeT;
       sh.vertexShader = sh.vertexShader
-        .replace("#include <common>", "#include <common>\nattribute float aGlow;\nattribute float aTint;\nvarying float vGlow;")
+        .replace("#include <common>", "#include <common>\nattribute float aGlow;\nattribute float aTint;\nuniform float uStrobeT;\nvarying float vGlow;")
         .replace("#include <color_vertex>", "#include <color_vertex>\nvColor.xyz = mix(color.xyz, vColor.xyz, aTint);")
-        .replace("#include <begin_vertex>", "#include <begin_vertex>\nvGlow = aGlow;");
+        .replace(
+          "#include <begin_vertex>",
+          [
+            "#include <begin_vertex>",
+            "vGlow = aGlow;",
+            // a taxi's strobe (its glow marked 2): two quick flashes every 1.3 s, each taxi on its own beat
+            "#ifdef USE_BATCHING",
+            "if (aGlow > 1.5) { float beat = fract(uStrobeT / 1.3 + fract(getIndirectIndex(gl_DrawID) * 0.618034)); vGlow = 2.5 * (step(beat, 0.04) + step(abs(beat - 0.14), 0.03)); }",
+            "#endif",
+          ].join("\n"),
+        );
       sh.fragmentShader = sh.fragmentShader
         .replace("#include <common>", "#include <common>\nuniform float uGlow;\nvarying float vGlow;")
         .replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\ntotalEmissiveRadiance += vColor.rgb * vGlow * uGlow;");
     };
     vehMat.customProgramCacheKey = () => "vehicles";
     const vehicles = new BatchedMesh(
-      cars.length + sky.cars.length + 2 * nb + nCanoe,
+      cars.length + air.taxis.length + 2 * nb + nCanoe,
       geos.reduce((s, g) => s + g.attributes.position.count, 0),
       0,
       vehMat,
@@ -229,9 +242,10 @@ export function Life() {
       vehicles.setColorAt(id, c.setHex(hex));
       return id;
     });
-    const hoverIds = sky.cars.map(() => {
+    // the taxis in the fleet's white (its violet line is their own)
+    const taxiIds = air.taxis.map(() => {
       const id = vehicles.addInstance(geoIds[HOVER]);
-      vehicles.setColorAt(id, c.setHex(rng.pick([0xffffff, 0x111111, 0xc9ccd1, 0x1f3a8a, 0x8c1d1d, 0x6d28d9])));
+      vehicles.setColorAt(id, c.setHex(0xf4f5f7));
       return id;
     });
     const busIds = data.traffic.buses.map(() => [vehicles.addInstance(geoIds[BUS_F]), vehicles.addInstance(geoIds[BUS_R])]);
@@ -247,9 +261,6 @@ export function Life() {
     vehicles.castShadow = !lowEnd;
     vehicles.frustumCulled = false;
     vehicles.sortObjects = false;
-    // the hyperwave's guide lines, bands and hoops, unlit and see-through, brighter after dark
-    const laneMat = new MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, toneMapped: false, side: DoubleSide });
-    const lanes = new Mesh(laneGeometry(sky.lanes), laneMat);
     // the boats' lamps, unlit
     const lightMat = new MeshBasicMaterial({ vertexColors: true, toneMapped: false, side: DoubleSide });
 
@@ -302,7 +313,8 @@ export function Life() {
     const docks = new Mesh(merged(moorings.docks), boatMat);
     docks.receiveShadow = true;
 
-    // a floatplane circling the harbour: fuselage and floats, wing and tail, three meshes
+    // a floatplane circling the harbour, clear of the vertiports and under the taxis (airways.ts): fuselage and floats,
+    // wing and tail, three meshes
     const plane = new Group();
     plane.add(
       new Mesh(merged([{ geo: new CylinderGeometry(0.5, 0.35, 7, 10), rotation: [0, 0, Math.PI / 2] }]), new MeshStandardMaterial({ color: 0xf4f4f4, roughness: 0.5 })),
@@ -326,18 +338,16 @@ export function Life() {
       m.frustumCulled = false;
       return m;
     });
-    return { vehicles, vehMat, vehGlow, carIds, hoverIds, busIds, canoeIds, sky, lanes, laneMat, peopleMesh, boats, boatMeshes, boatLamps, boatMat, lightMat, docks, plane, planeT: 0 };
+    return { vehicles, vehMat, vehGlow, strobeT, carIds, taxiIds, busIds, canoeIds, air, peopleMesh, boats, boatMeshes, boatLamps, boatMat, lightMat, docks, plane };
   }, [data, mats, lowEnd, world.envTex]);
 
-  // cars and people are too small and low to show in the water, and the sky lanes too thin
-  useEffect(() => skipInMirror(built.vehicles, built.lanes, built.peopleMesh), [built]);
+  // cars, taxis and people are too small to show in the water
+  useEffect(() => skipInMirror(built.vehicles, built.peopleMesh), [built]);
 
   useEffect(
     () => () => {
       built.vehicles.dispose();
       built.vehMat.dispose();
-      built.lanes.geometry.dispose();
-      built.laneMat.dispose();
       built.peopleMesh.geometry.dispose();
       built.peopleMesh.dispose();
       for (const m of [...built.boatMeshes, ...built.boatLamps]) {
@@ -372,12 +382,13 @@ export function Life() {
       q.setFromAxisAngle(UP, b.ryaw);
       built.vehicles.setMatrixAt(built.busIds[i][1], m4.compose(p, q, one));
     });
-    // the hover cars on the hyperwave: their bank and pitch on top of the heading
-    flyHover(built.sky, dt, state.clock.elapsedTime);
-    built.sky.cars.forEach((h, i) => {
+    // the air taxis on their timetables (airways.ts): their bank and pitch on top of the heading; none past the map's edge
+    flyTaxis(built.air, state.clock.elapsedTime);
+    built.strobeT.value = state.clock.elapsedTime;
+    built.air.taxis.forEach((h, i) => {
       p.set(h.x, h.y, h.z);
       q.setFromEuler(eu.set(h.roll, h.yaw, h.pitch, "YZX"));
-      built.vehicles.setMatrixAt(built.hoverIds[i], m4.compose(p, q, one));
+      built.vehicles.setMatrixAt(built.taxiIds[i], m4.compose(p, q, h.shown ? one : none));
     });
     for (const h of data.people) {
       if (h.move) {
@@ -438,21 +449,16 @@ export function Life() {
     built.lightMat.color.setScalar(1.6 * lit);
     built.vehMat.color.copy(world.buildings.solid.color);
     built.vehGlow.value = 0.5 + 1.8 * lit;
-    built.laneMat.color.setScalar(0.55 + 1.1 * lit);
     for (const m of built.boatLamps) m.visible = lit > 0.02;
-    built.planeT += dt * 0.12;
-    const R = 190;
-    const cx = 120;
-    const cz = -260;
-    built.plane.position.set(cx + Math.cos(built.planeT) * R, 42 + Math.sin(built.planeT * 2.1) * 4, cz + Math.sin(built.planeT) * R * 0.7);
-    built.plane.rotation.y = -built.planeT - Math.PI / 2 + 0.3;
+    const fp = floatplaneAt(t);
+    built.plane.position.set(fp.x, fp.y, fp.z);
+    built.plane.rotation.y = fp.ry;
     built.plane.rotation.z = 0.12;
   }, -40);
 
   return (
     <>
       <primitive object={built.vehicles} />
-      <primitive object={built.lanes} />
       <primitive object={built.peopleMesh} />
       {built.boatMeshes.map((m, i) => (
         <primitive key={`boat${i}`} object={m} />

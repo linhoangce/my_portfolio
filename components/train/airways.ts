@@ -172,19 +172,16 @@ export type Service = { name: string; n: number; c: number; rounds: Round[]; tra
 export type Taxi = Pose & { service: number; j: number; shown: boolean; phase: number };
 export type AirTaxis = { period: number; services: Service[]; taxis: Taxi[]; timetable: Timetable; holds: Holds; report: string[] };
 
-/** The period every round in the air divides (the drones keep it too): 5040 s, rich in divisors. */
+/** The period every taxi's round divides, so the whole timetable repeats: 5040 s, rich in divisors. */
 export const PERIOD = 5040;
-export const DIVISORS = Array.from({ length: PERIOD }, (_, i) => i + 1).filter((d) => PERIOD % d === 0);
+const DIVISORS = Array.from({ length: PERIOD }, (_, i) => i + 1).filter((d) => PERIOD % d === 0);
 
 /**
- * The kinds of flier in the timetable, and the distances they keep (a little over): taxis 15 apart (7 in a vertiport's
- * own airspace), drones 3, a drone from a taxi 6 (5 where both are in a port's airspace: the Skyport's drone deck
- * beside its pads).
+ * The taxis in the timetable, and the distance they keep (a little over): 15 apart, 7 where both are in a vertiport's
+ * own airspace.
  */
-export const TAXI_KIND = 0;
-export const DRONE_KIND = 1;
-export const separation = (a: number, b: number, nearA: number, nearB: number): number =>
-  a === TAXI_KIND && b === TAXI_KIND ? (nearA && nearB ? 7.5 : 15.5) : a === DRONE_KIND && b === DRONE_KIND ? 3.2 : nearA && nearB ? 5.2 : 6.5;
+const TAXI_KIND = 0;
+const separation = (_a: number, _b: number, nearA: number, nearB: number): number => (nearA && nearB ? 7.5 : 15.5);
 
 /** Every pad and dock in the air: who holds it when (round time spans), so no two hold one at once. */
 export class Holds {
@@ -271,7 +268,7 @@ function schedule(timetable: Timetable, pads: Holds, c: number, n: number, round
 }
 
 /** Within a vertiport's own airspace: within 26 of its pads and below 36 over them. */
-export function nearPort(lowEnd: boolean): (x: number, y: number, z: number) => boolean {
+function nearPort(lowEnd: boolean): (x: number, y: number, z: number) => boolean {
   const pads = [...HARBOUR.pads, ...LONSDALE.pads, ...skyportAt(lowEnd).pads];
   return (x, y, z) => pads.some((p) => Math.hypot(x - p.x, z - p.z) < 26 && y < p.y + 36);
 }
@@ -339,7 +336,7 @@ export function flyTaxis(a: AirTaxis, t: number): void {
 }
 
 /** The floatplane's orbit over the harbour: clear of both vertiports by more than 70, under every taxi's level by more than 15. */
-export const FLOATPLANE = { x: 40, z: -300, r: 150, squash: 0.7, y: 34, bob: 3, w: 0.12 };
+export const FLOATPLANE = { x: 30, z: -300, r: 150, squash: 0.7, y: 34, bob: 3, w: 0.12 };
 /** Where the floatplane is at time t, and its heading (Life.tsx flies it). */
 export function floatplaneAt(t: number): { x: number; y: number; z: number; ry: number } {
   const a = t * FLOATPLANE.w;

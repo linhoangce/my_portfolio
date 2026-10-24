@@ -4,8 +4,8 @@
  * - the Harbour Vertiport, a floating deck on the inlet east of the Waterfront hub's gallery (the Expo, the Canada
  *   Line, the West Coast Express and the SeaBus): six pads in a row, a glass terminal under a green roof with drone
  *   docks on it, a charging canopy, safety nets round the deck, a windsock, and a covered gangway to the gallery;
- * - the Lonsdale Vertiport, a smaller float east of the SeaBus's Lonsdale berth: two pads, a shelter with two drone
- *   docks on its roof, a gangway to the quay;
+ * - the Lonsdale Vertiport, a smaller float east of the SeaBus's Lonsdale berth: two pads, a shelter with four drone
+ *   docks on its roof out of the taxis' way, a gangway to the quay;
  * - the Commercial–Broadway Skyport, a deck on the tallest of the Broadway & Commercial towers (built with the tower,
  *   buildings/heroes.ts): two pads, a glass lounge with a drone deck of six docks on its roof, safety nets;
  * - (the rail yard's drone port is on its shed's roof: railYardKit.ts).

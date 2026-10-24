@@ -118,7 +118,7 @@ function Stage({ n, children }: { n: number; children: ReactNode }) {
  * 1. the line: guideway, sets, landmarks, the hub, the other rail lines and ferries, the scene's captions;
  * 2. the city: buildings, streets, stations (their entrances keep clear of its lots), downtown's places and its art;
  * 3. trees, nature and the weather;
- * 4. life: traffic, people, boats and the hyperwave, signals, bus stops, the events;
+ * 4. life: traffic, people, boats and the air taxis, signals, bus stops, the events;
  * 5. reflections, the water's mirror, the quality watch, the monument picker and the debug hook.
  * The lights, the look, the drive, the camera and the bloom are there from the start: the shaders compile for the
  * lights and the target the scene is drawn into.

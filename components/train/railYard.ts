@@ -3,7 +3,8 @@
  * into the inlet north of the West Coast Express's line (wce.ts), its tracks parallel to the line, a ladder of
  * switches joining them to it at the east end, buffer stops at the west. The trains of every line lie up there (the
  * West Coast Express's, the Expo's, the Millennium's, the Canada Line's and freight), a shed over the outer tracks.
- * The city keeps its lots, trees and boats off it. Pure layout: WestCoastExpress.tsx builds it.
+ * The city keeps its lots, trees and boats off it. A drone port on the shed's roof (its docks: droneDocks). Pure
+ * layout: WestCoastExpress.tsx builds it.
  */
 import { groundAt, surfaceAt } from "./terrain";
 import { WCE_PTS, WCE_S } from "./wce";

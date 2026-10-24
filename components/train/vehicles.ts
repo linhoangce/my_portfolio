@@ -239,10 +239,12 @@ export function carKinds(): BufferGeometry[] {
 }
 
 /**
- * A hover car, a flying car for the hyperwave lanes, built about its centre (it floats):
- * - a teardrop body under a glass canopy;
+ * An air taxi (airways.ts flies them), built about its centre (it flies):
+ * - a teardrop body under a glass canopy, the fleet's violet line along both flanks;
  * - a ducted fan at each corner, its lower rim and the disc under it glowing;
- * - struts across to them, front and back.
+ * - struts across to them, front and back;
+ * - navigation lights on the outer fans, red to port and green to starboard, and a white strobe on the tail (its glow
+ *   marked 2, which the vehicles' shader flashes, Life.tsx).
  */
 export function hoverCar(): BufferGeometry {
   // prettier-ignore
@@ -280,6 +282,15 @@ export function hoverCar(): BufferGeometry {
       parts.push(mark(paint(new CircleGeometry(0.3, 8).rotateX(Math.PI / 2).translate(x, 0.15, z), HOVER_GLOW), 1, 0));
     }
   }
+  // the violet line along both flanks, lit
+  parts.push(...sideBand(-0.6, 0.5, 0.4, 0.05, 0.6, 0xa78bfa));
+  // navigation lights on the front fans' outer rims (port is −z, the left of a nose along +x), the strobe on the tail
+  for (const [z, hex] of [
+    [-1.33, TAIL],
+    [1.33, 0x2fd36b],
+  ] as const)
+    parts.push(mark(paint(new BoxGeometry(0.12, 0.1, 0.06).translate(0.85, 0.27, z), hex), 1.2, 0));
+  parts.push(mark(paint(new BoxGeometry(0.1, 0.08, 0.1).translate(-1.2, 0.45, 0), 0xffffff), 2, 0));
   return merge(parts);
 }
 

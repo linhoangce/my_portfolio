@@ -63,6 +63,7 @@ const signPlane = (w: number, h: number, k: number, n: number) => {
  * The SeaBus across Burrard Inlet: two catamarans on the crossing between Waterfront (a floating berth at the end of
  * the hub's gallery pier) and Lonsdale Quay (its berth, and the quay's market hall on the shore under its name), each
  * waiting at a berth while the other crosses, double-ended as the real ones are. Their windows light after dark.
+ * Beside each berth, in the same mesh, an air taxi vertiport (vertiports.ts).
  */
 export function SeaBus() {
   const world = useWorld();
