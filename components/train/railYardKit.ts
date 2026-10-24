@@ -1,8 +1,9 @@
 /**
  * The rail yard's geometry (railYard.ts lays it out), for the West Coast Express's own meshes:
  * - `painted`: the fill's gravel top and its seawall, each track's ballast and rails, the ladder, buffer stops, the
- *   parked trains of the Expo, Millennium and Canada lines and the freight, the shed over the outer tracks, the yard
- *   office and the light masts (their lamps and the buffer stops' lamps marked to glow after dark);
+ *   parked trains of the Expo, Millennium and Canada lines and the freight, the shed over the outer tracks with the
+ *   drone port on its roof, the yard office and the light masts (their lamps, the docks' edges and the buffer stops'
+ *   lamps marked to glow after dark);
  * - `sleepers`, on the sleepers' texture;
  * - where the West Coast Express's own laid-up sets stand (for its instanced locomotives and coaches).
  */
@@ -10,9 +11,8 @@ import { BoxGeometry, BufferGeometry, CylinderGeometry, Float32BufferAttribute, 
 
 import { ribbon } from "./Guideway";
 import { lit } from "./pavilion";
-import { guideAt, wceAt, YARD, YARD_LADDER, YARD_TRACKS, yardInner, yardPoint, yardTrackSpan } from "./railYard";
+import { DOCK_L, DOCK_S, guideAt, SHED_ROOF, wceAt, YARD, YARD_LADDER, YARD_SHED, YARD_TRACKS, yardInner, yardPoint, yardTop, yardTrackSpan } from "./railYard";
 import { paint } from "./shapes";
-import { groundAt, surfaceAt } from "./terrain";
 import { wceBedAt } from "./wce";
 import { type Frame, UP } from "./track";
 
@@ -24,40 +24,6 @@ const WHITE = 0xeef0f2;
 const DARK = 0x1c2430;
 const ROOF = 0x9aa0a6;
 const BOGIE = 0x22252a;
-
-/** The yard's top at s: the highest ground across it (true or as drawn), smoothed along it. */
-let tops: number[] | null = null;
-export function yardTop(s: number): number {
-  if (!tops) {
-    const raw: number[] = [];
-    for (let q = YARD.s0 - 4; q <= YARD.s1 + 4; q += 2) {
-      let m = -Infinity;
-      const [ix, iz] = yardInner(q);
-      const [ox, oz] = yardPoint(q, YARD.l1);
-      for (let k = 0; k <= 12; k++) {
-        const x = ix + ((ox - ix) * k) / 12;
-        const z = iz + ((oz - iz) * k) / 12;
-        m = Math.max(m, groundAt(x, z), surfaceAt(x, z, 2));
-      }
-      raw.push(m);
-    }
-    tops = raw.map((_, i) => {
-      let sum = 0;
-      let n = 0;
-      let peak = -Infinity;
-      for (let j = Math.max(0, i - 5); j <= Math.min(raw.length - 1, i + 5); j++) {
-        sum += raw[j];
-        n++;
-        if (Math.abs(j - i) <= 1) peak = Math.max(peak, raw[j]);
-      }
-      return Math.max(sum / n, peak) + 0.15;
-    });
-  }
-  const f = Math.min(tops.length - 1, Math.max(0, (s - (YARD.s0 - 4)) / 2));
-  const i = Math.floor(f);
-  const u = f - i;
-  return tops[i] * (1 - u) + tops[Math.min(tops.length - 1, i + 1)] * u;
-}
 
 /** A frame on the yard: at (s, l), on its top, r pointing north (lateral +l), t along the guide. */
 function frameAt(s: number, l: number, out?: Frame): Frame {
@@ -218,7 +184,7 @@ export function buildYard(lowEnd: boolean): YardParts {
   train(painted, 135, YARD_TRACKS[5], 1, 9.0, MILL);
   // the shed over the two outer tracks: a wall on the seaward side, columns on the inner, a roof with a glazed
   // lantern along it, its ends open
-  const SH = { s0: 126, s1: 166, l0: 23.3, l1: 34.4, h: 7.2 };
+  const SH = YARD_SHED;
   for (let s = SH.s0; s < SH.s1 - 0.1; s += 4) {
     const c = s + 2;
     // each piece as long as the segment is at its outer edge (the yard bends, so the outer side is the longer)
@@ -236,6 +202,20 @@ export function buildYard(lowEnd: boolean): YardParts {
     box(painted, 0.45, SH.h, 0.45, s, SH.l0, 0, 0x7d8288);
   }
   box(painted, 0.45, SH.h, 0.45, SH.s1, SH.l0, 0, 0x7d8288);
+  // the drone port on the shed's roof, seaward of its lantern: a row of docks, each a dark plinth with lit edges and a
+  // charging cabinet beside it showing its light
+  for (const s of DOCK_S) {
+    box(painted, 2.2, 0.12, 2.2, s, DOCK_L, SHED_ROOF, 0x3a3f46);
+    for (const [ds, dl, w, a] of [
+      [0, -1.05, 0.1, 2.2],
+      [0, 1.05, 0.1, 2.2],
+      [-1.05, 0, 2.0, 0.1],
+      [1.05, 0, 2.0, 0.1],
+    ])
+      box(painted, w, 0.04, a, s + ds, DOCK_L + dl, SHED_ROOF + 0.11, 0x7ef0ff, 0.9);
+    box(painted, 0.6, 0.9, 0.6, s, DOCK_L - 1.9, SHED_ROOF, 0x2f343c);
+    box(painted, 0.04, 0.12, 0.3, s, DOCK_L - 1.58, SHED_ROOF + 0.65, 0x7ef0ff, 1.4);
+  }
   // the yard office at the west end, two storeys, its windows lit after dark
   box(painted, 6, 6, 8, YARD.s0 + 6, 31, 0, 0xd9d2c4);
   box(painted, 6.04, 0.8, 7.4, YARD.s0 + 6, 31, 1.4, 0x33414f, 0.6);

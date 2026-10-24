@@ -9,6 +9,7 @@ import { SEA } from "./constants";
 import { YARD_BOX } from "./railYard";
 import { LANDMARKS } from "./sites";
 import type { SpeciesId } from "./trees/species";
+import { VERTIPORT_FLOATS } from "./vertiports";
 
 const HUB = LANDMARKS.find((l) => l.key === "waterfrontHub");
 /** The hub's centre in the world (where its landmark stands). */
@@ -56,6 +57,40 @@ export function hubTrees(): { x: number; y: number; z: number; sp: SpeciesId; s:
 }
 
 /**
+ * Where a drone can set a parcel down on the hub's roof gardens (droneways.ts): two spots at most on each block's roof
+ * but the tallest's (its maintenance frame stands there), clear of any taller block standing on it, as far from its
+ * trees as the roof allows and 4 apart. World positions, on the roof's top.
+ */
+export function hubDrops(): { x: number; y: number; z: number }[] {
+  const trees = hubTrees();
+  const tallest = HUB_BLOCKS.reduce((a, b) => (b.h > a.h ? b : a));
+  const out: { x: number; y: number; z: number }[] = [];
+  for (const b of HUB_BLOCKS) {
+    if (b === tallest) continue;
+    const roof = HUB_DECK + b.h;
+    const near = trees.filter((t) => Math.abs(t.y - roof) < 0.5);
+    const mine: { x: number; z: number }[] = [];
+    for (let k = 0; k < 2; k++) {
+      let best: { x: number; z: number; d: number } | null = null;
+      for (let x = b.x0 + 1.8; x <= b.x1 - 1.8; x += 0.5) {
+        for (let z = b.z0 + 1.8; z <= b.z1 - 1.8; z += 0.5) {
+          if (HUB_BLOCKS.some((c) => c.h > b.h && x > c.x0 - 2 && x < c.x1 + 2 && z > c.z0 - 2 && z < c.z1 + 2)) continue;
+          const wx = HUB_AT.x + x;
+          const wz = HUB_AT.z + z;
+          if (mine.some((m) => Math.hypot(m.x - wx, m.z - wz) < 4)) continue;
+          const d = Math.min(9, ...near.map((t) => Math.hypot(t.x - wx, t.z - wz)));
+          if (!best || d > best.d) best = { x: wx, z: wz, d };
+        }
+      }
+      if (!best || best.d <= 2.2) break;
+      mine.push(best);
+      out.push({ x: best.x, y: roof + 0.05, z: best.z });
+    }
+  }
+  return out;
+}
+
+/**
  * Water the boats keep out of (world boxes x0, x1, z0, z1):
  * - the hub's deck and gallery;
  * - the Canada Place pier with the cruise ship alongside it;
@@ -69,6 +104,7 @@ export const NO_SAIL: [number, number, number, number][] = [
   [HUB_AT.x + HUB_DECK_BOX.x0 - 6, HUB_AT.x + HUB_DECK_BOX.x1 + 6, HUB_AT.z + HUB_DECK_BOX.z0 - 6, HUB_AT.z + HUB_DECK_BOX.z1 + 6],
   [HUB_AT.x + HUB_GALLERY.x - 14, HUB_AT.x + HUB_GALLERY.x + 14, HUB_AT.z + HUB_GALLERY.z1 - 8, HUB_AT.z + HUB_GALLERY.z0],
 ];
-// the rail yard's fill along the waterfront (railYard.ts)
+// the rail yard's fill along the waterfront (railYard.ts), and the vertiports' floats (vertiports.ts)
 NO_SAIL.push([YARD_BOX[0] - 6, YARD_BOX[1] + 6, YARD_BOX[2] - 8, YARD_BOX[3]]);
+for (const f of VERTIPORT_FLOATS) NO_SAIL.push([f.x0 - 6, f.x1 + 6, f.z0 - 6, f.z1 + 6]);
 export const inNoSail = (x: number, z: number): boolean => NO_SAIL.some(([a, b, c, d]) => x > a && x < b && z > c && z < d);

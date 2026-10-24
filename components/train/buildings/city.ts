@@ -29,7 +29,7 @@ import { cap, fp, walls } from "./parts";
 import { inYard } from "../railYard";
 import { inSenakw, PAVILION, podiumLevels, PODIUMS, towerBase, towerPoly, TOWERS } from "./senakw";
 import { ARCH_BY_ERA, ARCH_DENSE, ARCH_LOWRISE, type ArchId, hood, type Hood, HOUSE_MIX, TOWERISH, ZONES } from "./eras";
-import { HEROES } from "./heroes";
+import { heroLevels, HEROES } from "./heroes";
 import { type HouseInst, type HouseKind } from "./houses";
 import { GeoBuilder, type V3 } from "./meshBuilder";
 import type { Sink } from "./parts";
@@ -104,6 +104,8 @@ const DENSE_LOT: [number, number, number] = [9, 14, 12];
 const lotKind = (lu: number, name: Hood, dense: boolean, houses: boolean): LotKind =>
   lu === 1 || lu === 2 ? "house" : lu === 3 ? "apt" : lu === 4 ? "shop" : lu === 5 ? (dense || name === "joyce" || name === "commercial" ? "tower" : "apt") : lu === 6 ? "hist" : lu === 7 ? "ind" : houses ? "house" : dense ? "tower" : "apt";
 export type TerraceTree = { x: number; y: number; z: number; s: number; sp: SpeciesId };
+/** A rooftop drone pad: its centre on its deck's top, its radius, and whether a drone stands parked on it. */
+export type RoofPad = { x: number; y: number; z: number; r: number; parked: boolean };
 export type CityGeometry = {
   chunks: { key: string; solid: BufferGeometry; glass: BufferGeometry }[];
   crownA: BufferGeometry;
@@ -114,6 +116,8 @@ export type CityGeometry = {
   lots: Lot[];
   murals: Mural[];
   terrace: TerraceTree[];
+  /** The biodomes' rooftop drone pads, where the delivery drones land (droneways.ts). */
+  pads: RoofPad[];
   ms: number;
   /** Milliseconds per phase, for the budget checks. */
   phases: Record<string, number>;
@@ -226,6 +230,7 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
   const houses: HouseInst[] = [];
   const terrace: TerraceTree[] = [];
   const addTerrace = (x: number, y: number, z: number, s: number, sp: SpeciesId) => terrace.push({ x, y, z, s, sp });
+  const pads: RoofPad[] = [];
   // the blank walls a mural could take, within sight of the line, as big as the wall allows: the murals are chosen from
   // them once every lot stands (none on a wall facing a neighbour's)
   type Blank = Mural & { hood: Hood; dist: number; subject?: number; front: boolean; lot: string };
@@ -258,14 +263,10 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
   // floors stand on whichever is higher and walls reach down to whichever is lower, so the land never covers a wall
   const floorAt = (x: number, z: number) => (lowEnd ? Math.max(groundAt(x, z), surfaceAt(x, z, 2)) : groundAt(x, z));
   const footAt = (x: number, z: number) => (lowEnd ? Math.min(groundAt(x, z), surfaceAt(x, z, 2)) : groundAt(x, z));
-  const ground = (x: number, z: number, w: number, d: number) => {
-    const pts = [[x - w / 2, z - d / 2], [x + w / 2, z - d / 2], [x - w / 2, z + d / 2], [x + w / 2, z + d / 2], [x, z]];
-    return { yb: Math.min(...pts.map(([px, pz]) => footAt(px, pz))) - 0.6, yt: Math.max(...pts.map(([px, pz]) => floorAt(px, pz))) };
-  };
 
-  // heroes, with their footprints reserved
+  // heroes, with their footprints reserved (seated by heroLevels, which the Skyport's pads are found by too)
   for (const h of HEROES) {
-    const { yb, yt } = ground(h.x, h.z, h.r * 1.4, h.r * 1.4);
+    const { yb, yt } = heroLevels(h, lowEnd);
     h.build(sinkAt(h.x, h.z), h.x, h.z, yb, yt, rng, addTerrace);
     lots.push({ x: h.x, z: h.z, w: h.r * 2, d: h.r * 2, h: h.h, top: yt + h.h + 3 });
   }
@@ -397,17 +398,32 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
     const builders = [sink.solid, sink.glass, sink.crownA, sink.crownB, sink.dome, sink.neon];
     const starts = builders.map((b) => b.vertices);
     const t0 = terrace.length;
-    const ctx: Ctx = { rng, sink, x, z, w, d, yb, yt, H, hood: name, terrace: addTerrace, wall: (lx, lz, len, y0, y1, subject, front) => muralAt(x, z, ry, name, dist, lx, lz, len, y0, y1, subject, front) };
+    const p0 = pads.length;
+    const ctx: Ctx = {
+      rng,
+      sink,
+      x,
+      z,
+      w,
+      d,
+      yb,
+      yt,
+      H,
+      hood: name,
+      terrace: addTerrace,
+      wall: (lx, lz, len, y0, y1, subject, front) => muralAt(x, z, ry, name, dist, lx, lz, len, y0, y1, subject, front),
+      pad: (px, py, pz, r, parked) => pads.push({ x: px, y: py, z: pz, r, parked }),
+    };
     const tb = now();
     // some of today's and 2100's low and mid-rise blocks are halls after Coast Salish plank houses, chosen by place;
     // the block a hall stands for still draws its numbers (into a scratch sink), so the rest of the city is as it was
     if (onSite) {
-      BUILD[chosen as Exclude<ArchId, "house">]({ ...ctx, sink: scratchSink(), terrace: () => undefined, wall: undefined });
+      BUILD[chosen as Exclude<ArchId, "house">]({ ...ctx, sink: scratchSink(), terrace: () => undefined, wall: undefined, pad: undefined });
       return;
     }
     const hall = era > 0 && SALISH_FROM.has(chosen) && hash01(x * 0.73 + 5.1, z * 1.91 - 2.3) < (HALL_RATE[name] ?? 0);
     if (hall) {
-      BUILD[chosen as Exclude<ArchId, "house">]({ ...ctx, sink: scratchSink(), terrace: () => undefined, wall: undefined });
+      BUILD[chosen as Exclude<ArchId, "house">]({ ...ctx, sink: scratchSink(), terrace: () => undefined, wall: undefined, pad: undefined });
       H = Math.min(H, 6 * 1.9 + 3.7);
       BUILD.salishHall({ ...ctx, H, rng: new CityRng(Math.floor(hash01(z, x) * 2 ** 31)) });
       chosen = "salishHall";
@@ -415,8 +431,7 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
     builders.forEach((b, i) => b.rotateFrom(starts[i], x, z, ry));
     const c = Math.cos(ry);
     const s = Math.sin(ry);
-    for (let i = t0; i < terrace.length; i++) {
-      const tr = terrace[i];
+    for (const tr of [...terrace.slice(t0), ...pads.slice(p0)]) {
       const dx = tr.x - x;
       const dz = tr.z - z;
       tr.x = x + dx * c + dz * s;
@@ -774,6 +789,7 @@ export function buildCity(rng: Rng, lowEnd: boolean): CityGeometry {
     lots,
     murals,
     terrace,
+    pads,
     ms: 0,
     phases,
   };

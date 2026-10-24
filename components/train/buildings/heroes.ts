@@ -12,6 +12,8 @@ import { BoxGeometry, Color, CylinderGeometry, Matrix4, Quaternion, SphereGeomet
 import type { Rng } from "../cityModel";
 import { fromStation } from "../sets/zones";
 import { pushOut } from "../sites";
+import { groundAt, surfaceAt } from "../terrain";
+import { skyport, SKYPORT, SKYPORT_DRONE_DECK, SKYPORT_PAD, type Spot } from "../vertiports";
 import { BUILD, type Ctx } from "./archetypes";
 import type { Tint } from "./meshBuilder";
 import { box, cap, fp, hip, type Sink, solid, walls } from "./parts";
@@ -33,6 +35,14 @@ export type Hero = {
 };
 
 const ctx = (s: Sink, x: number, z: number, yb: number, yt: number, w: number, d: number, H: number, rng: Rng, terrace: Ctx["terrace"]): Ctx => ({ rng, sink: s, x, z, w, d, yb, yt, H, hood: "downtown", terrace });
+
+/** The Broadway & Commercial block's podium height, and its towers about the block's centre (offset, footprint, height over the podium); the first, the tallest, carries the Skyport. */
+const BC_PODIUM = 7.6;
+const BC_TOWERS: [number, number, number, number, number][] = [
+  [5, -6, 9, 6.4, 34],
+  [9.5, 5, 7.2, 7.2, 30],
+  [1, 6.5, 6.2, 8.4, 25],
+];
 
 /** A spot near Joyce–Collingwood: along the line (a) and across it (l, positive toward the station's set). */
 const nearJoyce = (a: number, l: number): [number, number] => fromStation(8, a, l);
@@ -245,17 +255,16 @@ const RAW: Hero[] = [
       cap(s, "garden", ring);
       ring = walls(s, "glass", fp.rounded(17, 20, 2.5), x + 5.5, z + 0.5, yt + 3.8, yt + 7.6, { tint: glassT, yRef: yt });
       cap(s, "garden", ring);
-      const PODIUM = yt + 7.6;
-      // the towers clad in copper: copper fins and floor bands over dark glass, a copper plant room on top
+      const PODIUM = yt + BC_PODIUM;
+      // the towers clad in copper: copper fins and floor bands over dark glass, a copper plant room on top; on the
+      // tallest the Skyport (vertiports.ts), the air taxis' and the delivery drones' port at the interchange
       const copper = T(0xd08a55);
-      const tower = (tx: number, tz: number, w: number, d: number, h: number) => {
+      for (const [tx, tz, w, d, h] of BC_TOWERS) {
         const top = walls(s, "mullion", fp.rounded(w, d, Math.min(w, d) / 2 - 0.05, 5), x + tx, z + tz, PODIUM, PODIUM + h, { tint: copper, yRef: PODIUM });
         cap(s, "garden", top);
         box(s, "metal", x + tx, PODIUM + h, z + tz, w * 0.45, 1.1, d * 0.35, copper);
-      };
-      tower(5, -6, 9, 6.4, 34);
-      tower(9.5, 5, 7.2, 7.2, 30);
-      tower(1, 6.5, 6.2, 8.4, 25);
+      }
+      skyport(s, x + BC_TOWERS[0][0], z + BC_TOWERS[0][1], PODIUM + BC_TOWERS[0][4]);
       // trees on the podium's terraces, along its edges
       for (let k = 0; k < 14; k++) {
         const u = k / 14;
@@ -274,3 +283,44 @@ export const HEROES: Hero[] = RAW.map((h) => {
   const [x, z] = pushOut(h.x, h.z, h.r + 18);
   return { ...h, x, z };
 });
+
+/**
+ * Where a hero stands: the lowest ground under its square (its walls start there) and the highest (its floors are
+ * measured from there). On low-end devices the ground drawn is coarser, so floors stand on whichever is higher and
+ * walls reach down to whichever is lower (city.ts seats every lot so).
+ */
+export function heroLevels(h: Hero, lowEnd: boolean): { yb: number; yt: number } {
+  const w = h.r * 1.4;
+  const pts = [[h.x - w / 2, h.z - w / 2], [h.x + w / 2, h.z - w / 2], [h.x - w / 2, h.z + w / 2], [h.x + w / 2, h.z + w / 2], [h.x, h.z]];
+  const floorAt = (x: number, z: number) => (lowEnd ? Math.max(groundAt(x, z), surfaceAt(x, z, 2)) : groundAt(x, z));
+  const footAt = (x: number, z: number) => (lowEnd ? Math.min(groundAt(x, z), surfaceAt(x, z, 2)) : groundAt(x, z));
+  return { yb: Math.min(...pts.map(([x, z]) => footAt(x, z))) - 0.6, yt: Math.max(...pts.map(([x, z]) => floorAt(x, z))) };
+}
+
+/** An air network's obstacle: an axis-aligned box and its top. */
+export type SkyBlock = { x0: number; x1: number; z0: number; z1: number; top: number };
+
+/**
+ * The Skyport as the air network sees it, seated as the city seats the hero: its taxi pads and drone docks (their
+ * tops), and what stands round them (the Skyport's tower with its deck and lounge, the two other towers, the podium
+ * with its trees), in place of the hero's whole lot.
+ */
+export function skyportAt(lowEnd: boolean): { pads: Spot[]; docks: Spot[]; blocks: SkyBlock[] } {
+  const h = HEROES.find((e) => e.name === "Broadway & Commercial");
+  if (!h) return { pads: [], docks: [], blocks: [] };
+  const { yt } = heroLevels(h, lowEnd);
+  const podium = yt + BC_PODIUM;
+  const [tx, tz, , , th] = BC_TOWERS[0];
+  const cx = h.x + tx;
+  const cz = h.z + tz;
+  const roof = podium + th;
+  const D = SKYPORT.deck;
+  const blocks: SkyBlock[] = [{ x0: cx + D.x0, x1: cx + D.x1, z0: cz + D.z0, z1: cz + D.z1, top: roof + SKYPORT_DRONE_DECK + 0.6 }];
+  for (const [ox, oz, w, d, ht] of BC_TOWERS.slice(1)) blocks.push({ x0: h.x + ox - w / 2, x1: h.x + ox + w / 2, z0: h.z + oz - d / 2, z1: h.z + oz + d / 2, top: podium + ht + 1.1 });
+  blocks.push({ x0: h.x + 4 - 10.5, x1: h.x + 4 + 10.5, z0: h.z - 12, z1: h.z + 12, top: podium + 4.5 });
+  return {
+    pads: SKYPORT.pads.map(([lx, lz]) => ({ x: cx + lx, y: roof + SKYPORT_PAD, z: cz + lz })),
+    docks: SKYPORT.docks.map(([lx, lz]) => ({ x: cx + lx, y: roof + SKYPORT_DRONE_DECK, z: cz + lz })),
+    blocks,
+  };
+}

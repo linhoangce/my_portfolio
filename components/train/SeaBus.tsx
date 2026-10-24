@@ -6,11 +6,13 @@ import { BoxGeometry, CanvasTexture, CylinderGeometry, DoubleSide, Group, Instan
 
 import { SEA } from "./constants";
 import { merged } from "./merge";
+import { shopGlow } from "./pavilion";
 import { paint } from "./shapes";
 import { groundAt } from "./terrain";
 import { UP } from "./track";
 import { boatLights, seabus } from "./vessels";
-import { HUB_AT, HUB_GALLERY } from "./waterfrontHub";
+import { harbourVertiport, lonsdaleVertiport } from "./vertiports";
+import { HUB_AT, HUB_DECK, HUB_GALLERY } from "./waterfrontHub";
 import { skipInMirror } from "./waterMirror";
 import { useWorld } from "./world";
 
@@ -123,21 +125,26 @@ export function SeaBus() {
       { geo: paint(new BoxGeometry(3.2, 0.2, walkLen).translate(ax, SEA + 4.0, walkZ), 0xeef0f2) },
       ...[-1, 1].map((sd) => ({ geo: paint(new BoxGeometry(0.06, 2.2, walkLen).translate(ax + sd * 1.45, SEA + 2.7, walkZ), 0x9fc3d6) })),
     ]);
-    const solid = new Mesh(merged([{ geo: terminal }, { geo: walk }, { geo: pontoon(bx, bz, yaw) }, { geo: quay }]), new MeshStandardMaterial({ vertexColors: true, roughness: 0.8 }));
+    // and in the same mesh the air taxis' vertiports beside both berths (vertiports.ts), their pad lights, docks and
+    // windsocks glowing after dark
+    const vertiports = [harbourVertiport(HUB_AT.x + HUB_GALLERY.x + HUB_GALLERY.half + 0.2, HUB_DECK), lonsdaleVertiport()];
+    const solidMat = shopGlow(new MeshStandardMaterial({ vertexColors: true, roughness: 0.8 }), world);
+    const solid = new Mesh(merged([{ geo: terminal }, { geo: walk }, { geo: pontoon(bx, bz, yaw) }, { geo: quay }, ...vertiports.map((geo) => ({ geo }))]), solidMat);
     solid.receiveShadow = true;
     // the quay's name over its front (Waterfront's goes with the West Coast Express's sign: SEABUS_SIGN)
     const tex = labels([["Lonsdale Quay · SeaBus", "#9c3b2e"]]);
     const sign = new Mesh(signPlane(12, 1.9, 0, 1).rotateY(ry).translate(lx + Math.sin(ry) * 5.75, lg + 5.2, lz + Math.cos(ry) * 5.75), new MeshBasicMaterial({ map: tex, toneMapped: false }));
     const g = new Group();
     g.add(solid, sign, boats, lamps);
-    return { g, boats, lamps, mat, lampMat, solid, sign, tex, yaw };
-  }, []);
+    return { g, boats, lamps, mat, lampMat, solid, solidMat, sign, tex, yaw };
+  }, [world]);
 
   useEffect(() => skipInMirror(built.boats, built.lamps), [built]);
   useEffect(
     () => () => {
       for (const m of [built.boats, built.lamps, built.solid, built.sign]) m.geometry.dispose();
       built.mat.dispose();
+      built.solidMat.dispose();
       built.lampMat.dispose();
       built.tex.dispose();
     },

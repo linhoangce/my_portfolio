@@ -42,6 +42,11 @@ export type Ctx = {
    * sign), centred lz along z, len long, from y0 to y1.
    */
   wall?: (lx: number, lz: number, len: number, y0: number, y1: number, subject?: number, front?: boolean) => void;
+  /**
+   * A rooftop drone pad (the biodome's): its centre on its deck's top, its radius, and whether a drone stands parked on
+   * it. The delivery drones (droneways.ts) land on the free ones. Draws nothing from the rng.
+   */
+  pad?: (x: number, y: number, z: number, r: number, parked: boolean) => void;
 };
 
 const c = new Color();
@@ -76,7 +81,7 @@ const pickW = <T>(rng: Rng, list: readonly [T, number][]): T => {
   return list[0][0];
 };
 /** A landing pad's deck, a unit cylinder from y 0 to 1: its top shows the pad's mark, its sides plain deck. */
-function padDeck(): BufferGeometry {
+export function padDeck(): BufferGeometry {
   const g = new CylinderGeometry(1, 1, 1, 28).translate(0, 0.5, 0);
   const n = g.attributes.normal;
   const uv = g.attributes.uv;
@@ -546,7 +551,9 @@ export const BUILD: Record<Exclude<ArchId, "house">, (o: Ctx) => void> = {
     const top = yt + h + 0.45;
     solid(sink, "pad", tpl("padDeck", padDeck), px, yt + h, pz, P, 0.45, P);
     solid(sink, "crownA", tpl("padRing", () => new TorusGeometry(1, 0.06, 6, 32).rotateX(Math.PI / 2)), px, top + 0.03, pz, P * 0.97, 1, P * 0.97);
-    if (frac(hash * 13) < 0.7) solid(sink, "pad", tpl("padDrone", parkedDrone), px, top, pz, 1, 1, 1, WHITE, frac(hash * 31) * Math.PI * 2);
+    const parked = frac(hash * 13) < 0.7;
+    if (parked) solid(sink, "pad", tpl("padDrone", parkedDrone), px, top, pz, 1, 1, 1, WHITE, frac(hash * 31) * Math.PI * 2);
+    o.pad?.(px, top, pz, P, parked);
   },
   /**
    * The downtown tower, the city's commonest building and so the one with the most variety: a podium filling its lot

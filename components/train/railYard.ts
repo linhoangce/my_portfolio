@@ -5,6 +5,7 @@
  * West Coast Express's, the Expo's, the Millennium's, the Canada Line's and freight), a shed over the outer tracks.
  * The city keeps its lots, trees and boats off it. Pure layout: WestCoastExpress.tsx builds it.
  */
+import { groundAt, surfaceAt } from "./terrain";
 import { WCE_PTS, WCE_S } from "./wce";
 
 /**
@@ -148,3 +149,52 @@ export function inYard(x: number, z: number): boolean {
 }
 /** The yard's extent (x0, x1, z0, z1), for the boats to keep clear of. */
 export const YARD_BOX = BOX as [number, number, number, number];
+
+/** The yard's top at s: the highest ground across it (true or as drawn), smoothed along it. */
+let tops: number[] | null = null;
+export function yardTop(s: number): number {
+  if (!tops) {
+    const raw: number[] = [];
+    for (let q = YARD.s0 - 4; q <= YARD.s1 + 4; q += 2) {
+      let m = -Infinity;
+      const [ix, iz] = yardInner(q);
+      const [ox, oz] = yardPoint(q, YARD.l1);
+      for (let k = 0; k <= 12; k++) {
+        const x = ix + ((ox - ix) * k) / 12;
+        const z = iz + ((oz - iz) * k) / 12;
+        m = Math.max(m, groundAt(x, z), surfaceAt(x, z, 2));
+      }
+      raw.push(m);
+    }
+    tops = raw.map((_, i) => {
+      let sum = 0;
+      let n = 0;
+      let peak = -Infinity;
+      for (let j = Math.max(0, i - 5); j <= Math.min(raw.length - 1, i + 5); j++) {
+        sum += raw[j];
+        n++;
+        if (Math.abs(j - i) <= 1) peak = Math.max(peak, raw[j]);
+      }
+      return Math.max(sum / n, peak) + 0.15;
+    });
+  }
+  const f = Math.min(tops.length - 1, Math.max(0, (s - (YARD.s0 - 4)) / 2));
+  const i = Math.floor(f);
+  const u = f - i;
+  return tops[i] * (1 - u) + tops[Math.min(tops.length - 1, i + 1)] * u;
+}
+
+/** The shed over the yard's two outer tracks: along the line (s), across it (l, its seaward wall at l1), its height. */
+export const YARD_SHED = { s0: 126, s1: 166, l0: 23.3, l1: 34.4, h: 7.2 };
+/** The shed's roof over the yard's top; its drone docks' line on the roof seaward of the lantern (l), their places along it. */
+export const SHED_ROOF = YARD_SHED.h + 0.35;
+export const DOCK_L = 33;
+export const DOCK_S = Array.from({ length: 12 }, (_, k) => 127.3 + k * 3.4);
+
+/** The rail yard's drone port: its docks' tops, in a row along the shed's roof (the delivery drones' home, droneways.ts). */
+export function droneDocks(): { x: number; y: number; z: number }[] {
+  return DOCK_S.map((s) => {
+    const [x, z] = yardPoint(s, DOCK_L);
+    return { x, y: yardTop(s) + SHED_ROOF + 0.12, z };
+  });
+}
