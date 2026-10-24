@@ -2,8 +2,8 @@
  * Where the trees go: a planted verge on both sides of the guideway, street trees along every street's sidewalks (one
  * species per street, as Vancouver plants them), parks, Stanley Park, the Grandview Cut, a rainforest corridor along
  * the guideway through the flats, the North Shore slopes, and sword-fern undergrowth. Never in water, in a lot, on a
- * landmark, on a carriageway, on a steep slope or within 12 units of the track; near the guideway the crowns stay below
- * the deck. Pure.
+ * landmark, on the Clark Park Vertiport's apron, on a carriageway, on a steep slope or within 12 units of the track;
+ * near the guideway the crowns stay below the deck. Pure.
  */
 import { district, type Rng } from "../cityModel";
 import { nearBusStop } from "../buses";
@@ -12,6 +12,7 @@ import { nearWce } from "../wce";
 import { railNear } from "../rail";
 import { junction, type Near, pointAt, roadDist, roadNear, roads, WALK } from "../roadNetwork";
 import { onFeature } from "../commonsLayout";
+import { inVertiport } from "../sets/squares";
 import { inSetZone } from "../sets/zones";
 import { inYard } from "../railYard";
 import { inLandmark, inPark, inPoly, nearBridge, parkAt, parkPathDist, PARKS, PLANTED, streamDist } from "../sites";
@@ -89,7 +90,7 @@ function plant(rng: Rng, lowEnd: boolean, lots: LotBox[]): TreeInst[] {
       return Math.abs(dx * c - dz * s) < l.fw / 2 + 0.4 && Math.abs(dx * s + dz * c) < l.fd / 2 + 0.4;
     });
   // cheapest tests first: the track distance scans the alignment
-  const clear = (x: number, z: number, steep = 0.45) => !inWater(x, z) && !inLot(x, z) && !inLandmark(x, z, 1) && !inHarbourfront(x, z, 0.8) && !onGreenCafe(x, z, 1) && !onFeature(x, z, 1.2) && !nearBusStop(x, z, 1.2) && !nearWce(x, z) && !inSetZone(x, z) && !nearBridge(x, z, 1.5) && slopeAt(x, z) < steep && trackDist(x, z) >= 12 && !railNear(x, z, 9);
+  const clear = (x: number, z: number, steep = 0.45) => !inWater(x, z) && !inLot(x, z) && !inLandmark(x, z, 1) && !inHarbourfront(x, z, 0.8) && !onGreenCafe(x, z, 1) && !onFeature(x, z, 1.2) && !nearBusStop(x, z, 1.2) && !nearWce(x, z) && !inSetZone(x, z) && !inVertiport(x, z, 3) && !nearBridge(x, z, 1.5) && slopeAt(x, z) < steep && trackDist(x, z) >= 12 && !railNear(x, z, 9);
   const ok = (x: number, z: number, steep = 0.45) => clear(x, z, steep) && roadDist(x, z) > 0.3;
   // a street tree stands on its own street's sidewalk, which counts as road: it only has to keep off every other road's
   const near: Near = { edge: 0, seg: 0, t: 0, d: 0, s: 0, side: 1 };

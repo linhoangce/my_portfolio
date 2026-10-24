@@ -5,9 +5,13 @@
  * - the trunk along Burrard Inlet, from out past Stanley Park through the First Narrows and up the inlet, well north
  *   of Canada Place;
  * - the North Shore crossing, Harbour to Lonsdale straight over the water;
- * - the Skyport spur, east along the inlet off the port, then down Victoria Drive to Commercial–Broadway.
+ * - the Skyport spur, east along the inlet off the port, then down Victoria Drive to Commercial–Broadway;
+ * - the regional routes from the Clark Park Vertiport at Commercial–Broadway, east over Trout Lake to the Grandview
+ *   Cut: to Coquitlam along the Millennium Line (the line that goes there), to Surrey along Grandview Highway and the
+ *   Trans-Canada toward the Port Mann; both fly off the map's east edge.
  * Each way of each route has its own flight level; the two ways of a route keep 16 apart side by side over the water
- * and stack 16 apart over the street. Taxis shuttle between their service's pads and dwell at each; the trunk's
+ * and stack 16 apart over the street (the regional routes' ways both: their eastbound lane crosses the westbound where
+ * the Coquitlam route turns off). Taxis shuttle between their service's pads and dwell at each; the trunk's
  * services and its through traffic fly off the map at its ends. Every service's round takes a whole divisor of one
  * period, its taxis spaced about evenly round it, each nudged a few seconds so that no two taxis come within 15 of
  * each other (7 within a vertiport's own airspace) and no pad takes two at once. Where each taxi is is a function of
@@ -15,6 +19,7 @@
  */
 import { type Airspace, airspaceFor, type End, fly, type Flight, holdClash, holds, type Make, offsetLine, type Pose, round, type Round, roundPose, Timetable, track, type Track } from "./airspace";
 import { skyportAt } from "./buildings/heroes";
+import { vertiportPads } from "./sets/squares";
 import { HARBOUR, LONSDALE, type Spot } from "./vertiports";
 
 /** Where the trunk leaves the map: out past Stanley Park toward English Bay, and up the inlet. */
@@ -70,6 +75,46 @@ const SPUR: [number, number][] = [
   [370, 276],
 ];
 
+/**
+ * The regional routes' centrelines, out of the Clark Park Vertiport: east over Commercial Drive and the Expo, over
+ * Trout Lake, to the Grandview Cut at Renfrew (both routes); on from there to Coquitlam over the Millennium Line by
+ * Rupert, Gilmore, Brentwood and Holdom, and to Surrey along Grandview Highway and the Trans-Canada. Each ends at the
+ * map's edge.
+ */
+const REGIONAL: [number, number][] = [
+  [309, 354],
+  [330, 356],
+  [352, 360],
+  [380, 366],
+  [407, 369],
+  [440, 361],
+  [470, 351],
+  [520, 343],
+];
+const COQUITLAM: [number, number][] = [
+  ...REGIONAL,
+  [546, 331],
+  [580, 325],
+  [618, 316],
+  [650, 303],
+  [672, 293],
+  [700, 290],
+  [758, 291],
+  [772, 284],
+  [782, 266],
+  [800, 249],
+  [830, 241],
+  [883, 242],
+  [920, 244],
+  [950, 255],
+  [980, 260],
+  [1040, 262],
+  [1080, 275],
+];
+/** The regional routes' levels: eastbound, westbound. */
+const REGIONAL_LEVELS: [number, number] = [64, 80];
+const SURREY: [number, number][] = [...REGIONAL, [585, 343], [641, 342], [708, 343], [742, 340], [769, 346], [800, 348], [870, 347], [948, 347], [1030, 349]];
+
 /** The taxis' make: levels by route are set per leg; 12 clear of every roof, 7 units a second (about 230 km/h) at cruise. */
 const TAXI: Omit<Make, "level"> = { clear: 12, grade: 0.45, cruise: 7, vert: 2.5, acc: 1.0, turn: 1.6, bank: 0.4, step: 2 };
 /** The least dwell at a pad, and the gap a pad keeps between one taxi's climbing away and the next's coming down. */
@@ -114,6 +159,11 @@ function services(lowEnd: boolean): Def[] {
   // the spur's two ways 16 apart over the inlet, closing to 6 (one over the other) as it comes ashore over the street
   const spurSide = (x: number, z: number) => (z > -30 ? 3 : x < 320 ? 8 : 8 - (5 * (x - 320)) / 50);
   const H = HARBOUR.pads;
+  const V = vertiportPads();
+  // the regional routes' ways 16 apart side by side, eastbound to the south, and stacked 16 apart (they cross where the
+  // Coquitlam route turns off the Surrey route's)
+  const coq = dense(COQUITLAM, 10);
+  const sur = dense(SURREY, 10);
   return [
     { name: "trunk", n: [12, 5], a: { exit: true }, b: { exit: true }, out: trunkE, back: trunkW, levels: [60, 68] },
     { name: "harbour–lonsdale", n: [6, 3], a: { pads: [H[2], H[3]] }, b: { pads: LONSDALE.pads }, out: offsetLine(cross, 8), back: offsetLine(rev(cross), 8), levels: [54, 62] },
@@ -136,6 +186,8 @@ function services(lowEnd: boolean): Def[] {
       levels: [60, 68],
     },
     { name: "harbour–skyport", n: [8, 4], a: { pads: [H[4], H[5]] }, b: { pads: skyportAt(lowEnd).pads, tall: true }, out: offsetLine(spur, spurSide), back: offsetLine(rev(spur), (x, z) => spurSide(x, z)), levels: [72, 88] },
+    { name: "clark–coquitlam", n: [6, 3], a: { pads: [V[0], V[1]], tall: true }, b: { exit: true }, out: offsetLine(coq, 8), back: offsetLine(rev(coq), 8), levels: REGIONAL_LEVELS },
+    { name: "clark–surrey", n: [6, 3], a: { pads: [V[2], V[3]], tall: true }, b: { exit: true }, out: offsetLine(sur, 8), back: offsetLine(rev(sur), 8), levels: REGIONAL_LEVELS },
   ];
 }
 
@@ -267,15 +319,19 @@ function schedule(timetable: Timetable, pads: Holds, c: number, n: number, round
   return best;
 }
 
-/** Within a vertiport's own airspace: within 26 of its pads and below 36 over them. */
+/**
+ * Within a vertiport's own airspace: within 26 of its pads and below 36 over them; at the Clark Park Vertiport, whose
+ * taxis climb straight up from the park to their routes' levels and come straight down, up to those levels.
+ */
 function nearPort(lowEnd: boolean): (x: number, y: number, z: number) => boolean {
-  const pads = [...HARBOUR.pads, ...LONSDALE.pads, ...skyportAt(lowEnd).pads];
-  return (x, y, z) => pads.some((p) => Math.hypot(x - p.x, z - p.z) < 26 && y < p.y + 36);
+  const pads = [...HARBOUR.pads, ...LONSDALE.pads, ...skyportAt(lowEnd).pads].map((p) => ({ ...p, top: p.y + 36 }));
+  for (const p of vertiportPads()) pads.push({ ...p, top: REGIONAL_LEVELS[1] + 2 });
+  return (x, y, z) => pads.some((p) => Math.hypot(x - p.x, z - p.z) < 26 && y < p.top);
 }
 
 const built = new Map<boolean, AirTaxis>();
 
-/** The air taxis for a budget (full: 36, lite: 16), their services' rounds and timetables. */
+/** The air taxis for a budget (full: 48, lite: 22), their services' rounds and timetables. */
 export function airTaxis(lowEnd: boolean): AirTaxis {
   const known = built.get(lowEnd);
   if (known) return known;

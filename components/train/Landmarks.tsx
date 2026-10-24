@@ -18,7 +18,7 @@ import { merged } from "./merge";
 import { shopGlow } from "./pavilion";
 import { merge, paint } from "./shapes";
 import { type Built, buildBCPlace, buildBridges, buildCanadaPlace, buildConvention, buildHarbourCentre, buildHarbourfront, buildRogersArena, buildScienceWorld, buildWaterfrontHub } from "./landmarkKit";
-import { clearReflections } from "./reflectionSources";
+import { addReflections, reflectRegistry, removeReflections } from "./reflectionSources";
 import { LANDMARKS, type LandmarkKey, type PlacedLandmark } from "./sites";
 import { groundAt, surfaceAt } from "./terrain";
 import { ART_LIGHTS, placeLight, uplight } from "./uplight";
@@ -117,41 +117,61 @@ function buildLandmark(l: PlacedLandmark, world: World): Built {
   };
 }
 
-/** The landmarks and monuments at their placed spots (with the event-lit parts registered for Events.tsx) and the bridges. */
+/**
+ * The landmarks and monuments at their placed spots (with the event-lit parts registered for Events.tsx) and the
+ * bridges. What their builders hang on the world's shared lists (the night and event followers, the lit patterns, the
+ * lights in the water) is taken back off as they are built and put on only while this is mounted, and only that is
+ * taken off again: a remount (React's strict mode runs every effect twice) keeps the sails lit and leaves the other
+ * layers' alone.
+ */
 export function Landmarks() {
   const world = useWorld();
-  const built = useMemo(
-    () =>
-      LANDMARKS.map((l) => {
-        const b = buildLandmark(l, world);
-        b.group.position.set(l.px, SMALL.has(l.key) ? groundAt(l.px, l.pz) : l.padY, l.pz);
-        b.group.rotation.y = l.yaw ?? 0;
-        return b;
-      }),
-    [world],
-  );
-  const bridges = useMemo(() => buildBridges(world), [world]);
-  const harbourfront = useMemo(() => buildHarbourfront(world), [world]);
+  const built = useMemo(() => {
+    const ev = world.events;
+    const f0 = ev.followers.length;
+    const p0 = ev.patterns.length;
+    const r0 = reflectRegistry.list.length;
+    const landmarks = LANDMARKS.map((l) => {
+      const b = buildLandmark(l, world);
+      b.group.position.set(l.px, SMALL.has(l.key) ? groundAt(l.px, l.pz) : l.padY, l.pz);
+      b.group.rotation.y = l.yaw ?? 0;
+      return b;
+    });
+    const bridges = buildBridges(world);
+    const harbourfront = buildHarbourfront(world);
+    const hooks = { followers: ev.followers.splice(f0), patterns: ev.patterns.splice(p0), reflections: reflectRegistry.list.splice(r0) };
+    return { landmarks, bridges, harbourfront, hooks };
+  }, [world]);
+  const { landmarks, bridges, harbourfront } = built;
   useFrame((state) => {
     const t = state.clock.elapsedTime;
-    for (const b of built) b.animate?.(t);
+    for (const b of landmarks) b.animate?.(t);
   });
+  useEffect(() => {
+    const { followers, patterns, reflections } = built.hooks;
+    const ev = world.events;
+    ev.followers.push(...followers);
+    ev.patterns.push(...patterns);
+    addReflections(reflections);
+    return () => {
+      ev.followers = ev.followers.filter((f) => !followers.includes(f));
+      ev.patterns = ev.patterns.filter((p) => !patterns.includes(p));
+      removeReflections(reflections);
+    };
+  }, [world, built]);
   useEffect(
     () => () => {
-      world.events.patterns.length = 0;
-      world.events.followers.length = 0;
-      clearReflections();
-      for (const b of [...built, bridges, harbourfront]) {
+      for (const b of [...built.landmarks, built.bridges, built.harbourfront]) {
         b.group.traverse((o) => {
           if (o instanceof Mesh) o.geometry.dispose();
         });
       }
     },
-    [world, built, bridges, harbourfront],
+    [built],
   );
   return (
     <>
-      {built.map((b, i) => (
+      {landmarks.map((b, i) => (
         <primitive key={LANDMARKS[i].key} object={b.group} />
       ))}
       <primitive object={bridges.group} />
