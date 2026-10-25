@@ -19,8 +19,9 @@ import { shopGlow } from "./pavilion";
 import { merge, paint } from "./shapes";
 import { type Built, buildBCPlace, buildBridges, buildCanadaPlace, buildConvention, buildHarbourCentre, buildHarbourfront, buildRogersArena, buildScienceWorld, buildWaterfrontHub } from "./landmarkKit";
 import { addReflections, reflectRegistry, removeReflections } from "./reflectionSources";
+import { inDock, standY } from "./harbourfront";
 import { LANDMARKS, type LandmarkKey, type PlacedLandmark } from "./sites";
-import { groundAt, surfaceAt } from "./terrain";
+import { surfaceAt } from "./terrain";
 import { ART_LIGHTS, placeLight, uplight } from "./uplight";
 import { type World, useWorld } from "./world";
 
@@ -55,10 +56,12 @@ function buildLandmark(l: PlacedLandmark, world: World): Built {
   }
   // the plaza's sculptures are lit after dark from fixtures on the paving round them (uplight.ts), in their own mesh
   const stride = world.lowEnd ? 2 : 1;
-  const foot = groundAt(l.px, l.pz);
+  const foot = standY(l.px, l.pz);
+  // the ground under the paving (the plaza's paving is the quay's own in the dock)
+  const under = (x: number, z: number) => (inDock(x, z) ? standY(x, z) - 0.13 : surfaceAt(x, z, stride));
   const litUp = (parts: BufferGeometry[]) => {
     const spec = ART_LIGHTS[key];
-    const { spots, parts: fixtures } = placeLight(spec, 0, 0, 0, 0, (x, z) => surfaceAt(l.px + x, l.pz + z, stride) + 0.13 - foot, paint);
+    const { spots, parts: fixtures } = placeLight(spec, 0, 0, 0, 0, (x, z) => under(l.px + x, l.pz + z) + 0.13 - foot, paint);
     uplight(parts, spots, spec.gain);
     return new Mesh(merge([...parts, ...fixtures]), shopGlow(new MeshStandardMaterial({ vertexColors: true, roughness: 0.45 }), world));
   };
@@ -133,7 +136,7 @@ export function Landmarks() {
     const r0 = reflectRegistry.list.length;
     const landmarks = LANDMARKS.map((l) => {
       const b = buildLandmark(l, world);
-      b.group.position.set(l.px, SMALL.has(l.key) ? groundAt(l.px, l.pz) : l.padY, l.pz);
+      b.group.position.set(l.px, SMALL.has(l.key) ? standY(l.px, l.pz) : l.padY, l.pz);
       b.group.rotation.y = l.yaw ?? 0;
       return b;
     });

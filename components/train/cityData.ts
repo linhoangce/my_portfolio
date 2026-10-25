@@ -2,10 +2,9 @@ import { buildCity, type CityGeometry } from "./buildings/city";
 import { buildPeople, type Person, Rng } from "./cityModel";
 import { commonsGround } from "./commonsGround";
 import { accessPeople } from "./stationAccess";
-import { harbourfrontTrees } from "./harbourfront";
+import { harbourfrontTrees, standY } from "./harbourfront";
 import { squareTrees } from "./sets/squares";
 import { scienceWorldTrees } from "./sites";
-import { groundAt } from "./terrain";
 import { placeTrees, type TreeInst } from "./trees/placement";
 import { SPECIES, SPECIES_INDEX } from "./trees/species";
 import { Traffic } from "./traffic";
@@ -37,7 +36,7 @@ export function getTreeData(lowEnd: boolean): TreeInst[] {
   if (!data) {
     const city = getCityData(lowEnd);
     data = placeTrees(new Rng(4), lowEnd, city.lots);
-    const harbour = [...harbourfrontTrees(), ...squareTrees(), ...commonsGround(city, lowEnd).trees].map((t) => ({ ...t, y: groundAt(t.x, t.z) }));
+    const harbour = [...harbourfrontTrees(), ...squareTrees(), ...commonsGround(city, lowEnd).trees].map((t) => ({ ...t, y: standY(t.x, t.z) }));
     for (const t of [...city.terrace, ...hubTrees(), ...scienceWorldTrees(), ...harbour]) data.push({ x: t.x, y: t.y - 0.05, z: t.z, sp: SPECIES_INDEX[t.sp], s: (t.s * 6) / SPECIES[SPECIES_INDEX[t.sp]].size[1] });
     treeCache.set(lowEnd, data);
   }

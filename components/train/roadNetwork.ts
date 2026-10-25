@@ -10,7 +10,7 @@
 import { TRENCH } from "./constants";
 import { BROADWAY_LINE, BROADWAY_PORTAL, cutAxis, inRailCut, MILL_LINE, profileAt } from "./rail";
 import { onPeninsula } from "./buildings/eras";
-import { HEROES } from "./buildings/heroes";
+import { LAYOUT_HEROES } from "./buildings/heroes";
 import { LANDUSE } from "./landuseData";
 import { inSetZone } from "./sets/zones";
 import { inHarbourfront, inHarbourGreen } from "./harbourfront";
@@ -146,7 +146,7 @@ export function roads(): Roads {
     }
     // within reach of a hero tower (larger than life, wider than a block), pieces at most 2.5 long, so only those
     // under its footprint go out of sight and the rest of the street stays drawn
-    const nearHero = (x: number, z: number) => HEROES.some((h) => Math.abs(h.x - x) < h.r + 14 && Math.abs(h.z - z) < h.r + 14);
+    const nearHero = (x: number, z: number) => LAYOUT_HEROES.some((h) => Math.abs(h.x - x) < h.r + 14 && Math.abs(h.z - z) < h.r + 14);
     for (let i = 0; i + 1 < xs.length / 2; i++) {
       const ax = xs[i * 2];
       const az = xs[i * 2 + 1];
@@ -208,7 +208,7 @@ export function roads(): Roads {
     inHarbourGreen(x, z, half) ||
     wceDist(x, z) < WCE_HALF + 1 + half ||
     inSetZone(x, z, 0) ||
-    HEROES.some((h) => (h.x - x) ** 2 + (h.z - z) ** 2 < (h.r - 1) ** 2) ||
+    LAYOUT_HEROES.some((h) => (h.x - x) ** 2 + (h.z - z) ** 2 < (h.r - 1) ** 2) ||
     fenced(x, z, 9 + half) ||
     underLowDeck(x, z, half);
   // a long stretch whose ends and middle are ashore can still cross open water (the map's own Lions Gate Bridge, at
@@ -218,7 +218,7 @@ export function roads(): Roads {
     for (let s = 3; s < L - 1; s += 3) if (sdfAt(ax + ((bx - ax) * s) / L, az + ((bz - az) * s) / L) < -1) return true;
     return false;
   };
-  const underHero = (x: number, z: number, half: number) => HEROES.some((h) => Math.abs(h.x - x) < h.r - 1 + half - 0.4 && Math.abs(h.z - z) < h.r - 1 + half - 0.4);
+  const underHero = (x: number, z: number, half: number) => LAYOUT_HEROES.some((h) => Math.abs(h.x - x) < h.r - 1 + half - 0.4 && Math.abs(h.z - z) < h.r - 1 + half - 0.4);
   edges.forEach((e) => {
     const n = e.pts.length / 2;
     for (let i = 0; i < n; i++) e.y[i] = groundAt(e.pts[i * 2], e.pts[i * 2 + 1]);
@@ -574,7 +574,7 @@ function tidyFragments(nodes: RNode[], edges: REdge[]): void {
       // beyond): it would end in nothing, so it goes back to its junction. The streets that end at the Grandview Cut's
       // rim stay: they end there as the real ones do; so do those that end at a hero tower's forecourt, which stands
       // across them as a superblock does
-      const atHero = (x: number, z: number) => HEROES.some((h) => Math.abs(h.x - x) < h.r + 4 && Math.abs(h.z - z) < h.r + 4);
+      const atHero = (x: number, z: number) => LAYOUT_HEROES.some((h) => Math.abs(h.x - x) < h.r + 4 && Math.abs(h.z - z) < h.r + 4);
       const cutOff = (atNode: boolean, node: number, s: number) => {
         if (atNode) return nodes[node].deg >= 2 && (arms.get(node) ?? 0) === 1;
         const [px, pz] = pointAt(e, s);

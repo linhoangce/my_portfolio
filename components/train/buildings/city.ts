@@ -34,7 +34,7 @@ import { inYard } from "../railYard";
 import { inSenakw, PAVILION, podiumLevels, PODIUMS, towerBase, towerPoly, TOWERS } from "./senakw";
 import { ARCH_BY_ERA, ARCH_DENSE, ARCH_LOWRISE, type ArchId, hood, type Hood, HOUSE_MIX, TOWERISH, ZONES } from "./eras";
 import { DEV_PIECES, DEVELOPMENTS, devLevels } from "./developments";
-import { heroLevels, HEROES } from "./heroes";
+import { heroLevels, HEROES, LAYOUT_HEROES } from "./heroes";
 import { INFILL_BOXES, infillAt } from "./infill";
 import { hash01 as placeHash, VARIANTS, variantAt, type VariantId } from "./variants";
 import { type HouseInst, type HouseKind } from "./houses";
@@ -286,7 +286,7 @@ function layOut(rng: Rng, lowEnd: boolean): CityGeometry {
     h.build(sinkAt(h.x, h.z), h.x, h.z, yb, yt, rng, addTerrace);
     lots.push({ x: h.x, z: h.z, w: h.r * 2, d: h.r * 2, h: h.h, top: yt + h.h + 3 });
   }
-  const inHero = (x: number, z: number) => HEROES.some((h) => (x - h.x) ** 2 + (z - h.z) ** 2 < (h.r + 1) ** 2);
+  const inHero = (x: number, z: number) => LAYOUT_HEROES.some((h) => (x - h.x) ** 2 + (z - h.z) ** 2 < (h.r + 1) ** 2);
   mark("heroes");
 
   // the lots, block by block
@@ -559,7 +559,7 @@ function layOut(rng: Rng, lowEnd: boolean): CityGeometry {
   const take = (l: Plot) => cellsOf(l, 0.3, (k) => void (occ[k] = 1));
 
   // the heroes' footprints are taken first
-  for (const h of HEROES) take({ x: h.x, z: h.z, w: h.r * 2, d: h.r * 2, ry: 0 });
+  for (const h of LAYOUT_HEROES) take({ x: h.x, z: h.z, w: h.r * 2, d: h.r * 2, ry: 0 });
 
   /** Parcels the passes took and left empty (the zone's share of open lots), for the last pass to build on. */
   const vacant: { l: Plot; name: Hood; lu: number }[] = [];

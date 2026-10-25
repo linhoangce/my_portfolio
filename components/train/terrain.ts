@@ -307,9 +307,19 @@ export function addModifier(m: Modifier): void {
   modifiers.push(m);
 }
 
-const finalAt = (x: number, z: number): number => {
+/** A box of world x0, x1, z0, z1. */
+type Box = [number, number, number, number];
+/** Modifiers the city is laid out without (see `asBaked`), each with the box outside which it changes nothing. */
+const unbaked: { m: Modifier; box: Box }[] = [];
+/** Register a modifier the city's lots and trees do not see: they are laid out on the ground as it was without it. */
+export function addUnbakedModifier(m: Modifier, box: Box): void {
+  addModifier(m);
+  unbaked.push({ m, box });
+}
+
+const finalAt = (x: number, z: number, skip?: Modifier[]): number => {
   let h = demAt(x, z);
-  for (const m of modifiers) h = m(x, z, h);
+  for (const m of modifiers) if (!skip?.includes(m)) h = m(x, z, h);
   return h;
 };
 
@@ -325,18 +335,22 @@ export const terrainRaster = (): { grid: GridDef; hf: Float32Array } => ({ grid:
 const raster = (): Float32Array => (baked && bakedRaster ? bakedRaster : (frozen ?? freeze()));
 
 /**
- * Run f on the ground and the shore as baked, Deadman's Island standing: the city lays its lots and plants its trees
- * this way, so every number it draws is drawn as before and the island's own lots and trees (taken out after) do not
- * move the rest. Only the island's box differs.
+ * Run f on the ground and the shore as baked, Deadman's Island standing and without the unbaked modifiers (the
+ * harbourfront's dock): the city lays its lots and plants its trees this way, so every number it draws is drawn as
+ * before and the lots and trees on the changed ground (taken out after) do not move the rest. Only those boxes differ.
  */
 export function asBaked<T>(f: () => T): T {
   const hf = frozen ?? freeze();
   if (!bakedRaster) {
     const out = hf.slice();
     const g = RASTER;
+    const skip = unbaked.map((u) => u.m);
     field = SDF_BAKED;
-    for (let j = Math.max(0, Math.floor((ISLET_BOX.z0 - g.z0) / g.step) - 1); j <= Math.min(g.nz - 1, Math.ceil((ISLET_BOX.z1 - g.z0) / g.step) + 1); j++) {
-      for (let i = Math.max(0, Math.floor((ISLET_BOX.x0 - g.x0) / g.step) - 1); i <= Math.min(g.nx - 1, Math.ceil((ISLET_BOX.x1 - g.x0) / g.step) + 1); i++) out[j * g.nx + i] = finalAt(g.x0 + i * g.step, g.z0 + j * g.step);
+    // the carving and the unbaked modifiers change nothing outside their boxes, so each box is worked out again alone
+    for (const [x0, x1, z0, z1] of [[ISLET_BOX.x0, ISLET_BOX.x1, ISLET_BOX.z0, ISLET_BOX.z1] as Box, ...unbaked.map((u) => u.box)]) {
+      for (let j = Math.max(0, Math.floor((z0 - g.z0) / g.step) - 1); j <= Math.min(g.nz - 1, Math.ceil((z1 - g.z0) / g.step) + 1); j++) {
+        for (let i = Math.max(0, Math.floor((x0 - g.x0) / g.step) - 1); i <= Math.min(g.nx - 1, Math.ceil((x1 - g.x0) / g.step) + 1); i++) out[j * g.nx + i] = finalAt(g.x0 + i * g.step, g.z0 + j * g.step, skip);
+      }
     }
     field = SDF;
     bakedRaster = out;
