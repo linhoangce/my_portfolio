@@ -292,11 +292,14 @@ function segDist(p1x: number, p1z: number, p2x: number, p2z: number, q1x: number
   return Math.hypot(wx + sc * ux - tc * vx, wz + sc * uz - tc * vz);
 }
 
-/** The clear water between two hulls (each a capsule down its centreline, its beam wide); negative where they overlap. */
+/**
+ * The clear water between two hulls, each taken as a capsule its beam wide down its centreline from stem to stern (so
+ * round the corners of the bluntest, the ferries' square ends); negative where they overlap.
+ */
 function between(h1: Hull, x1: number, z1: number, y1: number, h2: Hull, x2: number, z2: number, y2: number): number {
-  const a1 = (h1.front + h1.back) / 2 - h1.beam / 2;
+  const a1 = (h1.front + h1.back) / 2;
   const c1 = (h1.front - h1.back) / 2;
-  const a2 = (h2.front + h2.back) / 2 - h2.beam / 2;
+  const a2 = (h2.front + h2.back) / 2;
   const c2 = (h2.front - h2.back) / 2;
   const s1 = Math.sin(y1);
   const k1 = Math.cos(y1);
