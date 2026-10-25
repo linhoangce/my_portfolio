@@ -305,8 +305,8 @@
   transform: none;
 }
 
-/* the line map, bottom centre, as tall as the stop buttons beside it: ten stops on a rail, the train's position, the
-   current stop ringed, the next one pulsing. Centred on the screen where there is room, else moved right (and
+/* the line map, bottom centre, as tall as the stop buttons beside it and straight on the scene: ten stops on a rail,
+   the train's position, the current stop ringed, the next one pulsing. Centred on the screen where there is room, else moved right (and
    narrowed) to stay clear of the stop buttons and the scene's column at its left and the map credit at its right */
 .linemap {
   --linemap-clear: max(417px, calc(min(440px, 38vw) + 16px));
@@ -315,10 +315,7 @@
   left: max(calc(50% - 280px), var(--linemap-clear));
   z-index: 12;
   width: min(560px, calc(100% - var(--linemap-clear) - 200px));
-  padding: 3px 10px;
-  border-radius: 999px;
-  border: 1px solid rgb(var(--border));
-  background: rgb(var(--surface) / var(--glass-a));
+  padding: 4px 10px;
 }
 .linemap ol {
   position: relative;
@@ -336,8 +333,10 @@
   top: 50%;
   height: 2px;
   margin-top: -1px;
-  background: rgb(var(--border));
+  /* white with a soft shadow, so the rail and its stops read over any part of the scene, by day or night */
+  background: rgb(255 255 255 / 0.9);
   border-radius: 2px;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.45);
 }
 .linemap .train-mark {
   position: absolute;
@@ -371,6 +370,7 @@
   border-radius: 50%;
   background: rgb(var(--surface));
   border: 2px solid rgb(var(--muted));
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.45);
   transition:
     transform 0.2s,
     border-color 0.2s;
