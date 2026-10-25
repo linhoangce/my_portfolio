@@ -4,8 +4,9 @@ import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo } from "react";
 import { BoxGeometry, BufferGeometry, CatmullRomCurve3, Color, CylinderGeometry, Float32BufferAttribute, Group, InstancedMesh, Matrix4, Mesh, MeshStandardMaterial, Quaternion, TubeGeometry, Vector3 } from "three";
 
-import { BALLAST, GAP, LANE, PLATFORM_LEN, TRENCH } from "./constants";
-import { mirror, ribbon } from "./Guideway";
+import { BALLAST, GAP, LANE, PLATFORM_LEN, SLIM, TRENCH } from "./constants";
+import { GAUGE, mirror, ribbon, SLEEPER, slimRibbon } from "./Guideway";
+import { acrossStation } from "./slim";
 import { MILLENNIUM } from "./liveries";
 import { bedProfile, clearHeights, resample } from "./bedLift";
 import { merged, type Part } from "./merge";
@@ -213,13 +214,13 @@ export function Millennium() {
       // the parapets give way to the platforms' own edges
       const runs = runsOf((s) => raised(s) && !stops.some((ss) => Math.abs(s - ss) < 13.5));
       const decks = runsOf(raised);
-      girder.push(...decks.map((r) => ribbon(SOFFIT, r)), ...runs.flatMap((r) => [ribbon(PARAPET, r), ribbon(mirror(PARAPET), r)]));
-      bed.push(ribbon([[6.02, 0.955], [-6.02, 0.955]], all, false));
-      for (const lane of [-LANE, LANE]) sleepers.push(ribbon([[lane + 1.3, 0.96], [lane - 1.3, 0.96]], all, false, 0.65));
-      leds.push(...decks.flatMap((r) => [ribbon(LED, r), ribbon(mirror(LED), r)]));
+      girder.push(...decks.map((r) => slimRibbon(SOFFIT, r)), ...runs.flatMap((r) => [slimRibbon(PARAPET, r), slimRibbon(mirror(PARAPET), r)]));
+      bed.push(slimRibbon([[6.02, 0.955], [-6.02, 0.955]], all, false));
+      for (const lane of [-LANE, LANE]) sleepers.push(ribbon([[lane + SLEEPER, 0.96], [lane - SLEEPER, 0.96]], all, false, 0.65));
+      leds.push(...decks.flatMap((r) => [slimRibbon(LED, r), slimRibbon(mirror(LED), r)]));
       for (const lane of [-LANE, LANE]) {
         for (const side of [-1, 1]) {
-          const pts = all.map((f) => f.p.clone().addScaledVector(f.r, lane + side * 0.72).addScaledVector(UP, 0.98));
+          const pts = all.map((f) => f.p.clone().addScaledVector(f.r, lane + side * GAUGE).addScaledVector(UP, 0.98));
           rails.push(new TubeGeometry(new CatmullRomCurve3(pts, false, "catmullrom", 0), all.length * 2, 0.07, 4, false));
         }
       }
@@ -265,18 +266,24 @@ export function Millennium() {
         return fr.p.y - groundAt(w.x, w.z);
       };
       const grand = /VCC|Commercial/.test(st.name);
+      // a box from x0 to x1 across (the station's first numbers), drawn across as the Expo's stations are (slim.ts)
+      const across = (list: Part[], x0: number, x1: number, h: number, len: number, y: number, z: number) => {
+        const [a, b] = [acrossStation(x0), acrossStation(x1)];
+        put(list, new BoxGeometry(Math.abs(b - a), h, len), (a + b) / 2, y, z);
+      };
       for (const side of [1, -1]) {
-        put(plat, new BoxGeometry(5.2, 0.9, 24), side * 8.9, 0.95, 0);
-        put(yellow, new BoxGeometry(0.16, 0.05, 23.4), side * 6.38, 1.42, 0);
+        across(plat, side * 6.3, side * 11.5, 0.9, 24, 0.95, 0);
+        across(yellow, side * 6.3, side * 6.46, 0.05, 23.4, 1.42, 0);
         for (const z of [-8, 8]) {
-          const d = drop(side * 10, z);
-          if (d > 1.2) put(white, new CylinderGeometry(0.35, 0.5, d + 0.5, 10), side * 10, (0.5 - d) / 2, z);
+          const x = acrossStation(side * 10);
+          const d = drop(x, z);
+          if (d > 1.2) put(white, new CylinderGeometry(0.35, 0.5, d + 0.5, 10), x, (0.5 - d) / 2, z);
         }
         if (!grand) {
           // a plain roof over each platform on two rows of slim columns
-          put(canopy, new BoxGeometry(6.4, 0.25, 24), side * 9.1, 5.6, 0);
-          for (const z of [-9, 0, 9]) put(white, new BoxGeometry(0.22, 4.2, 0.22), side * 11.1, 3.5, z);
-          put(pane, new BoxGeometry(0.05, 2.2, 23), side * 11.4, 2.5, 0);
+          across(canopy, side * 5.9, side * 12.3, 0.25, 24, 5.6, 0);
+          for (const z of [-9, 0, 9]) across(white, side * 10.99, side * 11.21, 4.2, 0.22, 3.5, z);
+          across(pane, side * 11.375, side * 11.425, 2.2, 23, 2.5, 0);
         }
       }
       // at Commercial–Broadway the Expo's platforms reach out over the Millennium's right-hand platform in the cut: a
@@ -458,6 +465,8 @@ export function Millennium() {
         inner.add(car);
         const holder = new Group();
         holder.add(inner);
+        // drawn at SLIM across and up, as the Expo's trains are
+        holder.scale.set(SLIM, SLIM, 1);
         cars.push(holder);
         g.add(holder);
       }

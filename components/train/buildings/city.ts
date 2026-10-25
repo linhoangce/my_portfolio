@@ -380,7 +380,7 @@ function layOut(rng: Rng, lowEnd: boolean): CityGeometry {
     const ad = Math.abs(w * Math.sin(ry)) + Math.abs(d * Math.cos(ry));
     const ci = Math.round(x / 9);
     const cj = Math.round(z / 9);
-    const big = o.infill ? Math.min(w, d) >= 5 : dense ? Math.min(w, d) > 6.5 : w > 11 && d > 11;
+    const big = o.infill ? Math.min(w, d) >= 7 : dense ? Math.min(w, d) > 6.5 : w > 11 && d > 11;
     const picked = pickArch(zone, name, big, `${ci},${cj}`, [`${ci - 1},${cj}`, `${ci},${cj - 1}`, `${ci - 1},${cj - 1}`, `${ci + 1},${cj - 1}`], o.infill ? dense : undefined);
     const era = picked.era;
     const arch = byLand(picked.arch, era, lu, name);
@@ -407,7 +407,7 @@ function layOut(rng: Rng, lowEnd: boolean): CityGeometry {
     if (TOWERISH.has(arch) && rng.next() < 0.07) H *= 1.3;
     if (name === "downtown") H *= 0.75 + 0.5 * (1 - Math.min(1, Math.hypot(x - CORE.x, z - CORE.z) / 140));
     if (o.scale) H *= o.scale;
-    H = Math.min(H, (dense ? 9 : 6) * Math.min(w, d), CAP[lu] ?? Infinity);
+    H = Math.min(H, (o.infill ? 7 : dense ? 9 : 6) * Math.min(w, d), CAP[lu] ?? Infinity);
     // near the guideway: tops stay a few units above the deck, opening up to full height by 72
     const deckTop = cor.deck(x, z) + 4 - yt;
     const allow = dense
@@ -1038,8 +1038,12 @@ function layOut(rng: Rng, lowEnd: boolean): CityGeometry {
       }
       return ry;
     };
-    // frontage by depth and the step the ground is searched at: towers from five units wide, low blocks below
+    // frontage by depth and the step the ground is searched at: towers from seven units wide (no more pencils beside the
+    // guideway), low blocks below
     const SIZES: [number, number, number][] = [
+      [13, 11, 1],
+      [12, 10, 1],
+      [11, 10, 1],
       [10, 9, 1],
       [9, 8, 1],
       [8, 7, 1],
@@ -1056,7 +1060,7 @@ function layOut(rng: Rng, lowEnd: boolean): CityGeometry {
     ];
     const plots: { l: Plot; tower: boolean }[] = [];
     for (const [w, d, step] of SIZES) {
-      const tower = Math.min(w, d) >= 5;
+      const tower = Math.min(w, d) >= 7;
       for (const [bx0, bx1, bz0, bz1] of INFILL_BOXES) {
         for (let z = bz0; z <= bz1; z += step) {
           for (let x = bx0; x <= bx1; x += step) {
@@ -1084,9 +1088,14 @@ function layOut(rng: Rng, lowEnd: boolean): CityGeometry {
     // the low blocks' own heights: shopfronts and walk-ups, a few old ones among them
     const LOW: NonNullable<(typeof ZONES)[Hood]> = { era: [0.3, 0.45, 0.25], h: [[5, 12], [6, 16], [8, 18]], split: 1, build: 1 };
     const before = lots.length;
+    // each of the infill's buildings draws its own numbers, from where it stands, so a change in one place leaves the
+    // rest of it as it was
+    const cityRng = rng;
+    const ownDraws = (x: number, z: number) => (rng = new CityRng(Math.floor(placeHash(x * 0.53 + 1.7, z * 1.21 - 0.4) * 2 ** 31)));
     for (const { l, tower } of plots) {
       const at = infillAt(l.x, l.z);
       if (!at) continue;
+      ownDraws(l.x, l.z);
       buildLot(l, at.name, tower ? at.zone : LOW, tower ? 5 : 4, at.dense, { infill: true, scale: tower ? at.scale : 1 });
     }
     // each new lot's ground its own
@@ -1097,28 +1106,29 @@ function layOut(rng: Rng, lowEnd: boolean): CityGeometry {
     mark("infill");
 
     // over most of today's and 2100's low blocks in these districts (chosen by place; never the old blocks, the
-    // halls, the courtyards or the domes with their drone pads), a slender tower rising out of the block, set back from
+    // halls, the courtyards or the domes with their drone pads), a tower rising out of the block, set back from
     // its street, as Vancouver builds over its podiums: the block stands as it was round the tower's foot, and the
     // trees on its roof where the tower stands make way
     const RISE_FROM = new Set<string>(["midrise", "colourPanels", "metalLoft", "townhouses", "stacked"]);
     const RISE_SHARE = 0.7;
     const risen = lots.length;
     for (const L of lots.slice(0, before)) {
-      if (!L.arch || !RISE_FROM.has(L.arch) || Math.min(L.fw ?? L.w, L.fd ?? L.d) < 5.6) continue;
+      if (!L.arch || !RISE_FROM.has(L.arch) || Math.min(L.fw ?? L.w, L.fd ?? L.d) < 7.5) continue;
       if (placeHash(L.x * 1.13 + 0.7, L.z * 0.77 - 1.9) > RISE_SHARE) continue;
       const at = infillAt(L.x, L.z);
       if (!at) continue;
       const fw = L.fw ?? L.w;
       const fd = L.fd ?? L.d;
       const ry = L.ry ?? 0;
-      const tw = Math.max(4.4, fw * 0.6);
-      const td = Math.max(4.4, fd * 0.6);
+      const tw = Math.max(6, fw * 0.72);
+      const td = Math.max(6, fd * 0.72);
       // toward the back of its lot (local +z runs into the block)
       const back = ((fd - td) / 2) * 0.6;
       const tx = L.x + back * Math.sin(ry);
       const tz = L.z + back * Math.cos(ry);
       const n0 = lots.length;
       const t0 = terrace.length;
+      ownDraws(tx, tz);
       buildLot({ x: tx, z: tz, w: tw, d: td, ry }, at.name, at.zone, 5, at.dense, { infill: true, scale: at.scale, min: L.h + 12 });
       if (lots.length === n0) continue;
       const c = Math.cos(ry);
@@ -1129,6 +1139,7 @@ function layOut(rng: Rng, lowEnd: boolean): CityGeometry {
         if (Math.abs(dx) < 9 && Math.abs(dz) < 9 && terrace[k].y < L.top && Math.abs(dx * c - dz * sn) < tw / 2 + 0.6 && Math.abs(dx * sn + dz * c) < td / 2 + 0.6) terrace.splice(k, 1);
       }
     }
+    rng = cityRng;
     mark("rise");
 
     // then a podium under each tower in these districts, as Vancouver builds them: its block's open ground taken up to

@@ -33,6 +33,7 @@ import { accessParts } from "./accessKit";
 import { CANOPY, canopyParts, FIN, turbineBlades } from "./canopies";
 import { inRailCut } from "./rail";
 import { getCityData } from "./cityData";
+import { acrossStation, slimStation } from "./slim";
 import { setBridges, stationAccess, TOWER } from "./stationAccess";
 import { isRoad } from "./roadNetwork";
 import { frameAt, groundAt, makeFrame, stationS } from "./track";
@@ -229,7 +230,7 @@ export function Stations() {
       painted.push(...roof.painted);
       if (roof.fins.length) {
         g.updateMatrixWorld();
-        for (const c of roof.fins) fins.push({ p: c.clone().applyMatrix4(g.matrixWorld), q: g.quaternion.clone(), t: tH.clone() });
+        for (const c of roof.fins) fins.push({ p: c.clone().setX(acrossStation(c.x)).applyMatrix4(g.matrixWorld), q: g.quaternion.clone(), t: tH.clone() });
       }
       // a pair of small wind turbines on masts beside the left platform, turning in the wind off the inlet, clear of
       // the ways in (the interchange has none)
@@ -268,7 +269,8 @@ export function Stations() {
       ];
       for (const [parts, mat, cast] of meshes) {
         if (!parts.length) continue;
-        const m = new Mesh(merged(parts), mat);
+        // drawn across the track as the slimmer guideway and trains (slim.ts)
+        const m = new Mesh(slimStation(merged(parts)), mat);
         m.castShadow = cast && !lowEnd;
         m.receiveShadow = !([mats.pane, mats.lamp, lanternMat, pvGlassMat] as Material[]).includes(mat);
         g.add(m);
@@ -277,9 +279,11 @@ export function Stations() {
       const label = doorLabel(st, fonts);
       labels.push({ canvas: label.canvas, texture: label.texture, index: i });
       const labelMesh = new Mesh(
-        merged(
+        slimStation(
+          merged(
           // 1024 × 60 px, so 8 units wide is 0.47 tall: a strip just under the doors' light line
-          [1, -1].map((side) => ({ geo: new PlaneGeometry(8, 0.47), position: at(side * 6.5, 3.58, side * -4), rotation: [0, -side * (Math.PI / 2), 0] as [number, number, number] })),
+            [1, -1].map((side) => ({ geo: new PlaneGeometry(8, 0.47), position: at(side * 6.5, 3.58, side * -4), rotation: [0, -side * (Math.PI / 2), 0] as [number, number, number] })),
+          ),
         ),
         new MeshBasicMaterial({ map: label.texture, toneMapped: false }),
       );

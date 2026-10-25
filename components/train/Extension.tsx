@@ -4,8 +4,9 @@ import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import { BoxGeometry, BufferGeometry, CatmullRomCurve3, CylinderGeometry, Float32BufferAttribute, type Group, InstancedMesh, Matrix4, Quaternion, TubeGeometry, Vector3 } from "three";
 
-import { CAR, GAP, LANE } from "./constants";
-import { HEDGE, LED_STRIP, mirror, PARAPET, ribbon, SOFFIT, TROUGH } from "./Guideway";
+import { CAR, GAP, LANE, SLIM } from "./constants";
+import { ARM_OUT, ARM_TILT, GAUGE, HEDGE, LED_STRIP, mirror, PARAPET, ribbon, SLEEPER, slimRibbon, SOFFIT, TROUGH } from "./Guideway";
+import { acrossStation } from "./slim";
 import { EXPO } from "./liveries";
 import { merged, type Part } from "./merge";
 import { isRoad } from "./roadNetwork";
@@ -60,22 +61,22 @@ export function Extension({ heightAt }: { heightAt: (x: number, z: number) => nu
     const runsRight = runsOf((t) => atStop(t) || t < J + 1);
     const tracked = all.filter((_, i) => tOf(i) >= J - 2);
     const girder: BufferGeometry[] = [
-      ribbon(SOFFIT, all),
-      ...runsRight.flatMap((r) => [ribbon(PARAPET, r), ribbon(TROUGH, r)]),
-      ...runs.flatMap((r) => [ribbon(mirror(PARAPET), r), ribbon(mirror(TROUGH), r)]),
+      slimRibbon(SOFFIT, all),
+      ...runsRight.flatMap((r) => [slimRibbon(PARAPET, r), slimRibbon(TROUGH, r)]),
+      ...runs.flatMap((r) => [slimRibbon(mirror(PARAPET), r), slimRibbon(mirror(TROUGH), r)]),
     ];
     const half = (r: Frame[]) => r.filter((_, i) => i % 2 === 0 || i === r.length - 1);
-    const hedges = [...runsRight.map((r) => ribbon(HEDGE, half(r), false, 1.6)), ...runs.map((r) => ribbon(mirror(HEDGE), half(r), false, 1.6))];
-    const bed = [ribbon([[6.02, 0.955], [-6.02, 0.955]], all, false)];
-    const sleepers = [-LANE, LANE].map((lane) => ribbon([[lane + 1.3, 0.96], [lane - 1.3, 0.96]], tracked, false, 0.65));
-    const leds = [ribbon(LED_STRIP, all.filter((_, i) => tOf(i) >= J + 1)), ribbon(mirror(LED_STRIP), all)];
+    const hedges = [...runsRight.map((r) => slimRibbon(HEDGE, half(r), false, 1.6)), ...runs.map((r) => slimRibbon(mirror(HEDGE), half(r), false, 1.6))];
+    const bed = [slimRibbon([[6.02, 0.955], [-6.02, 0.955]], all, false)];
+    const sleepers = [-LANE, LANE].map((lane) => ribbon([[lane + SLEEPER, 0.96], [lane - SLEEPER, 0.96]], tracked, false, 0.65));
+    const leds = [slimRibbon(LED_STRIP, all.filter((_, i) => tOf(i) >= J + 1)), slimRibbon(mirror(LED_STRIP), all)];
     const rails: BufferGeometry[] = [];
     const tube = (pts: Vector3[]) => new TubeGeometry(new CatmullRomCurve3(pts, false, "catmullrom", 0), Math.ceil(pts.length * (lowEnd ? 1 : 2)), 0.07, 4, false);
-    for (const lane of [-LANE, LANE]) for (const side of [-1, 1]) rails.push(tube(tracked.map((f) => f.p.clone().addScaledVector(f.r, lane + side * 0.72).addScaledVector(UP, 0.98))));
+    for (const lane of [-LANE, LANE]) for (const side of [-1, 1]) rails.push(tube(tracked.map((f) => f.p.clone().addScaledVector(f.r, lane + side * GAUGE).addScaledVector(UP, 0.98))));
     // the open end of its girder where it leaves, closed
     {
       const f = ext.samples[0];
-      const pts = SOFFIT.map(([l, v]) => f.p.clone().addScaledVector(f.r, l).addScaledVector(UP, v));
+      const pts = SOFFIT.map(([l, v]) => f.p.clone().addScaledVector(f.r, l * SLIM).addScaledVector(UP, v));
       const pos: number[] = [];
       for (let k = 1; k + 1 < pts.length; k++) for (const q of [pts[0], pts[k + 1], pts[k], pts[0], pts[k], pts[k + 1]]) pos.push(q.x, q.y, q.z);
       const cap = new BufferGeometry();
@@ -108,9 +109,9 @@ export function Extension({ heightAt }: { heightAt: (x: number, z: number) => nu
       [-LANE, -(EXT_GAP + LANE)],
     ]) {
       const path = switchPath(from, to);
-      for (const side of [-1, 1]) rails.push(tube(path.map((f) => f.p.clone().addScaledVector(f.r, side * 0.72).addScaledVector(UP, 0.98))));
+      for (const side of [-1, 1]) rails.push(tube(path.map((f) => f.p.clone().addScaledVector(f.r, side * GAUGE).addScaledVector(UP, 0.98))));
       // over the joint's paving, which crosses under them
-      sleepers.push(ribbon([[1.3, 0.976], [-1.3, 0.976]], path, false, 0.65));
+      sleepers.push(ribbon([[SLEEPER, 0.976], [-SLEEPER, 0.976]], path, false, 0.65));
     }
     // the joint between the two decks, paved over with the track bed: over the girders' white tops (where the parapets
     // stood) and a little over both beds, one colour, so the overlap never shows; raised clear of the girder tops, which
@@ -118,7 +119,7 @@ export function Extension({ heightAt }: { heightAt: (x: number, z: number) => nu
     const joint: Frame[] = [];
     // on to the line's end, where its left parapet stops too
     for (let s = EXT_JOIN.s0; s <= LEN + 1e-6; s += 0.75) joint.push({ ...frameAt(s, makeFrame()) });
-    bed.push(ribbon([[-5.7, 0.972], [-EXT_GAP + 5.6, 0.972]], joint, false));
+    bed.push(ribbon([[-5.7 * SLIM, 0.972], [-EXT_GAP + 5.6 * SLIM, 0.972]], joint, false));
     // Y piers every 24 units, as the line's: a tapered column to just under the soffit, two arms out to its curve
     const piers: Part[] = [];
     const n = ext.samples.length;
@@ -128,11 +129,11 @@ export function Extension({ heightAt }: { heightAt: (x: number, z: number) => nu
       const topY = f.p.y - 1.9 - 3.4;
       if (topY - gy < 0.6 || (inCity(f.p.x, f.p.z) && isRoad(f.p.x, f.p.z, 1))) continue;
       const ry = Math.atan2(f.t.x, f.t.z);
-      piers.push({ geo: new CylinderGeometry(0.85, 1.25, topY - gy + 0.3, lowEnd ? 10 : 14), position: [f.p.x, (topY + gy - 0.3) / 2, f.p.z] });
+      piers.push({ geo: new CylinderGeometry(0.75, 1.1, topY - gy + 0.3, lowEnd ? 10 : 14), position: [f.p.x, (topY + gy - 0.3) / 2, f.p.z] });
       for (const side of [-1, 1]) {
-        const c = f.p.clone().addScaledVector(f.r, side * 1.3);
-        // built with +x to the left of travel, so leaning an arm out toward its side is a turn of side × 0.62
-        piers.push({ geo: new BoxGeometry(0.9, 4.4, 1.5).rotateZ(side * 0.62).rotateY(ry), position: [c.x, topY + 1.7, c.z] });
+        const c = f.p.clone().addScaledVector(f.r, side * ARM_OUT);
+        // built with +x to the left of travel, so leaning an arm out toward its side is a turn of side × the lean
+        piers.push({ geo: new BoxGeometry(0.7, 4.4, 1.5).rotateZ(side * ARM_TILT).rotateY(ry), position: [c.x, topY + 1.7, c.z] });
       }
     }
     // the stations: a side platform each way under a roof on slim columns, a glass screen behind, a violet edge
@@ -146,12 +147,17 @@ export function Extension({ heightAt }: { heightAt: (x: number, z: number) => nu
       const ry = Math.atan2(tH.x, tH.z);
       const W = (x: number, y: number, z: number) => f.p.clone().addScaledVector(f.r, x).addScaledVector(tH, z).addScaledVector(UP, y);
       const put = (list: Part[], geo: BufferGeometry, x: number, y: number, z: number) => list.push({ geo: geo.rotateY(ry), position: at(W(x, y, z)) });
+      // a box from x0 to x1 across (the station's first numbers), drawn across as the line's own stations are (slim.ts)
+      const across = (list: Part[], x0: number, x1: number, h: number, len: number, y: number, z: number) => {
+        const [a, b] = [acrossStation(x0), acrossStation(x1)];
+        put(list, new BoxGeometry(Math.abs(b - a), h, len), (a + b) / 2, y, z);
+      };
       for (const side of [1, -1]) {
-        put(plat, new BoxGeometry(5.2, 0.9, 26), side * 8.9, 0.95, 0);
-        put(edge, new BoxGeometry(0.16, 0.05, 25.4), side * 6.38, 1.42, 0);
-        put(roof, new BoxGeometry(6.6, 0.3, 26), side * 9.1, 6, 0);
-        put(pane, new BoxGeometry(0.06, 2.4, 25), side * 11.45, 2.6, 0);
-        for (const z of [-10, 0, 10]) put(piers, new BoxGeometry(0.24, 4.6, 0.24), side * 11.2, 3.7, z);
+        across(plat, side * 6.3, side * 11.5, 0.9, 26, 0.95, 0);
+        across(edge, side * 6.3, side * 6.46, 0.05, 25.4, 1.42, 0);
+        across(roof, side * 5.8, side * 12.4, 0.3, 26, 6, 0);
+        across(pane, side * 11.42, side * 11.48, 2.4, 25, 2.6, 0);
+        for (const z of [-10, 0, 10]) across(piers, side * 11.08, side * 11.32, 4.6, 0.24, 3.7, z);
       }
     }
     girder.push(merged(piers));
@@ -246,7 +252,8 @@ export function Extension({ heightAt }: { heightAt: (x: number, z: number) => nu
       m4.lookAt(pa, pb, UP);
       if (k === 1) m4.multiply(turn);
       q.setFromRotationMatrix(m4);
-      m4.compose(pc, q, pa.set(1, 1, 1));
+      // drawn at SLIM across and up, as the line's own trains are
+      m4.compose(pc, q, pa.set(SLIM, SLIM, 1));
       for (const m of train) m.setMatrixAt(k, m4);
     }
     for (const m of train) m.instanceMatrix.needsUpdate = true;

@@ -2,7 +2,7 @@ import { CatmullRomCurve3, MathUtils, Vector3 } from "three";
 
 import { stations } from "@/data";
 
-import { BALLAST, CROSS_LEN, DECK, K, LANE } from "./constants";
+import { BALLAST, CROSS_LEN, DECK, K, LAID_LANE, LANE, SLIM } from "./constants";
 import { addRailBed, addRailTrenches, bedPoints, profileAt } from "./rail";
 import { EXPO_STRUCT } from "./railData";
 import { addModifier, demAt, inBasin, rectPad } from "./terrain";
@@ -91,7 +91,7 @@ const right2 = ([x, z]: P2): P2 => [-z, x];
  * from its left (so they never cross), each on one arc that meets the circle tangent to it, curving the other way;
  * without, each neck runs from the end on its own.
  */
-function buildLoop(end: LoopEnd, R: number, alpha: number, centre?: P2, neck = 26, split?: number, turn = 18): Loop {
+function buildLoop(end: LoopEnd, R: number, alpha: number, centre?: P2, neck = 26, split?: number, turn = 18, lane = LANE): Loop {
   const e = frameAt(end === "far" ? LEN : 0, makeFrame());
   const sgn = end === "far" ? 1 : -1;
   const hl = Math.hypot(e.t.x, e.t.z);
@@ -142,8 +142,8 @@ function buildLoop(end: LoopEnd, R: number, alpha: number, centre?: P2, neck = 2
   // radial directions of the two joins: the right and left sides of the circle (seen from the end), turned back by
   // alpha; after an approach, where each track's arc out of it touches the circle: the arc's centre Q is beside its
   // track at the parting, as far out as its radius, and touches the circle when |Q - C| = R + bend
-  const bend = split === undefined ? 0 : ((R + split) ** 2 + LANE ** 2 - R ** 2) / (2 * (R - LANE));
-  const Q = (side: number): P2 => [F[0] + rg[0] * side * (LANE + bend), F[1] + rg[1] * side * (LANE + bend)];
+  const bend = split === undefined ? 0 : ((R + split) ** 2 + lane ** 2 - R ** 2) / (2 * (R - lane));
+  const Q = (side: number): P2 => [F[0] + rg[0] * side * (lane + bend), F[1] + rg[1] * side * (lane + bend)];
   const towards = (side: number): P2 => {
     const q = Q(side);
     const d = Math.hypot(q[0] - C[0], q[1] - C[1]);
@@ -155,8 +155,8 @@ function buildLoop(end: LoopEnd, R: number, alpha: number, centre?: P2, neck = 2
   const Pout: P2 = [C[0] + R * nOut[0], C[1] + R * nOut[1]];
   // travelling round with the centre on the left, the heading at radial direction n is (n.z, -n.x)
   const head = (n: P2): P2 => [n[1], -n[0]];
-  const Ein: P2 = [E[0] + ro[0] * LANE, E[1] + ro[1] * LANE];
-  const Eout: P2 = [E[0] - ro[0] * LANE, E[1] - ro[1] * LANE];
+  const Ein: P2 = [E[0] + ro[0] * lane, E[1] + ro[1] * lane];
+  const Eout: P2 = [E[0] - ro[0] * lane, E[1] - ro[1] * lane];
   const pts: P2[] = [];
   const bezier = (a: P2, ha: P2, b: P2, hb: P2) => {
     const chord = Math.hypot(b[0] - a[0], b[1] - a[1]);
@@ -188,7 +188,7 @@ function buildLoop(end: LoopEnd, R: number, alpha: number, centre?: P2, neck = 2
   // the tracks either side of the approach
   const beside = (a: { p: P2; h: P2 }, lat: number): P2 => [a.p[0] + right2(a.h)[0] * lat, a.p[1] + right2(a.h)[1] * lat];
   if (approach.length) {
-    for (let i = 0; i < approach.length - 1; i++) pts.push(beside(approach[i], LANE));
+    for (let i = 0; i < approach.length - 1; i++) pts.push(beside(approach[i], lane));
     pts.push(...branch(1));
   } else bezier(Ein, o, Pin, head(nIn));
   const a0 = Math.atan2(nIn[1], nIn[0]);
@@ -202,7 +202,7 @@ function buildLoop(end: LoopEnd, R: number, alpha: number, centre?: P2, neck = 2
   if (approach.length) {
     // the inbound's arc, run from the circle back to where the tracks part
     pts.push(Pout, ...branch(-1).reverse().slice(0, -1));
-    for (let i = approach.length - 1; i >= 0; i--) pts.push(beside(approach[i], -LANE));
+    for (let i = approach.length - 1; i >= 0; i--) pts.push(beside(approach[i], -lane));
   } else {
     bezier(Pout, head(nOut), Eout, [-o[0], -o[1]]);
     pts.push(Eout);
@@ -252,12 +252,14 @@ export const LOOPS: Record<LoopEnd, Loop> = {
   near: buildLoop("near", NEAR_LOOP.r, 0.6, NEAR_LOOP.c, 26, NEAR_LOOP.split, NEAR_LOOP.turn),
   far: buildLoop("far", 17, 0.7),
 };
+/** The loop past Patterson as first laid, its necks from the tracks as they were then (the city's clearances). */
+const LAID_FAR = buildLoop("far", 17, 0.7, undefined, 26, undefined, 18, LAID_LANE);
 /**
  * The loop at Waterfront as first laid, its two necks each on its own from the line's end: the city's clearances (its
  * lots, trees, sets, streets and air) are measured from it, so nothing round the loop moved when its approach was
  * rebuilt double-tracked; the approach is kept clear of what stands there (Guideway.tsx).
  */
-const LAID_NEAR = buildLoop("near", NEAR_LOOP.r, 0.6, NEAR_LOOP.c);
+const LAID_NEAR = buildLoop("near", NEAR_LOOP.r, 0.6, NEAR_LOOP.c, 26, undefined, 18, LAID_LANE);
 
 /* ------------------------------------------------------------------ the line beyond the loop */
 
@@ -275,7 +277,9 @@ export type Extension = { curve: CatmullRomCurve3; L: number; samples: Frame[]; 
  * it and its inbound track back (Guideway leaves the facing parapets out, Extension.tsx lays the switches).
  */
 export const EXT_JOIN = { s0: LEN - 46, s1: LEN - 6 };
-export const EXT_GAP = 12.6;
+export const EXT_GAP = 12.6 * SLIM;
+/** The gap as first laid (the city's clearances). */
+const LAID_EXT_GAP = 12.6;
 
 /**
  * The Expo runs on past the turnback loop, as the real line does, to Royal Oak, Edmonds, 22nd Street and New Westminster. Its deck leaves
@@ -284,7 +288,7 @@ export const EXT_GAP = 12.6;
  * runs this stretch. Its deck stands DECK over the ground (smoothed), from the line's height where it leaves; `heightAt`
  * gives the ground (the far terrain beyond the city's, once loaded).
  */
-export function buildExtension(heightAt: (x: number, z: number) => number): Extension {
+export function buildExtension(heightAt: (x: number, z: number) => number, gap = EXT_GAP): Extension {
   const f = makeFrame();
   // left of the line's travel, `back` before its end (or `-back` past it, straight on)
   const beside = (back: number, lat: number): P2 => {
@@ -293,7 +297,7 @@ export function buildExtension(heightAt: (x: number, z: number) => number): Exte
     return [f.p.x + f.t.x * on - f.r.x * lat, f.p.z + f.t.z * on - f.r.z * lat];
   };
   const J = EXT_JOIN.s1 - EXT_JOIN.s0;
-  const xz: P2[] = [beside(LEN - EXT_JOIN.s0, EXT_GAP), beside(LEN - EXT_JOIN.s0 - J / 2, EXT_GAP), beside(LEN - EXT_JOIN.s1, EXT_GAP), beside(-10, 16), beside(-20, 23), beside(-30, 30), beside(-45, 37), [952, 748], [970, 775], ...EXT_STATIONS.slice(0, 1).map((s): P2 => [s.x, s.z]), [1040, 833], [1100, 855], [1160, 878], [EXT_STATIONS[1].x, EXT_STATIONS[1].z], [1262, 950], [1290, 1000], [EXT_STATIONS[2].x, EXT_STATIONS[2].z], [1335, 1100], [1400, 1092], [1470, 1068], [1540, 1046], [EXT_STATIONS[3].x, EXT_STATIONS[3].z], [1640, 1030]];
+  const xz: P2[] = [beside(LEN - EXT_JOIN.s0, gap), beside(LEN - EXT_JOIN.s0 - J / 2, gap), beside(LEN - EXT_JOIN.s1, gap), beside(-10, 16), beside(-20, 23), beside(-30, 30), beside(-45, 37), [952, 748], [970, 775], ...EXT_STATIONS.slice(0, 1).map((s): P2 => [s.x, s.z]), [1040, 833], [1100, 855], [1160, 878], [EXT_STATIONS[1].x, EXT_STATIONS[1].z], [1262, 950], [1290, 1000], [EXT_STATIONS[2].x, EXT_STATIONS[2].z], [1335, 1100], [1400, 1092], [1470, 1068], [1540, 1046], [EXT_STATIONS[3].x, EXT_STATIONS[3].z], [1640, 1030]];
   const flat = new CatmullRomCurve3(
     xz.map(([x, z]) => new Vector3(x, 0, z)),
     false,
@@ -348,7 +352,7 @@ export function buildExtension(heightAt: (x: number, z: number) => number): Exte
  * The extension's course for the clearance rules, over the map's own heights (the ground is not final while the
  * modules load; Extension.tsx builds it again on the drawn ground and the far terrain).
  */
-export const EXTENSION = buildExtension(demAt);
+export const EXTENSION = buildExtension(demAt, LAID_EXT_GAP);
 
 const lp = new Vector3();
 /** A loop's frame at distance t along it (extrapolated straight beyond either end); `sgn` orients t along +s. */
@@ -382,8 +386,8 @@ export function trainFrameAt(sc: number, dir: number, lane: number, out: Frame):
 }
 
 /** Every track sample, the loops and the line beyond them included, for the clearance rules (buildings, trees, cameras). */
-export const PATH_SAMPLES: Frame[] = [...samples, ...LAID_NEAR.samples, ...LOOPS.far.samples, ...EXTENSION.samples];
-const coarse = [...samples.filter((_, i) => i % 4 === 0), ...LAID_NEAR.samples.filter((_, i) => i % 3 === 0), ...LOOPS.far.samples.filter((_, i) => i % 3 === 0), ...EXTENSION.samples.filter((_, i) => i % 3 === 0)];
+export const PATH_SAMPLES: Frame[] = [...samples, ...LAID_NEAR.samples, ...LAID_FAR.samples, ...EXTENSION.samples];
+const coarse = [...samples.filter((_, i) => i % 4 === 0), ...LAID_NEAR.samples.filter((_, i) => i % 3 === 0), ...LAID_FAR.samples.filter((_, i) => i % 3 === 0), ...EXTENSION.samples.filter((_, i) => i % 3 === 0)];
 
 /** Deck height at arc length s. */
 export const deckY = (s: number): number => samples[Math.round(MathUtils.clamp(s / LEN, 0, 1) * SAMPLES)].p.y;

@@ -38,8 +38,16 @@ export const FREIGHT_OFFSET = 9;
 export const FREIGHT_OFFSET_PLATFORM = 16;
 /** Vertical scale of the far backdrop (the North Shore range would tower at TERRAIN_V); blended from TERRAIN_V at the city edge. */
 export const FAR_V = 0.26;
+/**
+ * How much narrower the rail system (the guideways, their stations' platforms and the trains) is drawn than it was
+ * first laid out, so it stands in proportion to the city round it: every cross-section across the track, and the
+ * trains' sections, at this share. The city still keeps clear of it as first laid (track.ts PATH_SAMPLES).
+ */
+export const SLIM = 2 / 3;
 /** Lateral offset of each track from the guideway centreline; ours is +LANE (right-hand running). */
-export const LANE = 2.6;
+export const LANE = 2.6 * SLIM;
+/** The tracks' offset as first laid, which the city's clearances are measured from. */
+export const LAID_LANE = 2.6;
 /** Length of a scissors crossover diagonal along the track. */
 export const CROSS_LEN = 44;
 
@@ -90,7 +98,7 @@ export const CAM = {
   chaseLite: { right: 11, up: 35, back: 96, ahead: 32 },
   chasePhone: { right: 13, up: 40, back: 112, ahead: 34 },
   /** The cab: in the lead car, behind its long nose. */
-  cab: { up: 3.1, ahead: 3.2, look: 30 },
+  cab: { up: 2.4, ahead: 3.2, look: 30 },
   /** How fast the chase view swings back behind the train after 3 s without input, once it is moving. */
   yawDecay: 0.6,
   fov: 40,

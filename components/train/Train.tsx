@@ -4,7 +4,7 @@ import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo } from "react";
 import { BoxGeometry, BufferAttribute, BufferGeometry, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, PlaneGeometry, SpotLight, Vector3 } from "three";
 
-import { CAR, CROSS_LEN, GAP, HEAD, TRAIN_CARS, TRAIN_LEN, VMAX } from "./constants";
+import { CAR, CROSS_LEN, GAP, HEAD, SLIM, TRAIN_CARS, TRAIN_LEN, VMAX } from "./constants";
 import { EXPO } from "./liveries";
 import { type Sim, useTrain } from "./store";
 import { makeFrame, trainFrameAt, UP } from "./track";
@@ -51,6 +51,8 @@ function buildCar(world: World, isFront: boolean, isTail: boolean, spots: SpotLi
       spots.push(spot);
     }
   }
+  // drawn at SLIM across and up (constants.ts), as the guideway is
+  g.scale.set(SLIM, SLIM, 1);
   return g;
 }
 
@@ -187,7 +189,7 @@ export function Train() {
     const bellowsMat = new MeshStandardMaterial({ color: 0x1a2b42, roughness: 0.85, metalness: 0.1, side: 2 });
     const bellows = new Bellows(TRAIN_CARS - 1, bellowsMat);
     const bellows2 = new Bellows(TRAIN_CARS - 1, bellowsMat);
-    const blob = new Mesh(new PlaneGeometry(4, TRAIN_LEN + 2), new MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.3, depthWrite: false }));
+    const blob = new Mesh(new PlaneGeometry(4 * SLIM, TRAIN_LEN + 2), new MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.3, depthWrite: false }));
     blob.rotation.x = -Math.PI / 2;
     blob.visible = world.lowEnd;
     return { cars, cars2, bellows, bellows2, spots, blob, mats: [skirtMat, bellowsMat, blob.material] };
