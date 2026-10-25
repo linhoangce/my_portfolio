@@ -145,6 +145,9 @@ function spot(c: CanopyCtx, x: number, z: number, half: number, reach = 5): numb
   return null;
 }
 
+/** `n` places spread evenly along the platform, the outermost `end` in from its ends (columns, trees, beams). */
+const along = (c: CanopyCtx, n: number, end: number): number[] => (n < 2 ? [0] : Array.from({ length: n }, (_, k) => -(c.PL / 2 - end) + (k * (c.PL - 2 * end)) / (n - 1)));
+
 /** A rain chain: links from `top` down to y0. */
 function rainChain(o: CanopyParts, x: number, z: number, y0: number, top: number): void {
   for (let y = y0 + 0.15; y < top; y += 0.32) o.painted.push(pp(new BoxGeometry(0.11, 0.2, 0.11), STEEL, at(x, y, z), [0, (y * 3) % Math.PI, 0]));
@@ -175,37 +178,44 @@ function sails(c: CanopyCtx, o: CanopyParts): void {
   const XO = 10.4;
   const XI = 6.62;
   const TOP = 9.6;
+  // the low corners at the ends and between the masts, a mast between each pair: two sails to a mast
+  const nm = Math.max(1, Math.round(c.PL / 20));
+  const lows = along({ ...c, PL: 2 * E }, nm + 1, 0);
   for (const s of [1, -1]) {
-    // a mast mid-platform holds the two sails' high outer corners; their low outer corners are tied down at the ends
-    const mz = spot(c, s * XO, 0, 0.3) ?? 0;
-    o.steel.push(strut(V(s * XO, 1.4, mz), V(s * XO, TOP + 0.7, mz), 0.17, 0.1, 8));
-    o.lamps.push({ geo: new BoxGeometry(0.3, 0.12, 0.3), position: at(s * (XO - 0.45), 1.5, mz) });
-    for (const end of [-E, E]) {
-      const dir = Math.sign(end);
-      const z0 = mz + dir * 0.15;
-      // the twist: outer high at the mast and low at the end, inner low at the mast and high at the end
-      const oM = V(s * XO, TOP - 0.2, z0);
-      const oE = V(s * XO, 6.4, end);
-      const iM = V(s * XI, 5.9, z0);
-      const iE = V(s * XI, 8.0, end);
-      const L = Math.abs(end - z0);
-      const fn = (u: number, v: number) => {
-        const p = iM.clone().lerp(iE, v).lerp(oM.clone().lerp(oE, v), u);
-        // the membrane's tension: a little belly between its edges
-        p.y -= 0.35 * Math.sin(Math.PI * u) * Math.sin(Math.PI * v);
-        return p;
-      };
-      o.membrane.push({ geo: sheet(fn, c.lowEnd ? 5 : 8, c.lowEnd ? 8 : 14, (u, v) => [(u * (XO - XI)) / 1.5, (v * L) / 1.5], s * dir < 0) });
-      // the inner corners on posts from the doors' top rail, stayed back to the mast
-      o.steel.push(strut(V(s * XI, 4.1, z0), iM, 0.06));
-      o.steel.push(strut(V(s * XI, 4.1, end), iE, 0.06));
-      o.steel.push(strut(V(s * XO, TOP + 0.5, mz), iE, 0.03));
-      o.steel.push(strut(V(s * XO, TOP + 0.5, mz), iM, 0.03));
-      // the low corner drains down a rain chain into a tub of sea grass, lit from its rim
-      rainChain(o, s * XO, end, 2.0, 6.4);
-      o.painted.push(pp(new CylinderGeometry(0.55, 0.45, 0.6, 12), TIMBER, at(s * XO, 1.7, end)));
-      reeds(o, s * XO, 2.0, end, 0.4, 6, end + s);
-      o.lamps.push({ geo: new BoxGeometry(0.22, 0.08, 0.22), position: at(s * (XO - 0.5), 2.02, end) });
+    for (let m = 0; m < nm; m++) {
+      const mz = spot(c, s * XO, (lows[m] + lows[m + 1]) / 2, 0.3) ?? (lows[m] + lows[m + 1]) / 2;
+      o.steel.push(strut(V(s * XO, 1.4, mz), V(s * XO, TOP + 0.7, mz), 0.17, 0.1, 8));
+      o.lamps.push({ geo: new BoxGeometry(0.3, 0.12, 0.3), position: at(s * (XO - 0.45), 1.5, mz) });
+      for (const end of [lows[m], lows[m + 1]]) {
+        const dir = Math.sign(end - mz);
+        const z0 = mz + dir * 0.15;
+        // the twist: outer high at the mast and low at the far corner, inner low at the mast and high at the far corner
+        const oM = V(s * XO, TOP - 0.2, z0);
+        const oE = V(s * XO, 6.4, end);
+        const iM = V(s * XI, 5.9, z0);
+        const iE = V(s * XI, 8.0, end);
+        const L = Math.abs(end - z0);
+        const fn = (u: number, v: number) => {
+          const p = iM.clone().lerp(iE, v).lerp(oM.clone().lerp(oE, v), u);
+          // the membrane's tension: a little belly between its edges
+          p.y -= 0.35 * Math.sin(Math.PI * u) * Math.sin(Math.PI * v);
+          return p;
+        };
+        o.membrane.push({ geo: sheet(fn, c.lowEnd ? 5 : 8, c.lowEnd ? 8 : 14, (u, v) => [(u * (XO - XI)) / 1.5, (v * L) / 1.5], s * dir < 0) });
+        // the inner corners on posts from the doors' top rail, stayed back to the mast
+        o.steel.push(strut(V(s * XI, 4.1, z0), iM, 0.06));
+        o.steel.push(strut(V(s * XI, 4.1, end), iE, 0.06));
+        o.steel.push(strut(V(s * XO, TOP + 0.5, mz), iE, 0.03));
+        o.steel.push(strut(V(s * XO, TOP + 0.5, mz), iM, 0.03));
+      }
+    }
+    // each low corner drains down a rain chain into a tub of sea grass, lit from its rim
+    for (const z of lows) {
+      if (!c.clear(s * XO, z, 0.6)) continue;
+      rainChain(o, s * XO, z, 2.0, 6.4);
+      o.painted.push(pp(new CylinderGeometry(0.55, 0.45, 0.6, 12), TIMBER, at(s * XO, 1.7, z)));
+      reeds(o, s * XO, 2.0, z, 0.4, 6, z + s);
+      o.lamps.push({ geo: new BoxGeometry(0.22, 0.08, 0.22), position: at(s * (XO - 0.5), 2.02, z) });
     }
   }
 }
@@ -217,7 +227,7 @@ function grove(c: CanopyCtx, o: CanopyParts): void {
   const RD = 1.2;
   const step = R * Math.sqrt(3);
   for (const s of [1, -1]) {
-    for (const z0 of [-10.3, 0, 10.3]) {
+    for (const z0 of along(c, Math.round(c.PL / 10), 4.5)) {
       const z = spot(c, s * 10.6, z0, 0.8);
       if (z === null) continue;
       // a timber tree in its planter, branching under the leaves
@@ -289,14 +299,16 @@ function sawtooth(c: CanopyCtx, o: CanopyParts): void {
       const z = spot(c, s * 10.5, z0 + k * P, 0.25, 2);
       if (z !== null) o.painted.push(pp(new BoxGeometry(0.35, LO - 0.8 - 1.4, 0.35), TIMBER, at(s * 10.5, (1.4 + LO - 0.8) / 2, z)));
     }
-    for (let z = -13; z <= 13.01; z += 1) {
+    // (inside the banner poles at the ends)
+    const zl = c.PL / 2 - 2.5;
+    for (let z = -zl; z <= zl + 0.01; z += 1) {
       if (!c.clear(s * 11.2, z, 0.5)) continue;
       o.painted.push(pp(new BoxGeometry(0.55, 0.55, 1.0), STONE, at(s * 11.2, 1.68, z)));
       o.painted.push(pp(new BoxGeometry(0.45, 0.22, 0.95), LEAF[Math.abs(Math.round(z)) % 3], at(s * 11.2, 2.04, z), undefined, [1, 1 + hash(z, s) * 0.8, 1]));
     }
     for (let k = 1; k < n; k += 2) {
       const z = z0 + k * P;
-      if (Math.abs(z) < 13 && c.clear(s * 11.2, z, 0.5)) rainChain(o, s * 11.2, z, 2.1, LO - 0.2);
+      if (Math.abs(z) < zl && c.clear(s * 11.2, z, 0.5)) rainChain(o, s * 11.2, z, 2.1, LO - 0.2);
     }
   }
 }
@@ -316,8 +328,8 @@ function eaves(c: CanopyCtx, o: CanopyParts): void {
   const nv = c.lowEnd ? 10 : 18;
   for (const s of [1, -1]) {
     const tiers: [number, number, (d: number, w: number) => number][] = [
-      [3.05, 16, lower],
-      [1.8, 14, upper],
+      [3.05, c.PL / 2 + 0.5, lower],
+      [1.8, c.PL / 2 - 1.5, upper],
     ];
     for (const [half, len, y] of tiers) {
       // u runs across from x = AC - half to AC + half (on this side), v along
@@ -330,16 +342,16 @@ function eaves(c: CanopyCtx, o: CanopyParts): void {
       o.painted.push({ geo: paint(sheet((u, v) => pt(u, v, -0.12), nu, nv, uv, s > 0), DARK_TIMBER) });
     }
     // the green ridge, and the clerestory between the tiers
-    o.painted.push(pp(new BoxGeometry(0.5, 0.35, 28.6), MOSS, at(s * AC, 9.15, 0)));
-    for (const e of [-1, 1]) o.painted.push(pp(new ConeGeometry(0.28, 0.7, 6), MOSS, at(s * AC, 9.35, e * 14.3), [e * -0.5, 0, 0]));
+    o.painted.push(pp(new BoxGeometry(0.5, 0.35, c.PL - 2.4), MOSS, at(s * AC, 9.15, 0)));
+    for (const e of [-1, 1]) o.painted.push(pp(new ConeGeometry(0.28, 0.7, 6), MOSS, at(s * AC, 9.35, e * (c.PL / 2 - 1.2)), [e * -0.5, 0, 0]));
     for (const da of [-1.2, 1.2]) {
       const yl = lower(1.2 / 3.05, 0);
       const yu = upper(1.2 / 1.8, 0);
-      o.pane.push({ geo: new BoxGeometry(0.05, yu - yl, 27), position: at(s * (AC + da), (yl + yu) / 2, 0) });
-      for (let z = -13; z <= 13.01; z += 3.25) o.steel.push({ geo: new BoxGeometry(0.08, yu - yl, 0.08), position: at(s * (AC + da), (yl + yu) / 2, z) });
+      o.pane.push({ geo: new BoxGeometry(0.05, yu - yl, c.PL - 4), position: at(s * (AC + da), (yl + yu) / 2, 0) });
+      for (const z of along(c, Math.round((c.PL - 5) / 3.25) + 1, 2.5)) o.steel.push({ geo: new BoxGeometry(0.08, yu - yl, 0.08), position: at(s * (AC + da), (yl + yu) / 2, z) });
     }
     // red columns on the platform's edge, each with a beam in to a post on the doors' rail
-    for (const z0 of [-10.5, 0, 10.5]) {
+    for (const z0 of along(c, Math.round(c.PL / 10), 5)) {
       const z = spot(c, s * 11.0, z0, 0.3);
       if (z === null) continue;
       o.painted.push(pp(new CylinderGeometry(0.2, 0.24, 4.5, 10), RED, at(s * 11.0, 3.65, z)));
@@ -348,7 +360,7 @@ function eaves(c: CanopyCtx, o: CanopyParts): void {
       o.steel.push(strut(V(s * 6.62, 4.1, z), V(s * 6.62, 5.6, z), 0.06));
     }
     // red lanterns on cords under the ridge, gold caps
-    for (let z = -13.5; z <= 13.51; z += 3) {
+    for (let z = -(c.PL / 2 - 2); z <= c.PL / 2 - 1.99; z += 3) {
       o.lanterns.push({ geo: new CylinderGeometry(0.3, 0.3, 0.55, 10), position: at(s * AC, 4.95, z) });
       o.lanterns.push({ geo: new IcosahedronGeometry(0.33, 1), position: at(s * AC, 4.95, z), scale: [1, 0.7, 1] });
       for (const dy of [-0.32, 0.32]) o.painted.push(pp(new CylinderGeometry(0.2, 0.2, 0.08, 10), GOLD, at(s * AC, 4.95 + dy, z)));
@@ -356,8 +368,8 @@ function eaves(c: CanopyCtx, o: CanopyParts): void {
     }
   }
   // the glass ridge over the tracks between the two roofs, on steel cross beams
-  o.pane.push({ geo: new BoxGeometry(11.8, 0.06, 31), position: at(0, 6.55, 0) });
-  for (let z = -15; z <= 15.01; z += 6) o.steel.push({ geo: new BoxGeometry(12.2, 0.16, 0.16), position: at(0, 6.44, z) });
+  o.pane.push({ geo: new BoxGeometry(11.8, 0.06, c.PL), position: at(0, 6.55, 0) });
+  for (const z of along(c, Math.round(c.PL / 6) + 1, 0.5)) o.steel.push({ geo: new BoxGeometry(12.2, 0.16, 0.16), position: at(0, 6.44, z) });
 }
 
 /* ------------------------------------------------------------------ 4 Main Street–Science World: the funnels */
@@ -368,7 +380,7 @@ function funnels(c: CanopyCtx, o: CanopyParts): void {
   const N = c.lowEnd ? 9 : 14;
   const seg = c.lowEnd ? 16 : 24;
   for (const s of [1, -1]) {
-    [-11.6, -3.9, 3.9, 11.6].forEach((z0, k) => {
+    along(c, Math.round(c.PL / 7.8), 3.9).forEach((z0, k) => {
       const z = spot(c, s * 10.0, z0, 1.1, 1.5);
       if (z === null) return;
       const x = s * 10.0;
@@ -411,7 +423,7 @@ function agri(c: CanopyCtx, o: CanopyParts): void {
   const Y = 6.25;
   const L = c.PL + 0.6;
   for (const s of [1, -1]) {
-    for (const z0 of [-11.6, -3.9, 3.9, 11.6]) {
+    for (const z0 of along(c, Math.round(c.PL / 7.8), 3.9)) {
       const z = spot(c, s * 11.0, z0, 0.35, 2);
       if (z === null) continue;
       // a post with a vine climbing it, a beam across, a brace
@@ -436,7 +448,7 @@ function agri(c: CanopyCtx, o: CanopyParts): void {
     o.lamps.push({ geo: new BoxGeometry(0.12, 0.08, c.PL - 3), position: at(s * 9.0, Y - 0.25, 0) });
   }
   // over the tracks only a cable trellis
-  for (let z = -14; z <= 14.01; z += 3.5) o.steel.push({ geo: new BoxGeometry(11.8, 0.04, 0.04), position: at(0, Y + 0.3, z) });
+  for (const z of along(c, Math.round((c.PL - 3) / 3.5) + 1, 1.5)) o.steel.push({ geo: new BoxGeometry(11.8, 0.04, 0.04), position: at(0, Y + 0.3, z) });
 }
 
 /* ------------------------------------------------------------------ 7 29th Avenue: the wave */
@@ -479,14 +491,14 @@ function wave(c: CanopyCtx, o: CanopyParts): void {
       o.painted.push({ geo: paint(sheet(fn(-0.1), 4, 1, uv, s > 0), TIMBER) });
     }
     // timber columns and a rib under the ribbon from each to its inner edge; lamps following the wave
-    for (const z0 of [-12, -4, 4, 12]) {
+    for (const z0 of along(c, Math.round(c.PL / 7.8), 3.5)) {
       const z = spot(c, s * 11.0, z0, 0.3, 2.5);
       if (z === null) continue;
       const yt = y(11.0, z) - 0.15;
       o.painted.push(pp(new BoxGeometry(0.34, yt - 1.4, 0.34), TIMBER, at(s * 11.0, (1.4 + yt) / 2, z)));
       o.painted.push(tint(beam(V(s * 12.1, y(12.1, z) - 0.2, z), V(s * 6.1, y(6.1, z) - 0.2, z), 0.2, 0.24), TIMBER));
     }
-    for (let z = -14; z <= 14.01; z += 2) o.lamps.push({ geo: new BoxGeometry(0.12, 0.08, 1.4), position: at(s * 8.6, y(8.6, z) - 0.35, z) });
+    for (const z of along(c, Math.round((c.PL - 3) / 2) + 1, 1.5)) o.lamps.push({ geo: new BoxGeometry(0.12, 0.08, 1.4), position: at(s * 8.6, y(8.6, z) - 0.35, z) });
   }
 }
 
@@ -495,7 +507,7 @@ function wave(c: CanopyCtx, o: CanopyParts): void {
 function louvres(c: CanopyCtx, o: CanopyParts): void {
   const Y = 7.5;
   for (const s of [1, -1]) {
-    for (const z0 of [-11.6, -3.9, 3.9, 11.6]) {
+    for (const z0 of along(c, Math.round(c.PL / 7.8), 3.9)) {
       const z = spot(c, s * 11.0, z0, 0.35, 2.5);
       if (z !== null) o.painted.push(pp(new BoxGeometry(0.38, Y - 0.5 - 1.4, 0.38), TIMBER, at(s * 11.0, (1.4 + Y - 0.5) / 2, z)));
     }
@@ -510,7 +522,7 @@ function louvres(c: CanopyCtx, o: CanopyParts): void {
     o.lamps.push({ geo: new BoxGeometry(0.12, 0.08, c.PL - 2), position: at(s * 8.6, Y - 0.6, 0) });
   }
   // cross beams over the tracks, the fins resting on the long beams
-  for (const z of [-12, -4, 4, 12]) o.painted.push(pp(new BoxGeometry(22.4, 0.3, 0.25), TIMBER, at(0, Y - 0.2, z)));
+  for (const z of along(c, Math.round(c.PL / 7.8), 3.5)) o.painted.push(pp(new BoxGeometry(22.4, 0.3, 0.25), TIMBER, at(0, Y - 0.2, z)));
   for (let z = -(c.PL / 2 + 0.3); z <= c.PL / 2 + 0.31; z += 1.6) o.fins.push(V(0, Y + 0.5, z));
 }
 
@@ -549,7 +561,7 @@ function butterfly(c: CanopyCtx, o: CanopyParts): void {
       o.pane.push({ geo: new BoxGeometry(0.16, VY - 0.45 - 2.0, 0.1), position: at(s * AC, (VY - 0.45 + 2.0) / 2, gz) });
     }
     // timber forks down the platform's middle, where nothing comes up through the floor
-    for (const z0 of [-9, 0, 9]) {
+    for (const z0 of along(c, Math.round(c.PL / 10), 6.5)) {
       const z = spot(c, s * AC, z0, 0.3, 4);
       if (z === null || (gz !== undefined && Math.abs(z - gz) < 1.6)) continue;
       const fork = V(s * AC, 4.6, z);
