@@ -39,8 +39,29 @@ import {
 
 import { SEA } from "./constants";
 import { turbineBlades } from "./canopies";
-import { CONVENTION, DECK_Y, FLOAT_DOCK, FORECOURT, FORECOURT_TREES, GREEN_CAFES, harbourfrontBenches, harbourfrontTrees, inConvention, PLAZA, PLAZA_SOUTH, PLAZA_X, PROMENADE, PROMENADE_W } from "./harbourfront";
-import { SET_RECT, toStation } from "./sets/zones";
+import {
+  CONVENTION,
+  DECK_Y,
+  FLOAT_DOCK,
+  FORECOURT_DECK,
+  FORECOURT_TREES,
+  GREEN_CAFES,
+  harbourfrontBenches,
+  harbourfrontTrees,
+  inConvention,
+  inDock,
+  onQuay,
+  PLAZA,
+  PLAZA_SOUTH,
+  PLAZA_X,
+  PROMENADE,
+  PROMENADE_W,
+  QUAY,
+  QUAY_Y,
+  rimGround,
+  rimLines,
+  standY,
+} from "./harbourfront";
 import { pavilion, type Pieces, shopGlow, UMBRELLAS, warmLights } from "./pavilion";
 import { registerPattern } from "./eventLights";
 import { EVENT_META } from "./lookTypes";
@@ -151,29 +172,17 @@ const hotelTexture = () =>
   );
 
 /**
- * Canada Place's sails as the fabric hangs, after the real ones seen from the water: a row of sails down the roof,
- * each a sweep of fabric curving down between two poles and pointing up at both ends, where a pole holds it. The poles
- * stand along both long edges (x = ±halfW) at the z's in `poles` (ascending), each pulling the fabric up to its own
- * height above `base` (`peaks`). Along an edge the fabric sags between two poles to `dip` of their height; across the
- * roof it sags from the edges to `mid` of theirs; at the edges and ends it falls straight to the roof, so from the side
- * each sail reads as a white sweep between two points. The grid runs through every pole, so each point stays sharp.
+ * Canada Place's sails as the fabric hangs, after the real ones seen from above: five sails in a row down the roof,
+ * each its own panel of fabric between two lines of poles, curving down between them and pointing up at both ends
+ * where a pole holds it. The poles stand along both long edges (x = ±halfW) at the z's in `poles` (ascending), each
+ * pulling the fabric up to its own height above `base` (`peaks`). Along an edge a panel sags between its two poles to
+ * `dip` of their height; across the roof it sags from the edges to `mid` of theirs; at the edges and ends it falls
+ * straight to the roof. The panels are layered like scales: each one's lower-z end is `drop` lower and reaches `lap`
+ * past its pole, tucked under its neighbour there, whose full end and its fall stand over it; so every sail reads as
+ * its own white sweep with a shadowed seam between it and the next. Each grid runs through its poles, so the points
+ * stay sharp.
  */
-function sailRoof(halfW: number, poles: number[], peaks: number[], base: number, step: number, dip = 0.16, mid = 0.55): BufferGeometry {
-  const n = poles.length - 1;
-  const edge = (z: number): number => {
-    let k = 0;
-    while (k < n - 1 && z > poles[k + 1]) k++;
-    const u = Math.min(1, Math.max(0, (z - poles[k]) / (poles[k + 1] - poles[k])));
-    return (peaks[k] + (peaks[k + 1] - peaks[k]) * u) * (dip + (1 - dip) * (2 * u - 1) ** 2);
-  };
-  const h = (x: number, z: number) => base + edge(z) * (mid + (1 - mid) * (x / halfW) ** 2);
-  const xs: number[] = [];
-  const zs: number[] = [];
-  for (let x = -halfW; x <= halfW + 1e-6; x += step) xs.push(x);
-  if (Math.abs(xs[xs.length - 1] - halfW) > 1e-3) xs.push(halfW);
-  for (let z = poles[0]; z <= poles[n] + 1e-6; z += step) zs.push(z);
-  for (const pz of poles) if (!zs.some((z) => Math.abs(z - pz) < 1e-3)) zs.push(pz);
-  zs.sort((a, c) => a - c);
+function sailPanels(halfW: number, poles: number[], peaks: number[], base: number, step: number, dip = 0.16, mid = 0.4, drop = 1.1, lap = 0.7): BufferGeometry {
   const pos: number[] = [];
   const idx: number[] = [];
   // a grid of points (cols × rows) laid by f, its quads into idx
@@ -187,11 +196,28 @@ function sailRoof(halfW: number, poles: number[], peaks: number[], base: number,
       }
     }
   };
-  // the fabric over the roof
-  grid(xs.length, zs.length, (i, j) => [xs[i], h(xs[i], zs[j]), zs[j]]);
-  // its falls to the roof: down both long edges (under each sweep) and across both ends
-  for (const x of [-halfW, halfW]) grid(zs.length, 2, (i, j) => [x, j ? h(x, zs[i]) : base, zs[i]]);
-  for (const z of [poles[0], poles[n]]) grid(xs.length, 2, (i, j) => [xs[i], j ? h(xs[i], z) : base, z]);
+  const xs: number[] = [];
+  for (let x = -halfW; x <= halfW + 1e-6; x += step) xs.push(x);
+  if (Math.abs(xs[xs.length - 1] - halfW) > 1e-3) xs.push(halfW);
+  for (let k = 0; k + 1 < poles.length; k++) {
+    // the first panel's outer end stands full, like every panel's upper end
+    const [lo, hi] = [poles[k], poles[k + 1]];
+    const [pLo, pHi] = [peaks[k] - (k ? drop : 0), peaks[k + 1]];
+    const from = lo - (k ? lap : 0);
+    const edge = (z: number): number => {
+      const u = Math.min(1, Math.max(0, (z - lo) / (hi - lo)));
+      return (pLo + (pHi - pLo) * u) * (dip + (1 - dip) * (2 * u - 1) ** 2);
+    };
+    const h = (x: number, z: number) => base + edge(z) * (mid + (1 - mid) * (x / halfW) ** 2);
+    const zs: number[] = [from];
+    for (let z = lo; z <= hi + 1e-6; z += step) zs.push(z);
+    if (Math.abs(zs[zs.length - 1] - hi) > 1e-3) zs.push(hi);
+    if (zs[0] === zs[1]) zs.shift();
+    // the fabric, its falls down both long edges and across both ends
+    grid(xs.length, zs.length, (i, j) => [xs[i], h(xs[i], zs[j]), zs[j]]);
+    for (const x of [-halfW, halfW]) grid(zs.length, 2, (i, j) => [x, j ? h(x, zs[i]) : base, zs[i]]);
+    for (const z of [zs[0], hi]) grid(xs.length, 2, (i, j) => [xs[i], j ? h(xs[i], z) : base, z]);
+  }
   const g = new BufferGeometry();
   g.setAttribute("position", new BufferAttribute(new Float32Array(pos), 3));
   g.setIndex(idx);
@@ -202,13 +228,14 @@ function sailRoof(halfW: number, poles: number[], peaks: number[], base: number,
 /**
  * The cruise terminal's roof as a white leaf: from z0 to z1 its plan follows `span` (each z's left and right edge,
  * x0 < x1), rounding to a point at the far end and closing round at the near one, its section elliptical (h high where
- * it is widest, lower as it narrows), from y0. Also its rim (x0 edge out, x1 edge back), for the glass band under it.
+ * it is widest, lower as it narrows), from y0. Also its rim (x0 edge out, x1 edge back) and its crest down the middle.
  */
-function leafRoof(z0: number, z1: number, span: (z: number) => [number, number], h: number, y0: number, nx: number, nz: number): { roof: BufferGeometry; rim: P2[] } {
+function leafRoof(z0: number, z1: number, span: (z: number) => [number, number], h: number, y0: number, nx: number, nz: number): { roof: BufferGeometry; rim: P2[]; crest: Vector3[] } {
   const pos: number[] = [];
   const idx: number[] = [];
   const left: P2[] = [];
   const right: P2[] = [];
+  const crest: Vector3[] = [];
   const widest = Math.max(...Array.from({ length: 9 }, (_, k) => span(z0 + ((z1 - z0) * k) / 8)).map(([a, b]) => b - a));
   for (let j = 0; j <= nz; j++) {
     const t = j / nz;
@@ -216,11 +243,12 @@ function leafRoof(z0: number, z1: number, span: (z: number) => [number, number],
     const [a, b] = span(z);
     // round at the near end, drawn to a point at the far end
     const end = Math.sqrt(Math.max(0, 1 - Math.max(0, 1 - t / 0.08) ** 2)) * Math.sqrt(Math.max(0, 1 - Math.max(0, (t - 0.7) / 0.3) ** 1.6));
-    const hw = ((b - a) / 2) * end;
+    const hw = (Math.max(0, b - a) / 2) * end;
     const xc = (a + b) / 2;
-    const hh = h * Math.sqrt((b - a) / widest) * end;
+    const hh = h * Math.sqrt(Math.max(0, b - a) / widest) * end;
     left.push([xc - hw, z]);
     right.push([xc + hw, z]);
+    crest.push(new Vector3(xc, y0 + hh, z));
     for (let i = 0; i <= nx; i++) {
       const u = -1 + (2 * i) / nx;
       pos.push(xc + u * hw, y0 + hh * Math.sqrt(Math.max(0, 1 - u * u)), z);
@@ -240,7 +268,7 @@ function leafRoof(z0: number, z1: number, span: (z: number) => [number, number],
     g.setIndex(idx);
     g.computeVertexNormals();
   }
-  return { roof: g, rim: [...left, ...right.reverse()] };
+  return { roof: g, rim: [...left, ...right.reverse()], crest };
 }
 /** A convex ring moved in by d (each edge along its inward normal, the corners where they meet). */
 function insetRing(ring: P2[], d: number): P2[] {
@@ -344,15 +372,36 @@ export function buildCanadaPlace(l: PlacedLandmark, world: World): Built {
   glassWalls.push(walls(termRing, deck, deck + TERM.h, { uPer: 8, vPer: TERM.h }));
   const cornice = insetRing(termRing, -0.3);
   solid.push(paint(walls(cornice, deck + TERM.h, deck + TERM.h + 0.45), 0xeef0ee), paint(cap(cornice, deck + TERM.h + 0.45), 0xeef0ee));
-  // its roof: a white leaf over the narrowing end, following the outline to a rounded point past the terminal, a
-  // band of glass under its rim
-  const leafY = deck + TERM.h + 0.5;
-  const leaf = leafRoof(Z(TERM.s1 + 0.6), Z(-40.5), (z) => {
+  // its upper storey in layers like a ship's decks: a glass band set back for a walk round it on the lower one's
+  // roof, under its own white cornice, then a low white leaf over it, a raised spine down its middle
+  // (short of the narrowing end, where there would be no room for it)
+  const UP = { inset: 2.5, h: 2.2, s0: -29.5 };
+  const upperRing = insetRing(
+    local([
+      [EAST_IN, TERM.s1],
+      [westIn(TERM.s1), TERM.s1],
+      [westIn(UP.s0), UP.s0],
+      [EAST_IN, UP.s0],
+    ]),
+    UP.inset,
+  );
+  const upperY = deck + TERM.h + 0.45;
+  glassWalls.push(walls(upperRing, upperY, upperY + UP.h, { uPer: 8, vPer: TERM.h }));
+  const upperCornice = insetRing(upperRing, -0.3);
+  solid.push(paint(walls(upperCornice, upperY + UP.h, upperY + UP.h + 0.4), 0xeef0ee), paint(cap(upperCornice, upperY + UP.h + 0.4), 0xeef0ee));
+  const leafY = upperY + UP.h + 0.4;
+  const cosWest = Math.cos(Math.atan2(NOSE.x - NOSE.r + 15.5, -6 - NOSE.sz));
+  const leaf = leafRoof(Z(TERM.s1 - UP.inset + 1.2), Z(UP.s0 + UP.inset - 3.5), (z) => {
     const sz = z * shore;
-    return [Math.max(westIn(sz) - 0.6, westX(sz) + 0.3), Math.min(EAST_IN + 0.6, 15.2)];
-  }, 5.2, leafY, lowEnd ? 12 : 20, lowEnd ? 16 : 30);
+    const b = EAST_IN - UP.inset + 1;
+    return [Math.min(b - 0.4, westIn(sz) + UP.inset / cosWest - 1), b];
+  }, 1.6, leafY, lowEnd ? 12 : 20, lowEnd ? 16 : 30);
   solid.push(paint(leaf.roof, 0xf4f5f3));
-  glassWalls.push(walls(leaf.rim, leafY - 0.4, leafY + 0.02, { uPer: 8, vPer: 1 }));
+  for (let k = 1; k < leaf.crest.length; k++) {
+    const [a, b] = [leaf.crest[k - 1], leaf.crest[k]];
+    const len = a.distanceTo(b);
+    if (len > 1e-3) solid.push(paint(new BoxGeometry(0.7, 0.4, len + 0.02).lookAt(new Vector3().subVectors(b, a)).translate((a.x + b.x) / 2, (a.y + b.y) / 2 + 0.12, (a.z + b.z) / 2), 0xf9faf8));
+  }
   // the drum at the sails' seaward end, half round toward the sea
   solid.push(paint(new CylinderGeometry(7, 7, 6.6, lowEnd ? 16 : 28, 1, false, shore > 0 ? Math.PI / 2 : -Math.PI / 2, Math.PI).translate(0, deck + 3.3, Z(HALL.s0)), 0xf1f2f0));
   // the Pan Pacific: a crescent of white tower opening to the harbour, on a glass podium at the shore end
@@ -407,8 +456,8 @@ export function buildCanadaPlace(l: PlacedLandmark, world: World): Built {
   }
   // the gangway towers: white lattices only where a ship berths, an arm out over the water to the ship's door
   for (const [sx, berths] of [
-    [1, [-24, -10, 4]],
-    [-1, [-4, 6, 16]],
+    [1, [-32, -18, -4]],
+    [-1, [-4, 6]],
   ] as const) {
     for (const sz of berths) {
       const tx = sx * 16.6;
@@ -461,8 +510,8 @@ export function buildCanadaPlace(l: PlacedLandmark, world: World): Built {
   // SAIL_Z: each sail's middle, from the shore end out (their floodlight colours run in this order)
   const POLE_S = [26.5, 20.5, 14.5, 8.5, 2.5, -3.5];
   const SAIL_Z = POLE_S.slice(1).map((sz, k) => Z((sz + POLE_S[k]) / 2));
-  const SAIL_W = 9;
-  const poleH = POLE_S.map((_, k) => (k === POLE_S.length - 1 ? 12.5 : 11.5));
+  const SAIL_W = 7.5;
+  const poleH = POLE_S.map((_, k) => (k === POLE_S.length - 1 ? 14 : 13));
   const masts: P2[] = POLE_S.flatMap((sz): P2[] => [
     [-SAIL_W, Z(sz)],
     [SAIL_W, Z(sz)],
@@ -515,7 +564,7 @@ export function buildCanadaPlace(l: PlacedLandmark, world: World): Built {
   };
   // (the poles in ascending z, whichever end the shore is)
   const order = POLE_S.map((_, k) => k).sort((a, b) => Z(POLE_S[a]) - Z(POLE_S[b]));
-  const roof = new Mesh(sailRoof(SAIL_W, order.map((k) => Z(POLE_S[k])), order.map((k) => poleH[k]), upper, lowEnd ? 0.9 : 0.5), sailMat);
+  const roof = new Mesh(sailPanels(SAIL_W, order.map((k) => Z(POLE_S[k])), order.map((k) => poleH[k]), upper, lowEnd ? 0.9 : 0.5), sailMat);
   roof.castShadow = !lowEnd;
   const MAST_UP = 3.4;
   const mastGeo: BufferGeometry[] = masts.map(([x, z], k) => paint(new CylinderGeometry(0.12, 0.24, peaks[k] + MAST_UP, 8).translate(x, upper + (peaks[k] + MAST_UP) / 2, z), 0xf3f4f6));
@@ -538,13 +587,13 @@ export function buildCanadaPlace(l: PlacedLandmark, world: World): Built {
   g.add(new Mesh(ups, new MeshBasicMaterial({ vertexColors: true, toneMapped: false })));
   const solidMesh = new Mesh(merge([...solid, ...mastGeo]), cityToned(world, new MeshStandardMaterial({ vertexColors: true, roughness: 0.7 })));
   solidMesh.receiveShadow = true;
-  // the cruise ship berthed on the east side, on the open inlet, bow to the sea, toward the pier's end so its stern
-  // keeps off the bank at the pier's root; and a second, three quarters its size, on the west side along its straight
-  // part and on past the prow (Coal Harbour's water there now open; nearer the shore it is too shallow), bow to the sea
-  // too; both in the same two meshes
-  const BERTH = -shore * 16;
+  // the cruise ship berthed on the east side, on the open inlet, bow to the sea, out toward the pier's end and on past
+  // its nose so its stern keeps well off the forecourt's canoe landing; and a second, three quarters its size, on the
+  // west side from the end of its straight part on past the prow, its stern well out from Jack Poole Plaza's seawall
+  // (Coal Harbour's water there now open), bow to the sea too; both in the same two meshes
+  const BERTH = -shore * 24;
   const shipX = 15.5 + 4.4 + 0.4;
-  const WEST = { x: -(15.5 + 3.3 + 0.4), z: Z(0), s: 0.75 };
+  const WEST = { x: -(15.5 + 3.3 + 0.4), z: Z(-12), s: 0.75 };
   const ship = cruiseShip(lowEnd);
   const small = cruiseShip(lowEnd);
   const berth = (geo: BufferGeometry) => geo.rotateY(shore > 0 ? Math.PI : 0).translate(shipX, water + 0.05, BERTH);
@@ -562,7 +611,7 @@ export function buildCanadaPlace(l: PlacedLandmark, world: World): Built {
   addReflections([
     ...SAIL_Z.map((z, k) => {
       const [x, wz] = toWorld(0, z);
-      return { x, z: wz, y: l.padY + upper, h: 11, w: 9, col: sailCols.value[k], gain: 0.9 };
+      return { x, z: wz, y: l.padY + upper, h: 13, w: 7.5, col: sailCols.value[k], gain: 0.9 };
     }),
     ...[-24, 0, 24].map((sz) => {
       const [x, wz] = toWorld(westX(sz), Z(sz));
@@ -2313,14 +2362,61 @@ function meadowPlane(poly: P2[], y: (x: number, z: number) => number, wells: P2[
 }
 
 /**
+ * Walls that lean: from `low` at y0 up to `high` at the height `top` gives each of its points (the two rings point for
+ * point), each edge in pieces about 2 long so the top can follow a sloping roof; textured like `walls` (u along the
+ * ring, v by height from y0), faced out by the ring's winding.
+ */
+function slantWalls(low: P2[], high: P2[], y0: number, top: (x: number, z: number) => number, uPer: number, vPer: number): BufferGeometry {
+  const n = low.length;
+  let area = 0;
+  for (let i = 0; i < n; i++) area += low[i][0] * low[(i + 1) % n][1] - low[(i + 1) % n][0] * low[i][1];
+  const pos: number[] = [];
+  const uv: number[] = [];
+  let u = 0;
+  for (let i = 0; i < n; i++) {
+    const [a0, a1] = [low[i], low[(i + 1) % n]];
+    const [b0, b1] = [high[i], high[(i + 1) % n]];
+    const len = Math.hypot(a1[0] - a0[0], a1[1] - a0[1]);
+    const m = Math.max(1, Math.round(len / 2));
+    for (let k = 0; k < m; k++) {
+      const at = (r: P2, s: P2, t: number): P2 => [r[0] + (s[0] - r[0]) * t, r[1] + (s[1] - r[1]) * t];
+      const [p0, p1] = [at(a0, a1, k / m), at(a0, a1, (k + 1) / m)];
+      const [q0, q1] = [at(b0, b1, k / m), at(b0, b1, (k + 1) / m)];
+      const [t0, t1] = [top(q0[0], q0[1]), top(q1[0], q1[1])];
+      const [u0, u1] = [u + (len * k) / m / uPer, u + (len * (k + 1)) / m / uPer];
+      const quad: [number, number, number, number, number][] = [
+        [p0[0], y0, p0[1], u0, 0],
+        [p1[0], y0, p1[1], u1, 0],
+        [q1[0], t1, q1[1], u1, (t1 - y0) / vPer],
+        [q0[0], t0, q0[1], u0, (t0 - y0) / vPer],
+      ];
+      // wound as `walls` winds them: (p0, p1, q1) faces out round a clockwise ring
+      const order = area < 0 ? [0, 1, 2, 0, 2, 3] : [0, 2, 1, 0, 3, 2];
+      for (const j of order) {
+        pos.push(quad[j][0], quad[j][1], quad[j][2]);
+        uv.push(quad[j][3], quad[j][4]);
+      }
+    }
+    u += len / uPer;
+  }
+  const g = new BufferGeometry();
+  g.setAttribute("position", new Float32BufferAttribute(pos, 3));
+  g.setAttribute("uv", new Float32BufferAttribute(uv, 2));
+  g.computeVertexNormals();
+  return g;
+}
+
+/**
  * The Convention Centre West (harbourfront.ts CONVENTION, built in its turned frame: x along the shore, the water at
- * -z), after the real building:
- * - three floors of glass halls on a stone plinth, the seaward third on piles over the water;
- * - the west end drawn to a prow toward the inlet under a cantilevered roof on one raking white strut;
- * - a six-acre living roof in three folded planes: the long east plane, the prow's plane rising to its tip, and a
- *   lower plane falling to the city, a glazed slot between the first two and a clerestory where the lower one meets them;
- * - meadow grasses in diagonal drifts, white fascias, dark lightwells;
- * - a tall glass lobby at the east end onto Jack Poole Plaza and an entrance canopy on the city side;
+ * -z; y from the quay's level), after the real building seen from the water:
+ * - on a concrete deck over the harbour, on rows of piles, the seawall promenade's deck along its water side;
+ * - three floors of glass under white slab edges, timber under each: the ground floor set back in shadow, the top
+ *   floor leaning out under the roof, the glass warm gold where the west end draws to its prow;
+ * - the roof a blade over it all, the six-acre meadow on top: its seaward eave rising west from the lobby and kicking
+ *   up to the prow's tip far out past the glass, a deep timber soffit under it, slim white struts up to its edge
+ *   along the water and one raking strut at the prow; it falls toward the city, where the street meets it;
+ * - meadow grasses in diagonal drifts, white fascias, dark lightwells, a glazed slot across it;
+ * - a tall glass lobby at the east end onto Jack Poole Plaza;
  * - the Drop, the tall blue raindrop, leaning out over the promenade at the west end.
  */
 export function buildConvention(world: World): Built {
@@ -2335,36 +2431,69 @@ export function buildConvention(world: World): Built {
     [-12, D / 2],
     [-23, -3],
   ];
-  const solid: BufferGeometry[] = [
-    paint(new BoxGeometry(W + 1.2, 1.4, D + 1.2).translate(0, -0.6, 0), 0xb9b4aa),
-    // the east lobby's roof slab, the entrance canopy
-    paint(new BoxGeometry(4.4, 0.4, 11).translate(W / 2 + 2, H + 2.2, 0), 0xf1f2ee),
-    paint(new BoxGeometry(14, 0.3, 3.4).translate(-2, 4.6, D / 2 + 1.7), 0xf1f2ee),
-  ];
-  for (const x of [-8, -4, 0, 4]) solid.push(paint(new CylinderGeometry(0.16, 0.16, 4.5, 8).translate(x, 2.25, D / 2 + 3), 0xe6e9ec));
-  // planters with clipped hedges along the seawall side
-  for (let x = -W / 2 + 7; x <= W / 2 - 3; x += 6) {
-    solid.push(paint(new BoxGeometry(4.6, 0.8, 1.2).translate(x, 0.4, -D / 2 - 1.2), 0xc9c6bd));
-    solid.push(paint(new BoxGeometry(4.2, 0.6, 0.9).translate(x, 1.05, -D / 2 - 1.2), 0x4f7a3c));
+  // the roof: the seaward eave (OH out past the glass) rising west, kicking up past the prow's root; falling to the city
+  const OH = 3;
+  const roofY = (x: number, z: number) => H + 0.9 + 0.06 * (W / 2 - x) + 0.3 * Math.max(0, -11 - x) - 0.12 * (z + D / 2 + OH);
+  const underRoof = (x: number, z: number) => roofY(x, z) - 0.45;
+  // the deck under it, its edge a dark concrete band, on piles down into the harbour
+  const water = SEA - QUAY_Y;
+  const slab = insetRing(ring, -1.2);
+  // (and under the east lobby)
+  const lobbySlab = rect(5.6, 11.6, W / 2 + 2, 0);
+  const solid: BufferGeometry[] = [paint(walls(slab, -0.9, 0), 0x77736c), paint(cap(slab, 0), 0xb9b4aa), paint(walls(lobbySlab, -0.9, 0), 0x77736c), paint(cap(lobbySlab, 0), 0xb9b4aa)];
+  for (let x = -W / 2 + 1; x <= W / 2 + 4; x += 4) {
+    for (let z = -D / 2 - 0.4; z <= D / 2; z += 3.4) {
+      if (polySdf(slab, x, z) < -0.3 || polySdf(lobbySlab, x, z) < -0.3) solid.push(paint(new CylinderGeometry(0.34, 0.34, -0.9 - water + 1.5, 8).translate(x, (-0.9 + water - 1.5) / 2, z), 0x6b6862));
+    }
   }
-  // the halls and the lobby's glass, three floors, lit with the city
+  // the floors' white slab edges, timber under them, and white columns along the shadowed ground floor
+  for (const [y, out] of [
+    [2.4, 0.5],
+    [5.0, 0.6],
+  ]) {
+    const edge = insetRing(ring, -out);
+    solid.push(paint(walls(edge, y, y + 0.35), 0xf1f2ee), paint(cap(edge, y + 0.35), 0xf1f2ee), paint(cap(edge, y, false), 0xc8955a));
+  }
+  for (let x = -14; x <= W / 2 - 1; x += 4) solid.push(paint(new CylinderGeometry(0.16, 0.16, 2.4, 8).translate(x, 1.2, -D / 2), 0xf1f2ee));
+  // the east lobby's roof slab
+  solid.push(paint(new BoxGeometry(4.4, 0.4, 11).translate(W / 2 + 2, H + 2.2, 0), 0xf1f2ee));
+  // the halls' glass: the ground floor set back, the middle floor on the outline, the top floor leaning out to the
+  // roof; the lobby's to its slab; the prow's glass warm gold
   const ht = hallTexture();
-  const hallMat = cityToned(world, new MeshStandardMaterial({ map: ht.map, emissiveMap: ht.glow, emissive: 0xffffff, roughness: 0.15, metalness: 0.35, envMap: world.envTex, envMapIntensity: 0.9 }), 0.8);
-  const halls = new Mesh(merge([walls(ring, 0, H, { uPer: 3, vPer: H / 3 }), walls(rect(4, 10, W / 2 + 2, 0), 0, H + 2.2, { uPer: 3, vPer: H / 3 })]), hallMat);
-  // the roof's three planes: the long east one rising toward the city, the prow's rising to its tip, the lower one
-  // falling to the city; the prow's reaches out past the glass
-  const yEast = (_x: number, z: number) => H + 0.35 + 0.19 * (z + D / 2 + 0.8);
-  const yProw = (x: number, z: number) => H + 0.6 + 0.19 * (z + D / 2 + 0.8) + 0.13 * Math.max(0, -4.5 - x);
-  const yCity = (_x: number, z: number) => H + 0.95 - 0.16 * (z - 2.5);
+  const hallMat = cityToned(world, new MeshStandardMaterial({ map: ht.map, emissiveMap: ht.glow, emissive: 0xffffff, vertexColors: true, roughness: 0.15, metalness: 0.35, envMap: world.envTex, envMapIntensity: 0.9 }), 0.8);
+  const gold = (geo: BufferGeometry) => {
+    const n = geo.attributes.position.count;
+    const pos = geo.attributes.position;
+    const lin = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+    const col = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      // white along the halls, warming to gold past the prow's root
+      const t = Math.min(1, Math.max(0, (-9 - pos.getX(i)) / 6));
+      col.set([1, lin(1 - 0.2 * t), lin(1 - 0.55 * t)], i * 3);
+    }
+    geo.setAttribute("color", new Float32BufferAttribute(col, 3));
+    return geo;
+  };
+  const halls = new Mesh(
+    merge([
+      walls(insetRing(ring, 1), 0, 2.4, { uPer: 3, vPer: 2.4 }),
+      walls(ring, 2.75, 5.0, { uPer: 3, vPer: 2.25 }),
+      slantWalls(ring, insetRing(ring, -0.9), 5.35, underRoof, 3, 2.4),
+      walls(rect(4, 10, W / 2 + 2, 0), 0, H + 2.2, { uPer: 3, vPer: H / 3 }),
+    ].map(gold)),
+    hallMat,
+  );
+  // the roof's two planes either side of the glazed slot: the long east one, and the prow's reaching out past the
+  // glass to its tip; both one blade, a timber soffit under all of it
   const roofParts = [
     ...meadowPlane(
       [
-        [-3, -D / 2 - 0.8],
-        [W / 2 + 0.8, -D / 2 - 0.8],
-        [W / 2 + 0.8, 2.5],
-        [-3, 2.5],
+        [-3, -D / 2 - OH],
+        [W / 2 + 0.8, -D / 2 - OH],
+        [W / 2 + 0.8, D / 2 + 1.2],
+        [-3, D / 2 + 1.2],
       ],
-      yEast,
+      roofY,
       [
         [
           [8, -4.6],
@@ -2372,17 +2501,24 @@ export function buildConvention(world: World): Built {
           [16, -3.6],
           [8, -3.6],
         ],
+        [
+          [2, 3.2],
+          [9, 3.2],
+          [9, 4.3],
+          [2, 4.3],
+        ],
       ],
+      true,
     ),
     ...meadowPlane(
       [
-        [-4.5, -D / 2 - 0.8],
-        [-4.5, 2.5],
-        [-12.6, 2.5],
-        [-27, -3.6],
-        [-18, -D / 2 - 0.8],
+        [-4.5, -D / 2 - OH],
+        [-4.5, D / 2 + 1.2],
+        [-12.8, D / 2 + 1.2],
+        [-28.5, -4.4],
+        [-19.5, -D / 2 - OH],
       ],
-      yProw,
+      roofY,
       [
         [
           [-16, -3.4],
@@ -2390,64 +2526,41 @@ export function buildConvention(world: World): Built {
           [-9, -2.4],
           [-16, -2.4],
         ],
+        [
+          [-11, 2.6],
+          [-6.5, 2.6],
+          [-6.5, 3.6],
+          [-11, 3.6],
+        ],
       ],
       true,
     ),
-    ...meadowPlane(
-      [
-        [-12.6, 2.5],
-        [W / 2 + 0.8, 2.5],
-        [W / 2 + 0.8, D / 2 + 0.8],
-        [-9.5, D / 2 + 0.8],
-      ],
-      yCity,
-      [
-        [
-          [2, 4.2],
-          [9, 4.2],
-          [9, 5.3],
-          [2, 5.3],
-        ],
-        [
-          [-6, 4.6],
-          [-2, 4.6],
-          [-2, 5.7],
-          [-6, 5.7],
-        ],
-      ],
-    ),
   ];
-  // glass: the slot between the east and prow planes, and the clerestory where the city plane meets them
+  // glass: the slot between the two planes
   const glass: number[] = [];
   const quad = (a: number[], b: number[], c: number[], d: number[]) => glass.push(...a, ...b, ...c, ...a, ...c, ...d);
-  quad([-4.5, H + 0.45, -D / 2], [-3, H + 0.45, -D / 2], [-3, H + 0.45, 2.5], [-4.5, H + 0.45, 2.5]);
-  const clerestoryTop = (x: number) => (x > -3.75 ? yEast(x, 2.5) : yProw(x, 2.5)) - 0.4;
-  for (let k = 0; k < 16; k++) {
-    const x0 = -12.6 + ((W / 2 + 12.6) * k) / 16;
-    const x1 = -12.6 + ((W / 2 + 12.6) * (k + 1)) / 16;
-    quad([x0, yCity(x0, 2.5), 2.5], [x1, yCity(x1, 2.5), 2.5], [x1, clerestoryTop(x1), 2.5], [x0, clerestoryTop(x0), 2.5]);
-  }
+  const z0 = -D / 2 - OH;
+  const z1 = D / 2 + 1.2;
+  quad([-4.5, roofY(-4.5, z0) - 0.1, z0], [-3, roofY(-3, z0) - 0.1, z0], [-3, roofY(-3, z1) - 0.1, z1], [-4.5, roofY(-4.5, z1) - 0.1, z1]);
   const glassGeo = new BufferGeometry();
   glassGeo.setAttribute("position", new Float32BufferAttribute(glass, 3));
   glassGeo.computeVertexNormals();
   const skylights = new Mesh(glassGeo, world.mats.pane);
-  // the prow's raking strut, from the plinth at the point up to the roof's tip
-  const foot = new Vector3(-21.2, 0.1, -4.6);
-  const head = new Vector3(-25.6, yProw(-25.6, -3.8) - 0.5, -3.8);
-  const len = foot.distanceTo(head);
-  solid.push(
-    paint(
-      new CylinderGeometry(0.32, 0.4, len, 10)
-        .applyQuaternion(q.setFromUnitVectors(UPV, p.subVectors(head, foot).normalize()))
-        .translate((foot.x + head.x) / 2, (foot.y + head.y) / 2, (foot.z + head.z) / 2),
-      0xf1f2ee,
-    ),
-  );
-  // the seaward third stands on piles over the water, down from the building's plinth
-  const below = -1.3 - (SEA - 1.5);
-  for (let x = -W / 2 + 4; x <= W / 2 - 2; x += 4) {
-    for (const z of [-D / 2 + 0.6, -D / 2 + 3.4]) solid.push(paint(new CylinderGeometry(0.35, 0.35, Math.max(0.5, below + 3), 8).translate(x, -1.3 - Math.max(0.5, below + 3) / 2, z), 0x6b6862));
-  }
+  // struts: slim white ones from the deck up to the eave along the water, leaning out with it, and the prow's raking
+  // one from the deck at its point up to the roof's tip
+  const strut = (foot: Vector3, head: Vector3, r: number) => {
+    const len = foot.distanceTo(head);
+    solid.push(
+      paint(
+        new CylinderGeometry(r * 0.8, r, len, 10)
+          .applyQuaternion(q.setFromUnitVectors(UPV, p.subVectors(head, foot).normalize()))
+          .translate((foot.x + head.x) / 2, (foot.y + head.y) / 2, (foot.z + head.z) / 2),
+        0xf1f2ee,
+      ),
+    );
+  };
+  for (const x of [17, 7, -1.5, -9]) strut(new Vector3(x, 0, -D / 2 - 1.1), new Vector3(x, underRoof(x, -D / 2 - 2.6), -D / 2 - 2.6), 0.16);
+  strut(new Vector3(-20, 0, -5), new Vector3(-26.4, underRoof(-26.4, -4.6), -4.6), 0.38);
   // the Drop: a tall blue raindrop leaning out over the promenade at the west end
   solid.push(paint(new SphereGeometry(1, 16, 12).scale(0.7, 3.4, 0.7).rotateZ(0.22).translate(-18.5, 3.1, -D / 2 - 3.6), 0x2f8fd8));
   // the meadow roof with the rest: one mesh
@@ -2458,17 +2571,93 @@ export function buildConvention(world: World): Built {
   return { group: g };
 }
 
+/** A quad (four corners in order round it) as two triangles, wound to face along (nx, ny, nz). */
+function quadFacing(a: number[], b: number[], c: number[], d: number[], nx: number, ny: number, nz: number): BufferGeometry {
+  const ux = b[0] - a[0];
+  const uy = b[1] - a[1];
+  const uz = b[2] - a[2];
+  const vx = c[0] - a[0];
+  const vy = c[1] - a[1];
+  const vz = c[2] - a[2];
+  const flip = (uy * vz - uz * vy) * nx + (uz * vx - ux * vz) * ny + (ux * vy - uy * vx) * nz < 0;
+  const g = new BufferGeometry();
+  g.setAttribute("position", new Float32BufferAttribute(flip ? [...a, ...c, ...b, ...a, ...d, ...c] : [...a, ...b, ...c, ...a, ...c, ...d], 3));
+  g.computeVertexNormals();
+  return g;
+}
+
 /**
- * The harbourfront round it, in world space (harbourfront.ts): Jack Poole Plaza paved in granite with a row of flags
- * and its trees in planters, the seawall promenade's railing along the water and lamps along its inland edge (lit
- * after dark), benches facing the water. The promenade's own paving is the ground's (one of its walks); the trees are
- * the tree layer's.
+ * The dock's rim (harbourfront.ts): along its landward edge, wherever the city's ground stands above the quay, a
+ * terrace at the city's level over the band where the ground falls to the seabed, paved, a parapet along its edge
+ * and its wall down into the water (or to the quay and the decks against it).
+ */
+function dockRim(): BufferGeometry[] {
+  const out: BufferGeometry[] = [];
+  const { outer, inner } = rimLines();
+  const bot = SEA - 1.5;
+  // a wall across the band where the rim starts or stops, facing along (sx, sz)
+  const end = (o: number[], i: number[], y: number, sx: number, sz: number) => out.push(paint(quadFacing([o[0], y, o[1]], [i[0], y, i[1]], [i[0], bot, i[1]], [o[0], bot, o[1]], sx, 0, sz), 0x9c968c));
+  let last: { o: number[]; i: number[]; y: number; sx: number; sz: number } | null = null;
+  for (let s = 1; s < outer.length; s++) {
+    const [ax, az] = outer[s - 1];
+    const [bx, bz] = outer[s];
+    const L = Math.hypot(bx - ax, bz - az);
+    const sx = (bx - ax) / L;
+    const sz = (bz - az) / L;
+    // outward (away from the dock: right of the eastward edge)
+    const nx = -sz;
+    const nz = sx;
+    const n = Math.max(1, Math.round(L / 2));
+    for (let k = 0; k < n; k++) {
+      const at = (t: number) => ({
+        o: [ax + (bx - ax) * t, az + (bz - az) * t],
+        i: [inner[s - 1][0] + (inner[s][0] - inner[s - 1][0]) * t, inner[s - 1][1] + (inner[s][1] - inner[s - 1][1]) * t],
+      });
+      const p0 = at(k / n);
+      const p1 = at((k + 1) / n);
+      const h0 = rimGround(p0.o[0], p0.o[1], nx, nz);
+      const h1 = rimGround(p1.o[0], p1.o[1], nx, nz);
+      if (Math.max(h0, h1) <= QUAY_Y + 0.4) {
+        if (last) end(last.o, last.i, last.y, last.sx, last.sz);
+        last = null;
+        continue;
+      }
+      const y0 = Math.max(h0, QUAY_Y + 0.05);
+      const y1 = Math.max(h1, QUAY_Y + 0.05);
+      if (!last) end(p0.o, p0.i, y0, -sx, -sz);
+      last = { o: p1.o, i: p1.i, y: y1, sx, sz };
+      const [o0, o1, i0, i1] = [p0.o, p1.o, p0.i, p1.i];
+      // the terrace, paved
+      out.push(paint(quadFacing([o0[0], y0, o0[1]], [o1[0], y1, o1[1]], [i1[0], y1, i1[1]], [i0[0], y0, i0[1]], 0, 1, 0), 0xc4beb2));
+      // the wall down from it into the dock, a lighter coping, and a skirt on the city's side under its edge
+      out.push(paint(quadFacing([i0[0], y0, i0[1]], [i1[0], y1, i1[1]], [i1[0], bot, i1[1]], [i0[0], bot, i0[1]], -nx, 0, -nz), 0x9c968c));
+      out.push(paint(quadFacing([i0[0], y0 + 0.02, i0[1]], [i1[0], y1 + 0.02, i1[1]], [i1[0], y1 - 0.35, i1[1]], [i0[0], y0 - 0.35, i0[1]], -nx, 0, -nz).translate(-nx * 0.02, 0, -nz * 0.02), 0xe2ddd2));
+      out.push(paint(quadFacing([o0[0], y0, o0[1]], [o1[0], y1, o1[1]], [o1[0], y1 - 2, o1[1]], [o0[0], y0 - 2, o0[1]], nx, 0, nz), 0x9c968c));
+      // a parapet along its edge where the drop is more than a step
+      if (Math.min(y0, y1) > QUAY_Y + 1) {
+        const len = Math.hypot(i1[0] - i0[0], i1[1] - i0[1]);
+        out.push(paint(new BoxGeometry(0.3, 0.55, len + 0.05).rotateY(Math.atan2(i1[0] - i0[0], i1[1] - i0[1])).translate((i0[0] + i1[0]) / 2 + nx * 0.15, (y0 + y1) / 2 + 0.27, (i0[1] + i1[1]) / 2 + nz * 0.15), 0xd8d3c8));
+      }
+    }
+  }
+  if (last) end(last.o, last.i, last.y, last.sx, last.sz);
+  return out;
+}
+
+/**
+ * The harbourfront round it, in world space (harbourfront.ts), over the dock the station pads had filled:
+ * - the plaza's quay (Jack Poole Plaza and the promenade by it) and the forecourt's deck, at the pier's level, paved
+ *   in granite, the quay walled along the water, the forecourt on piles;
+ * - the rim along the dock's landward edge, the city's terrace walled down to them;
+ * - the seawall promenade's timber deck on piles over the water past the Convention Centre, its railing along the
+ *   water and lamps along its inland edge (lit after dark), benches facing the water;
+ * - a row of flags and trees in planters on the plaza (the trees are the tree layer's).
  */
 export function buildHarbourfront(world: World): Built {
   const { lowEnd, events } = world;
   const g = new Group();
   const stride = lowEnd ? 2 : 1;
-  // the plaza: granite pavers on a grid draped on the ground, a darker band every few
+  // the paving: granite pavers on a grid on the quay and the forecourt's deck, a darker band every few
   const step = 0.75;
   const pos: number[] = [];
   const col: number[] = [];
@@ -2478,36 +2667,12 @@ export function buildHarbourfront(world: World): Built {
     const v = band ? 0.62 : 0.78 + 0.04 * Math.sin(x * 3.1 + z * 1.7);
     return [lin(v), lin(v * 0.99), lin(v * 0.96)];
   };
-  const xs = PLAZA.map(([x]) => x);
-  const zs = PLAZA.map(([, z]) => z);
+  const xs = [...QUAY, ...FORECOURT_DECK].map(([x]) => x);
+  const zs = [...QUAY, ...FORECOURT_DECK].map(([, z]) => z);
   for (let x = Math.min(...xs); x < Math.max(...xs); x += step) {
     for (let z = Math.min(...zs); z < Math.max(...zs); z += step) {
-      const quad: [number, number][] = [
-        [x, z],
-        [x, z + step],
-        [x + step, z],
-        [x + step, z],
-        [x, z + step],
-        [x + step, z + step],
-      ];
-      if (quad.some(([a, b]) => polySdf(PLAZA, a, b) > 0.2)) continue;
+      if (!onQuay(x + step / 2, z + step / 2)) continue;
       const c = tone(x + step / 2, z + step / 2);
-      for (const [a, b] of quad) {
-        pos.push(a, surfaceAt(a, b, stride) + 0.13, b);
-        col.push(...c);
-      }
-    }
-  }
-  // the forecourt at the foot of the Canada Place pier: only the pier's own deck (the shoreline's water, raised), and
-  // short of the Waterfront set, which paves its own
-  const d0 = SET_RECT[0] as [number, number, number, number];
-  for (let x = FORECOURT.x0; x < FORECOURT.x1; x += step) {
-    for (let z = FORECOURT.z0; z < FORECOURT.z1; z += step) {
-      const cx = x + step / 2;
-      const cz = z + step / 2;
-      const [da, dl] = toStation(0, cx, cz);
-      if (sdfAt(cx, cz) >= 0.6 || surfaceAt(cx, cz, stride) < SEA + 0.4 || (da > d0[0] - 1 && da < d0[1] + 1 && dl > d0[2] - 1 && dl < d0[3] + 1)) continue;
-      const c = tone(cx, cz);
       for (const [a, b] of [
         [x, z],
         [x, z + step],
@@ -2516,7 +2681,7 @@ export function buildHarbourfront(world: World): Built {
         [x, z + step],
         [x + step, z + step],
       ]) {
-        pos.push(a, surfaceAt(a, b, stride) + 0.13, b);
+        pos.push(a, QUAY_Y, b);
         col.push(...c);
       }
     }
@@ -2526,15 +2691,33 @@ export function buildHarbourfront(world: World): Built {
   paveGeo.setAttribute("color", new Float32BufferAttribute(col, 3));
   paveGeo.computeVertexNormals();
   // the paving lies in the painted mesh with the railing, lamps and benches
-  // the promenade's height: the ground, or the deck where it runs over the water
-  const walkY = (x: number, z: number) => (sdfAt(x, z) < 0.8 ? DECK_Y : surfaceAt(x, z, stride));
-  // the railing on the water side of the promenade and the lamps on its inland side
-  const parts: BufferGeometry[] = [];
-  // over the water, a timber deck on piles
+  // the promenade's height: the ground, or the deck where it runs over the water and the dock
+  const walkY = (x: number, z: number) => (inDock(x, z) || sdfAt(x, z) < 0.8 ? standY(x, z) : surfaceAt(x, z, stride));
+  const parts: BufferGeometry[] = [...dockRim()];
+  // the quay's wall along the water, from the Convention Centre's east end to the pier
+  const wall = QUAY.slice(0, -2);
+  for (let i = 1; i < wall.length; i++) {
+    const [ax, az] = wall[i - 1];
+    const [bx, bz] = wall[i];
+    parts.push(paint(quadFacing([ax, QUAY_Y, az], [bx, QUAY_Y, bz], [bx, SEA - 1.5, bz], [ax, SEA - 1.5, az], az - bz, 0, bx - ax), 0x9c968c));
+  }
+  // the forecourt's deck: its edge along the water, its underside, piles under it every 3 or so
+  {
+    const [, , [nx1, nz1], [nx0, nz0]] = FORECOURT_DECK;
+    parts.push(paint(quadFacing([nx0, QUAY_Y, nz0], [nx1, QUAY_Y, nz1], [nx1, QUAY_Y - 0.7, nz1], [nx0, QUAY_Y - 0.7, nz0], 0, 0, -1), 0x9c968c));
+    parts.push(paint(cap(FORECOURT_DECK, QUAY_Y - 0.7, false), 0x5c5a55));
+    for (let x = nx0 + 1; x < nx1; x += 3) {
+      for (let z = nz0 + 1; z < -24; z += 3.5) {
+        if (polySdf(FORECOURT_DECK, x, z) < -0.6) parts.push(paint(new CylinderGeometry(0.28, 0.28, QUAY_Y - SEA + 1.5, 6).translate(x, (QUAY_Y + SEA - 1.5) / 2 - 0.35, z), 0x5c5a55));
+      }
+    }
+  }
+  // the promenade: over the water and the dock, a timber deck on piles (on the plaza's quay, its paving)
   for (let i = 1; i < PROMENADE.length; i++) {
     const [ax, az] = PROMENADE[i - 1];
     const [bx, bz] = PROMENADE[i];
-    if (sdfAt((ax + bx) / 2, (az + bz) / 2) >= 0.8) continue;
+    const [mx, mz] = [(ax + bx) / 2, (az + bz) / 2];
+    if ((sdfAt(mx, mz) >= 0.8 && !inDock(mx, mz)) || polySdf(QUAY, mx, mz) < 0) continue;
     const L = Math.hypot(bx - ax, bz - az);
     const ry = Math.atan2(bx - ax, bz - az);
     parts.push(paint(new BoxGeometry(PROMENADE_W + 0.6, 0.35, L + 0.1).rotateY(ry).translate((ax + bx) / 2, DECK_Y - 0.17, (az + bz) / 2), 0xb08a64));
@@ -2585,18 +2768,18 @@ export function buildHarbourfront(world: World): Built {
     ]);
     parts.push(bench.rotateY(b.ry).translate(b.x, y, b.z));
   }
-  // flags along the plaza's city edge, the Olympic plaza's row of poles
+  // flags along the plaza's city edge, under the rim's wall, the Olympic plaza's row of poles
   const FLAGS = [0xd52b1e, 0xffffff, 0x2f6bff, 0x2fb36b, 0xf2c230];
   FLAGS.forEach((hex, k) => {
-    const x = PLAZA_X[0] + 3 + ((PLAZA_X[1] - PLAZA_X[0] - 6) * k) / (FLAGS.length - 1);
-    const z = PLAZA_SOUTH - 3.2;
-    const y = surfaceAt(x, z, stride);
+    const x = PLAZA_X[0] + 1 + ((PLAZA_X[1] - PLAZA_X[0] - 7) * k) / (FLAGS.length - 1);
+    const z = PLAZA_SOUTH - 1.8;
+    const y = standY(x, z);
     parts.push(paint(new CylinderGeometry(0.06, 0.08, 7, 6).translate(x, y + 3.5, z), 0xe6e9ec));
     parts.push(paint(new BoxGeometry(0.04, 1.1, 1.8).translate(x, y + 6.3, z + 0.95), hex));
   });
   // the forecourt's trees (the tree layer's) in their planters, a bench under each
   for (const [x, z] of FORECOURT_TREES) {
-    const y = surfaceAt(x, z, stride);
+    const y = standY(x, z);
     parts.push(paint(new BoxGeometry(1.6, 0.5, 1.6).translate(x, y + 0.25, z), 0xa9a49a));
     const bench = merge([
       paint(new BoxGeometry(1.8, 0.1, 0.5).translate(0, 0.45, 0), 0x9a7048),
@@ -2608,7 +2791,7 @@ export function buildHarbourfront(world: World): Built {
   // the plaza's trees (planted by the tree layer) each in a granite planter
   for (const t of harbourfrontTrees()) {
     if (polySdf(PLAZA, t.x, t.z) > 0.5) continue;
-    parts.push(paint(new BoxGeometry(1.6, 0.5, 1.6).translate(t.x, surfaceAt(t.x, t.z, stride) + 0.25, t.z), 0xa9a49a));
+    parts.push(paint(new BoxGeometry(1.6, 0.5, 1.6).translate(t.x, standY(t.x, t.z) + 0.25, t.z), 0xa9a49a));
   }
   // the floatplane dock in the bay: a gangway down from the seawall, the float and its fingers, a floatplane alongside
   // each, and the terminal on its own float at the north end

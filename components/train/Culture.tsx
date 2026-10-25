@@ -16,9 +16,10 @@ import { SCULPTURES, towerFace, TOWERS } from "./buildings/senakw";
 import { A, banner, bigHouse, canoeHull, carvedPost, fireCircle, flagPole, moonGate, muralWall, P, plaque, reconciliationMonument, spindleWhorl, taikoStage, towerForm, welcomeFigure } from "./cultureKit";
 import { drapeDisc } from "./drape";
 import { junction, roads, WALK } from "./roadNetwork";
+import { FORECOURT_DECK, QUAY_Y, standY } from "./harbourfront";
 import { inLandmark, inPark, LANDMARKS } from "./sites";
 import { merge } from "./shapes";
-import { groundAt, inWater, sdfAt, surfaceAt } from "./terrain";
+import { inWater, polySdf, surfaceAt } from "./terrain";
 import { ART_LIGHTS, placeLight, type Pool, poolOf, uplight } from "./uplight";
 import { skipInMirror } from "./waterMirror";
 import { useWorld } from "./world";
@@ -78,30 +79,17 @@ function prideCrossings(stride: number): BufferGeometry[] {
   return out;
 }
 
-/** The highest ground (true or as drawn) over a box of half-sizes hx, hz about (x, z). */
-function highest(x: number, z: number, hx: number, hz: number, lowEnd: boolean): number {
-  let top = -Infinity;
-  for (let u = -1; u <= 1.001; u += 0.5) {
-    for (let v = -1; v <= 1.001; v += 0.5) {
-      const px = x + u * hx;
-      const pz = z + v * hz;
-      top = Math.max(top, groundAt(px, pz), lowEnd ? surfaceAt(px, pz, 2) : -Infinity);
-    }
-  }
-  return top;
-}
-
 /**
- * The canoe landing (its feature: centre, width across, length down the slope; its ry points it down to the water):
- * broad timber steps laid down the slope, each on the highest ground under it and reaching below the lowest, to a
- * float on piles in the water where two journey canoes are drawn up, bows to the land.
+ * The canoe landing (its feature: centre, width across, length toward the water; its ry points it down to the water):
+ * broad timber steps from the forecourt deck's water edge down to the harbour, on piles, to a float where two journey
+ * canoes are drawn up, bows to the land.
  */
-function canoeLanding(f: Feature, lowEnd: boolean): BufferGeometry[] {
+function canoeLanding(f: Feature): BufferGeometry[] {
   const out: BufferGeometry[] = [];
   const w = f.w ?? 15;
   const len = f.d ?? 19;
   const ry = f.ry ?? 0;
-  // local (u across, v down the slope) → world
+  // local (u across, v down to the water) → world
   const dx = Math.sin(ry);
   const dz = Math.cos(ry);
   const W = (u: number, v: number): [number, number] => [f.x + u * dz + v * dx, f.z - u * dx + v * dz];
@@ -109,39 +97,26 @@ function canoeLanding(f: Feature, lowEnd: boolean): BufferGeometry[] {
     const [x, z] = W(u, v);
     out.push(P(geo.rotateY(ry), hex).translate(x, y, z));
   };
-  // where the water starts down the middle
+  // where the deck ends down the middle
   let vWater = len / 2;
-  for (let v = -len / 2; v <= len / 2 + 6; v += 0.5) {
-    const [x, z] = W(0, v);
-    if (sdfAt(x, z) < 0 && surfaceAt(x, z, lowEnd ? 2 : 1) < SEA + 0.4) {
+  for (let v = -len / 2; v <= len / 2; v += 0.25) {
+    if (polySdf(FORECOURT_DECK, ...W(0, v)) > 0) {
       vWater = v;
       break;
     }
   }
-  const n = 9;
-  const run = (vWater + len / 2) / n;
-  let prev = Infinity;
+  const n = 7;
+  const run = 0.9;
   for (let k = 0; k < n; k++) {
-    const v0 = -len / 2 + k * run;
-    let hi = -Infinity;
-    let lo = Infinity;
-    for (let u = -w / 2; u <= w / 2 + 0.01; u += w / 6) {
-      for (const v of [v0, v0 + run / 2, v0 + run]) {
-        const [x, z] = W(u, v);
-        const g = groundAt(x, z);
-        const s = lowEnd ? surfaceAt(x, z, 2) : g;
-        hi = Math.max(hi, g, s);
-        lo = Math.min(lo, g, s);
-      }
-    }
-    const top = Math.max(SEA + 0.35, Math.min(prev - 0.25, hi + 0.18));
-    prev = top;
-    const bottom = Math.min(lo, top) - 1.2;
+    const v0 = vWater + k * run;
+    const top = QUAY_Y - ((QUAY_Y - SEA - 0.35) * (k + 1)) / n;
+    const bottom = SEA - 1.2;
     box(new BoxGeometry(w, top - bottom, run + 0.02), 0, (top + bottom) / 2, v0 + run / 2, k % 2 ? 0x8b6440 : 0x9a7048);
     box(new BoxGeometry(w, 0.06, 0.18), 0, top + 0.03, v0 + 0.09, 0xc9b48f);
   }
+  const vWaterEnd = vWater + n * run;
   // the float on its piles, and the canoes drawn up to it, bows to the land
-  const fv = vWater + 2.2;
+  const fv = vWaterEnd + 2.2;
   box(new BoxGeometry(w + 2, 0.5, 4.4), 0, SEA + 0.2, fv, 0x7d6650);
   for (const u of [-w / 2 - 0.6, w / 2 + 0.6]) for (const v of [fv - 1.9, fv + 1.9]) box(new CylinderGeometry(0.22, 0.22, 3, 6), u, SEA - 0.6, v, 0x5a4636);
   for (const u of [-3.2, 3.2]) {
@@ -223,13 +198,13 @@ export function Culture() {
     for (const f of FEATURES) {
       if (!f.site) continue;
       if (f.kind === "landing") {
-        parts.push(...canoeLanding(f, lowEnd));
+        parts.push(...canoeLanding(f));
         continue;
       }
-      // on a slope (the forecourt's), a piece stands on the highest ground under it: its platform reaches down
+      // on the forecourt, a piece stands on its deck or on the rim behind it (harbourfront.ts)
       const forecourt = f.site === "forecourt";
       const lift = forecourt ? 0.13 : ON_PAVING.has(f.site) ? 0.12 : 0.02;
-      const y = forecourt ? highest(f.x, f.z, (f.w ?? 2) / 2 + 0.6, (f.d ?? 2) / 2 + 0.6, lowEnd) + 0.05 : surfaceAt(f.x, f.z, stride) + lift;
+      const y = forecourt ? standY(f.x, f.z) + 0.02 : surfaceAt(f.x, f.z, stride) + lift;
       const piece = partsOf(f, lowEnd).map((g) => g.rotateY(f.ry ?? 0).translate(f.x, y, f.z));
       light(f.kind, piece, f.x, y, f.z, f.ry ?? 0, lift);
       parts.push(...piece);

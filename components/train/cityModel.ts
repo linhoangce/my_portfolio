@@ -7,13 +7,14 @@ import { onSquareFixture, SQUARES, squareXZ } from "./sets/squares";
 import { wellnessPeople } from "./sets/wellness";
 import { fromStation } from "./sets/zones";
 import { busNetwork } from "./buses";
-import { FORECOURT, inHarbourGreen, onGreenCafe, PLAZA_SOUTH, PLAZA_X, promenadeStretches } from "./harbourfront";
+import { inFairmont } from "./fairmont";
+import { FORECOURT_DECK, inHarbourGreen, onGreenCafe, onQuay, PLAZA_SOUTH, PLAZA_X, promenadeStretches, standY } from "./harbourfront";
 import { stations } from "@/data";
 
-import { CELL_WHEELCHAIR, PEOPLE_CELLS, SEA, WALK_CELLS } from "./constants";
+import { CELL_WHEELCHAIR, PEOPLE_CELLS, WALK_CELLS } from "./constants";
 import { roads, WALK } from "./roadNetwork";
 import { inLandmark, inPark } from "./sites";
-import { inWater, sdfAt } from "./terrain";
+import { inWater, polySdf } from "./terrain";
 import { cutNear, frameAt, groundAt, LEN, makeFrame, stationS, trackDist } from "./track";
 
 /* ------------------------------------------------------------------ random */
@@ -130,7 +131,7 @@ export function buildPeople(rng: Rng, PEOPLE_N: number, commonsCovered: (x: numb
     frameAt(rng.next() * LEN, f);
     if (inWater(f.p.x, f.p.z) || f.p.y - groundAt(f.p.x, f.p.z) < 5) continue;
     const p = f.p.clone().addScaledVector(f.r, (rng.next() - 0.5) * 2.4);
-    add({ x: p.x, y: groundAt(p.x, p.z), z: p.z });
+    add({ x: p.x, y: standY(p.x, p.z), z: p.z });
   }
   // the crowd on the plaza at Waterfront, the line's busiest place: some standing about, most crossing it
   for (let k = 0; k < 40 && people.length < PEOPLE_N; k++) {
@@ -143,7 +144,7 @@ export function buildPeople(rng: Rng, PEOPLE_N: number, commonsCovered: (x: numb
     const ux = x2 - x;
     const uz = z2 - z;
     const walk = k % 3 !== 0;
-    add({ x, y: groundAt(x, z) + 0.15, z, ox: x, oz: z, ux, uz, pos: 0, lo: -6, hi: 6, dir: rng.next() < 0.5 ? 1 : -1, move: walk ? 0.7 + rng.next() * 0.5 : 0 });
+    add({ x, y: standY(x, z) + 0.15, z, ox: x, oz: z, ux, uz, pos: 0, lo: -6, hi: 6, dir: rng.next() < 0.5 ? 1 : -1, move: walk ? 0.7 + rng.next() * 0.5 : 0 });
   }
   // about the squares, the Harbour Market at Waterfront and Commercial–Broadway's: off their pavilions, stalls and
   // fountains, and clear of the guideway; some standing, most strolling a few paces back and forth
@@ -155,7 +156,7 @@ export function buildPeople(rng: Rng, PEOPLE_N: number, commonsCovered: (x: numb
         const a = a0 + rng.next() * (a1 - a0);
         const l = l0 + rng.next() * (l1 - l0);
         const [x, z] = squareXZ(sq, a, l);
-        if (onSquareFixture(sq, a, l) || inWater(x, z) || trackDist(x, z) < 6.5 || inLandmark(x, z, 1)) continue;
+        if (onSquareFixture(sq, a, l) || inWater(x, z) || trackDist(x, z) < 6.5 || inLandmark(x, z, 1) || inFairmont(x, z, 0.6)) continue;
         // a stroll along a or l, only if its whole length keeps clear too
         const alongA = rng.next() < 0.5;
         const [x2, z2] = squareXZ(sq, a + (alongA ? 1 : 0), l + (alongA ? 0 : 1));
@@ -163,10 +164,10 @@ export function buildPeople(rng: Rng, PEOPLE_N: number, commonsCovered: (x: numb
           const sa = a + (alongA ? s : 0);
           const sl = l + (alongA ? 0 : s);
           const [sx, sz] = squareXZ(sq, sa, sl);
-          return !onSquareFixture(sq, sa, sl) && !inWater(sx, sz) && trackDist(sx, sz) >= 6.5;
+          return !onSquareFixture(sq, sa, sl) && !inWater(sx, sz) && trackDist(sx, sz) >= 6.5 && !inFairmont(sx, sz, 0.6);
         });
         const move = clear && rng.next() < 0.65 ? 0.6 + rng.next() * 0.5 : 0;
-        add({ x, y: groundAt(x, z) + 0.15, z, ox: x, oz: z, ux: x2 - x, uz: z2 - z, pos: 0, lo: -3, hi: 3, dir: rng.next() < 0.5 ? 1 : -1, move });
+        add({ x, y: standY(x, z) + 0.15, z, ox: x, oz: z, ux: x2 - x, uz: z2 - z, pos: 0, lo: -3, hi: 3, dir: rng.next() < 0.5 ? 1 : -1, move });
         placed++;
       }
     }
@@ -186,7 +187,7 @@ export function buildPeople(rng: Rng, PEOPLE_N: number, commonsCovered: (x: numb
       const uz = Math.sin(ang);
       const clear = [-2.5, 2.5].every((s) => commonsCovered(x + ux * s, z + uz * s) && !onFeature(x + ux * s, z + uz * s, 0.4));
       const move = clear && rng.next() < 0.6 ? 0.55 + rng.next() * 0.5 : 0;
-      add({ x, y: groundAt(x, z) + 0.12, z, ox: x, oz: z, ux, uz, pos: 0, lo: -2.5, hi: 2.5, dir: rng.next() < 0.5 ? 1 : -1, move });
+      add({ x, y: standY(x, z) + 0.12, z, ox: x, oz: z, ux, uz, pos: 0, lo: -2.5, hi: 2.5, dir: rng.next() < 0.5 ? 1 : -1, move });
       placed++;
     }
   }
@@ -203,7 +204,7 @@ export function buildPeople(rng: Rng, PEOPLE_N: number, commonsCovered: (x: numb
       const s = Math.sin(f.ry ?? 0);
       const x = f.x + lx * c + lz * s;
       const z = f.z - lx * s + lz * c;
-      if (commonsCovered(x, z)) add({ x, y: groundAt(x, z) + 0.12, z });
+      if (commonsCovered(x, z)) add({ x, y: standY(x, z) + 0.12, z });
     }
   }
   // waiting at the bus stops, under the shelters and the exchanges' canopies
@@ -215,7 +216,7 @@ export function buildPeople(rng: Rng, PEOPLE_N: number, commonsCovered: (x: numb
       const out = 0.7 + rng.next() * 0.5;
       const x = st.x + Math.cos(st.ry) * along + Math.sin(st.ry) * out;
       const z = st.z - Math.sin(st.ry) * along + Math.cos(st.ry) * out;
-      add({ x, y: groundAt(x, z) + 0.1, z });
+      add({ x, y: standY(x, z) + 0.1, z });
     }
   }
   // strolling the seawall promenade by Canada Place, and about Jack Poole Plaza
@@ -227,15 +228,17 @@ export function buildPeople(rng: Rng, PEOPLE_N: number, commonsCovered: (x: numb
       const pos = rng.next() * st.L;
       const x = ox + st.ux * pos;
       const z = oz + st.uz * pos;
-      add({ x, y: groundAt(x, z) + 0.1, z, ox, oz, ux: st.ux, uz: st.uz, pos, lo: 0, hi: st.L, dir: rng.next() < 0.5 ? 1 : -1, move: 0.6 + rng.next() * 0.5 });
+      add({ x, y: standY(x, z) + 0.1, z, ox, oz, ux: st.ux, uz: st.uz, pos, lo: 0, hi: st.L, dir: rng.next() < 0.5 ? 1 : -1, move: 0.6 + rng.next() * 0.5 });
     }
   }
-  // about the forecourt at the foot of the Canada Place pier, where the pier's deck is
+  // about the forecourt's deck at the foot of the Canada Place pier
+  const fx = FORECOURT_DECK.map(([x]) => x);
+  const fz = FORECOURT_DECK.map(([, z]) => z);
   for (let k = 0, n = 0; k < 60 && n < 10 && people.length < PEOPLE_N; k++) {
-    const x = FORECOURT.x0 + 1 + rng.next() * (FORECOURT.x1 - FORECOURT.x0 - 2);
-    const z = FORECOURT.z0 + 1 + rng.next() * (FORECOURT.z1 - FORECOURT.z0 - 2);
-    if (sdfAt(x, z) >= 0.6 || groundAt(x, z) < SEA + 0.4 || trackDist(x, z) < 6.5 || onFeature(x, z, 0.5)) continue;
-    add({ x, y: groundAt(x, z) + 0.15, z, ox: x, oz: z, ux: 1, uz: 0, pos: 0, lo: -2.5, hi: 2.5, dir: rng.next() < 0.5 ? 1 : -1, move: rng.next() < 0.5 ? 0.7 : 0 });
+    const x = Math.min(...fx) + 1 + rng.next() * (Math.max(...fx) - Math.min(...fx) - 2);
+    const z = Math.min(...fz) + 1 + rng.next() * (Math.max(...fz) - Math.min(...fz) - 2);
+    if (!onQuay(x, z, -0.8) || polySdf(FORECOURT_DECK, x, z) > -0.8 || onFeature(x, z, 0.5)) continue;
+    add({ x, y: standY(x, z) + 0.15, z, ox: x, oz: z, ux: 1, uz: 0, pos: 0, lo: -2.5, hi: 2.5, dir: rng.next() < 0.5 ? 1 : -1, move: rng.next() < 0.5 ? 0.7 : 0 });
     n++;
   }
   // on Harbour Green's lawns, off its cafés
@@ -243,13 +246,13 @@ export function buildPeople(rng: Rng, PEOPLE_N: number, commonsCovered: (x: numb
     const x = -160 + rng.next() * 44;
     const z = -86 + rng.next() * 36;
     if (!inHarbourGreen(x, z, -0.8) || onGreenCafe(x, z, 0.3)) continue;
-    add({ x, y: groundAt(x, z) + 0.1, z });
+    add({ x, y: standY(x, z) + 0.1, z });
     n++;
   }
   for (let k = 0; k < 8 && people.length < PEOPLE_N; k++) {
     const x = PLAZA_X[0] + 2 + rng.next() * (PLAZA_X[1] - PLAZA_X[0] - 4);
     const z = PLAZA_SOUTH - 2 - rng.next() * 6;
-    add({ x, y: groundAt(x, z) + 0.13, z });
+    add({ x, y: standY(x, z) + 0.13, z });
   }
   // the rest on the sidewalks of the drawn streets near the line, each pacing a straight stretch of one
   const { edges } = roads();
@@ -278,7 +281,7 @@ export function buildPeople(rng: Rng, PEOPLE_N: number, commonsCovered: (x: numb
     const x = ox + ux * pos;
     const z = oz + uz * pos;
     if (inWater(x, z) || inLandmark(x, z, 2) || inPark(x, z) || trackDist(x, z) < 9) continue;
-    add({ x, y: groundAt(x, z), z, ox, oz, ux, uz, pos, lo: 1, hi: L - 1, dir: rng.next() < 0.5 ? 1 : -1, move: L > 8 ? 0.8 + rng.next() * 0.6 : 0 });
+    add({ x, y: standY(x, z), z, ox, oz, ux, uz, pos, lo: 1, hi: L - 1, dir: rng.next() < 0.5 ? 1 : -1, move: L > 8 ? 0.8 + rng.next() * 0.6 : 0 });
   }
   return { people, counts };
 }

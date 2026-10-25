@@ -32,7 +32,8 @@ import { PEOPLE_WIDTH, SEA } from "./constants";
 import { merged } from "./merge";
 import { paint } from "./shapes";
 import { dotTexture } from "./textures";
-import { groundAt, UP } from "./track";
+import { standY } from "./harbourfront";
+import { UP } from "./track";
 import { boatLights, BUS_LAMPS, busSection, sailboat, seabus, yacht } from "./vessels";
 import { asVehicle, canoe, carKinds, type Lamps } from "./vehicles";
 import { floatplaneAt } from "./airways";
@@ -245,7 +246,7 @@ export function Life() {
           h.pos = pos;
           h.x = h.ox + h.ux * pos;
           h.z = h.oz + h.uz * pos;
-          h.y = groundAt(h.x, h.z);
+          h.y = standY(h.x, h.z);
         }
       }
       p.set(h.x, h.y, h.z);

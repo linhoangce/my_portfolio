@@ -2,8 +2,8 @@
 import { Vector3 } from "three";
 
 import { MONUMENT_BY_KEY, type MonumentKey } from "./monumentData";
+import { standY } from "./harbourfront";
 import { LANDMARKS, type LandmarkKey } from "./sites";
-import { groundAt } from "./terrain";
 import { trackNearest } from "./track";
 
 export { MONUMENT_BY_KEY, MONUMENTS, type Monument, type MonumentKey } from "./monumentData";
@@ -17,9 +17,9 @@ export function monumentFocus(key: MonumentKey): Vector3 {
   if (!f) {
     const m = MONUMENT_BY_KEY[key];
     // a monument at its own spot (no landmark) stands on the ground there
-    const l = m?.at ? { px: m.at[0], pz: m.at[1], padY: groundAt(m.at[0], m.at[1]), key } : LANDMARKS.find((x) => x.key === key);
+    const l = m?.at ? { px: m.at[0], pz: m.at[1], padY: standY(m.at[0], m.at[1]), key } : LANDMARKS.find((x) => x.key === key);
     if (!l || !m) throw new Error(`no monument ${key}`);
-    const base = m.at || SMALL.has(key as LandmarkKey) ? groundAt(l.px, l.pz) : l.padY;
+    const base = m.at || SMALL.has(key as LandmarkKey) ? standY(l.px, l.pz) : l.padY;
     f = new Vector3(l.px, base + m.cy, l.pz);
     focusCache.set(key, f);
   }

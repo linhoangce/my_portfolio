@@ -3,10 +3,10 @@
  * Registering the pads here, at import, keeps them ahead of the first groundAt call (which freezes the ground).
  */
 import { PARK_DATA } from "./parkData";
-import { CONVENTION, HARBOUR_GREEN } from "./harbourfront";
+import { CONVENTION, DOCK, HARBOUR_GREEN, inDock, QUAY_Y, RIM } from "./harbourfront";
 import { lionsGateDeck } from "./lionsGate";
 import { SEA } from "./constants";
-import { addModifier, demAt, discPad, groundAt, inBasin, inWater, LAKE, lakeLevel, lerp, polySdf, sdfAt, SHORES, SW_POINT } from "./terrain";
+import { addModifier, addUnbakedModifier, demAt, discPad, groundAt, inBasin, inWater, LAKE, lakeLevel, lerp, polySdf, sdfAt, SHORES, SW_POINT } from "./terrain";
 import { samples } from "./track";
 
 type XZ = [number, number];
@@ -336,10 +336,11 @@ export const LANDMARK_DEFS: LandmarkDef[] = [
   { key: "scienceWorld", x: SW_POINT.x, z: SW_POINT.z, r: 16, h: 28, margin: 8, lotR: 32, yaw: -SW_FAN },
   // the 2100 hub on a deck over the harbour east of the old CPR station, its gallery reaching out into the inlet
   { key: "waterfrontHub", x: 38, z: -30, r: 20, h: 62, margin: 4, lotR: 22 },
-  // smaller monuments (Nominatim positions); the cauldron and the orca stand in Jack Poole Plaza (harbourfront.ts)
+  // smaller monuments (Nominatim positions); the cauldron by the water in Jack Poole Plaza and the orca at the
+  // Convention Centre's east end, both on the plaza's quay (harbourfront.ts), stand where they are put
   { key: "gate", x: 55.2, z: 67.4, r: 4.5, h: 9, margin: 10, lotR: 6 },
-  { key: "cauldron", x: -60, z: -37, r: 4, h: 11, margin: 10, lotR: 4 },
-  { key: "orca", x: -53, z: -38.2, r: 3, h: 6, margin: 10, lotR: 3 },
+  { key: "cauldron", x: -58.5, z: -38.5, r: 4, h: 11, margin: 10, lotR: 4 },
+  { key: "orca", x: -63, z: -37.5, r: 3, h: 6, margin: 10, lotR: 3 },
   { key: "steamClock", x: 26.6, z: 22, r: 1.5, h: 6, margin: 10, lotR: 3 },
 ];
 
@@ -362,6 +363,8 @@ export function pushOut(x: number, z: number, need: number): [number, number] {
 
 export type PlacedLandmark = LandmarkDef & { px: number; pz: number; padY: number };
 const SMALL = new Set<LandmarkKey>(["gate", "cauldron", "orca", "steamClock"]);
+/** Small monuments placed by hand: on the plaza's quay, which `dryClear` (dry land only) would push off. */
+const PINNED = new Set<LandmarkKey>(["cauldron", "orca"]);
 /** The nearest spot to (x, z) on dry land, clear of the track and of the big landmarks already placed. */
 function dryClear(l: LandmarkDef, placed: PlacedLandmark[]): [number, number] {
   for (let r = 0; r < 80; r += 3) {
@@ -380,17 +383,18 @@ function dryClear(l: LandmarkDef, placed: PlacedLandmark[]): [number, number] {
 /** Landmarks standing in the water (the Canada Place pier, the Convention Centre) keep a deck just above the sea. */
 export const LANDMARKS: PlacedLandmark[] = [];
 for (const l of LANDMARK_DEFS) {
-  const [px, pz] = SMALL.has(l.key) ? dryClear(l, LANDMARKS) : pushOut(l.x, l.z, l.r + l.margin + 0.5);
+  const [px, pz] = PINNED.has(l.key) ? [l.x, l.z] : SMALL.has(l.key) ? dryClear(l, LANDMARKS) : pushOut(l.x, l.z, l.r + l.margin + 0.5);
   const wet = inWater(px, pz);
   let padY = 0;
-  if (!wet) {
+  // the Convention Centre and what stands in the dock stand on its decks
+  if (l.key === "convention" || (SMALL.has(l.key) && inDock(px, pz))) padY = QUAY_Y;
+  else if (!wet) {
     let s = 0;
     for (let k = 0; k < 9; k++) s += demAt(px + Math.cos(k * 0.7) * l.r * 0.6, pz + Math.sin(k * 0.7) * l.r * 0.6);
     padY = s / 9;
     // round the east basin the pad stops at the water: a seawall, not a filled-in shore
     const pad = discPad(px, pz, l.r + 4, 14, padY);
-    // the Convention Centre stands on the shore with its seaward side on piles: no pad, which would fill the water in
-    if (!SMALL.has(l.key) && l.key !== "convention") addModifier((x, z, h) => (inBasin(x, z) ? h : pad(x, z, h)));
+    if (!SMALL.has(l.key)) addModifier((x, z, h) => (inBasin(x, z) ? h : pad(x, z, h)));
     else padY = demAt(px, pz);
   }
   LANDMARKS.push({ ...l, px, pz, padY });
@@ -686,3 +690,15 @@ for (const p of PARKS) {
     return lerp(level + 0.25, h, Math.min(1, Math.max(0, (r - 1.15) / 0.75)));
   });
 }
+// the dock (harbourfront.ts): last, after the station pads that filled it, the seabed again (on what was dry land, a
+// little under the sea), falling to it from the city's ground over the rim's band inside its landward edge; the city's
+// lots and trees are laid out without it (they keep out of the dock)
+addUnbakedModifier(
+  (x, z, h) => {
+    if (!inDock(x, z)) return h;
+    const k = Math.min(1, -polySdf(DOCK, x, z) / RIM);
+    const bed = Math.min(h, sdfAt(x, z) < 0 ? demAt(x, z) : SEA - 1.2);
+    return lerp(h, bed, k * k * (3 - 2 * k));
+  },
+  [-119, 15, -74, -24.3],
+);

@@ -242,8 +242,6 @@ export const SQUARES: Square[] = [
     pavilions: [
       // on the harbour's edge, facing the water
       { a: -12, l: 44.75, w: 8, d: 5.5, face: [0, 1], name: "Bannock & Salmon", umbrella: 0xe8663a, well: true, h: 3.6 },
-      // south of the cedar, toward its canopy
-      { a: 17, l: 21, w: 10, d: 6, face: [-1, 0], name: "Cedar & Salt", umbrella: 0xd2452f, well: true, roof: "green" },
       { a: 26, l: 19, w: 8, d: 5, face: [1, 0], name: "Noodle House", umbrella: 0xf2b632, roof: "timber" },
       { a: 24, l: 32, w: 5, d: 4, face: [0, -1], name: "Persian Bakery", umbrella: 0xf1e9da, front: 2.8, roof: "green", h: 2.9 },
       // on the strip toward Waterfront, its deck out over the water
@@ -261,7 +259,6 @@ export const SQUARES: Square[] = [
     ],
     trees: [
       ...[12, 18, 24, 30].map((a) => ({ a, l: 9.6, sp: "smaple" as SpeciesId, s: 0.62 })),
-      { a: -18.5, l: 47, sp: "cherry", s: 0.58 },
       { a: 17.5, l: 35, sp: "magnolia", s: 0.58 },
       { a: 31.5, l: 36, sp: "hornbeam", s: 0.6 },
     ],
