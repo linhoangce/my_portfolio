@@ -42,6 +42,7 @@ import {
 import { SEA } from "./constants";
 import { eventColour, registerLine, registerPattern } from "./eventLights";
 import {
+  ABUTMENT,
   BALCONY_H,
   type Bay,
   bayBox,
@@ -340,9 +341,11 @@ export function buildInletWalk(world: World): InletBuilt {
     for (const side of [-1, 1]) S.push(strut(new Vector3(X + side * 0.6, capTop, z), new Vector3(X + side * 1.95, top - 0.3, z), 0.24, WHITE));
   }
 
-  // ---- the ends: an abutment at the plaza, the pylons and name boards at either end
-  const g0 = groundAt(X, WALK.z0 - 3);
-  S.push(box(2 * B, deckY(WALK.z0) - g0 + 1, 3, X, (deckY(WALK.z0) + g0 - 1) / 2, WALK.z0 - 1.5, CONCRETE));
+  // ---- the ends: an abutment at the plaza (down to the rim's foot), the pylons and name boards at either end
+  const g0 = Math.min(groundAt(X, ABUTMENT.z1), groundAt(X, (ABUTMENT.z0 + ABUTMENT.z1) / 2));
+  // its top just under the walking surface at its low end (the deck rises a little over it)
+  const aTop = deckY(ABUTMENT.z0) - 0.06;
+  S.push(box(2 * B, aTop - g0 + 1, ABUTMENT.z0 - ABUTMENT.z1, X, (aTop + g0 - 1) / 2, (ABUTMENT.z0 + ABUTMENT.z1) / 2, CONCRETE));
   const board = new MeshStandardMaterial({ map: nameTexture("INLET WALK"), roughness: 0.6, emissive: 0xffffff, emissiveMap: nameTexture("INLET WALK"), emissiveIntensity: 0 });
   const boards: BufferGeometry[] = [];
   for (const [z, face] of [

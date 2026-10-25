@@ -20,10 +20,16 @@ import type { Solid } from "./harbourNav";
 /**
  * The walk's centreline (x), the walkway's half width, the edge beams' outer half width and depth (deeper over the
  * navigation span), and where it starts and ends (z): on the Waterfront plaza's edge, and on the terraces' crown. Its
- * foot passes between the restored CPR station's corner (x 0.7) and the canoe landing's carved post (x −8.6), clear of
- * the light line's mast (z −27) and the cruise ship's hull (x −15).
+ * foot passes between the restored CPR station's corner (x 0.7) and the canoe landing's carved posts (x −9.6), clear of
+ * the light line's mast (z −27) and the cruise ship's hull (x −15), then over the dock's rim and the forecourt's deck
+ * (harbourfront.ts).
  */
 export const WALK = { x: -3.5, half: 2.2, beam: 2.55, depth: 0.8, navDepth: 1, z0: -30, z1: -304 };
+/**
+ * The abutment at the plaza's edge (z0 > z1): the deck rests on it where the bank, and the dock's rim along it, still
+ * stand up under the beam; past it the beam's underside clears the rim's top (sampled: 7.1 at most there, falling).
+ */
+export const ABUTMENT = { z0: WALK.z0, z1: WALK.z0 - 6 };
 
 /**
  * The deck's height (walking surface) at knots along z, south to north, straight between them: level with the plaza

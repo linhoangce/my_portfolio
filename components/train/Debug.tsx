@@ -17,8 +17,9 @@ import { useTrain } from "./store";
 import { BLOCKERS } from "./cityModel";
 import { getCityData, getTreeData } from "./cityData";
 import { type BoatPose, Harbour } from "./harbourTraffic";
+import { standY } from "./harbourfront";
 import { inSolid } from "./harbourNav";
-import { deckY as walkDeckY, gradeAt, INLET_AIR, INLET_TOP, inletSolids, NAV, onInletWalk, PIERS, undersideY, WALK } from "./inletWalk";
+import { ABUTMENT, deckY as walkDeckY, gradeAt, INLET_AIR, INLET_TOP, inletSolids, NAV, onInletWalk, PIERS, undersideY, WALK } from "./inletWalk";
 import { floatplaneAt } from "./airways";
 import { roadDist } from "./roadNetwork";
 import { SEABUS_LEN, seabusAt, type SeaBusPose } from "./seabusLine";
@@ -36,6 +37,8 @@ export type TrainDebug = {
   view: (pos: [number, number, number], look: [number, number, number]) => void;
   unview: () => void;
   ground: (x: number, z: number) => number;
+  /** Where something standing at (x, z) stands: the dock's rim or quay there, else the ground (harbourfront.ts standY). */
+  stand: (x: number, z: number) => number;
   /** Triangles per object (instanced meshes multiplied by their count), largest first. */
   budget: () => [string, number][];
   /** The next frame's draw calls by source (nearest named ancestor, else material and vertex count). */
@@ -88,7 +91,8 @@ export type TrainDebug = {
    * its steepest grade, the shore distance at its piers; how near the floatplane, the taxis and the drones come over
    * it (least height over its tops, among samples within 6, 12 and 6 of them); how near any boat over 900 s, or the
    * SeaBus round its timetable, comes to what it stands in the water (negative: inside); the nearest street to its
-   * ground; and the lots, houses and trees on it.
+   * ground; the lots, houses and trees on it; and, past its abutment, its underside's least height over the dock's rim,
+   * the quay or the ground.
    */
   inlet: () => Record<string, number>;
   /** Static geometry for the headless checks: track samples, footprints, blockers, station points. */
@@ -148,6 +152,7 @@ export function Debug() {
         st().sim.freeCam = null;
       },
       ground: (x, z) => groundAt(x, z),
+      stand: (x, z) => standY(x, z),
       budget: () => {
         const out: [string, number][] = [];
         world.scene.traverse((o) => {
@@ -422,6 +427,9 @@ export function Debug() {
           seabusAt(t, k, sp);
           seabus = Math.min(seabus, margin(sp.x, sp.z, SEABUS_LEN / 2));
         }
+        // past the abutment, how far the deck's underside stands over whatever it passes (the rim, the quay, the ground)
+        let footClear = Infinity;
+        for (let z = ABUTMENT.z1; z > ABUTMENT.z1 - 40; z -= 0.5) for (let x = WALK.x - WALK.beam; x <= WALK.x + WALK.beam; x += 0.5) footClear = Math.min(footClear, undersideY(z) - standY(x, z));
         let pierShore = -Infinity;
         for (const z of PIERS) pierShore = Math.max(pierShore, sdfAt(WALK.x, z));
         let road = Infinity;
@@ -442,6 +450,7 @@ export function Debug() {
           houses: city.houses.filter((h) => onInletWalk(h.x, h.z, 0)).length,
           trees: getTreeData(lowEnd).filter((t) => onInletWalk(t.x, t.z, 0)).length,
           footGround: groundAt(WALK.x, WALK.z0) - walkDeckY(WALK.z0),
+          footClear,
         };
       },
       geometry: () => {
