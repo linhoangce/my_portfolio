@@ -10,7 +10,7 @@ import type { MonumentKey } from "./monumentData";
 /** idle → cut (a beat) → establish (the section's copy comes in by stages) → hold (all of it shown) → exit (it goes). */
 export type ScenePhase = "idle" | "cut" | "establish" | "hold" | "exit";
 export type Orbit = { yaw: number; pitch: number; zoom: number };
-export type UiPanel = null | "menu" | "help";
+export type UiPanel = null | "menu" | "help" | "design";
 
 /**
  * Hot-path numbers, mutated in place by Drive, the camera rig and the controls every frame.
@@ -71,11 +71,11 @@ export type TrainState = {
   dockedIdx: number | null;
   /** The scene whose overlay the visitor hid (E or Esc); it stays hidden for this stay. */
   dismissed: number | null;
-  /** The station overlay is on screen (owned by the director). */
+  /** The station overlay is on screen (owned by the director); Waterfront's Foreword is up from the first paint. */
   overlay: boolean;
   scenePhase: ScenePhase;
   sceneIdx: number;
-  /** 0–4: kicker and title, lead, the beats, the rest; drives the reveal. */
+  /** 0–4: kicker and title, lead, the beats, the rest; drives the reveal. The opening hold starts with all of it. */
   sceneStage: number;
   /** false with ?film=0: arrivals open the overlay without the film. */
   filmOn: boolean;
@@ -180,10 +180,11 @@ export const useTrain = create<TrainState>((set, get) => ({
   loadStage: 0,
   dockedIdx: null,
   dismissed: null,
-  overlay: false,
+  // the ride opens holding at Waterfront with its Foreword shown, so it is there to read while the scene loads
+  overlay: true,
   scenePhase: "hold",
   sceneIdx: 0,
-  sceneStage: 0,
+  sceneStage: 4,
   filmOn: true,
   monument: null,
   hoverMon: null,
