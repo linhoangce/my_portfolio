@@ -7,6 +7,7 @@ import {
   BufferGeometry,
   CatmullRomCurve3,
   CylinderGeometry,
+  DoubleSide,
   Float32BufferAttribute,
   Group,
   InstancedMesh,
@@ -26,22 +27,16 @@ import { stations } from "@/data";
 
 import { PLATFORM_LEN } from "./constants";
 import { merged, type Part } from "./merge";
-import { canvasTexture, paint } from "./shapes";
+import { canvasTexture } from "./shapes";
 import { doorLabel, paintDoorLabel, signFonts } from "./textures";
 import { accessParts } from "./accessKit";
+import { CANOPY, canopyParts, FIN, turbineBlades } from "./canopies";
 import { inRailCut } from "./rail";
 import { getCityData } from "./cityData";
-import { stationAccess } from "./stationAccess";
+import { setBridges, stationAccess, TOWER } from "./stationAccess";
 import { isRoad } from "./roadNetwork";
 import { frameAt, groundAt, makeFrame, stationS } from "./track";
 import { useWorld } from "./world";
-
-type Canopy = "grid" | "leaf" | "living" | "ribbed" | "hub";
-/**
- * One of four canopies per stop: timber gridshell, glass leaf, solar roof with a planted fringe, ribbed arch; at
- * Commercial–Broadway the interchange's own great roof (Hub.tsx) instead.
- */
-const CANOPY: Canopy[] = ["grid", "living", "ribbed", "leaf", "grid", "hub", "leaf", "ribbed", "grid", "living"];
 
 /** A parabolic vault `w` wide rising `rise` above `base`, `len` long, as an open sheet. */
 export function vault(w: number, rise: number, len: number, base: number, nu = 18, nz = 8): BufferGeometry {
@@ -81,7 +76,10 @@ export const rib = (w: number, rise: number, base: number, z: number, r: number)
 
 const at = (x: number, y: number, z: number): [number, number, number] => [x, y, z];
 
-/** Photovoltaic modules from above: dark blue cells in a silver frame, two modules to a tile, about a unit each. */
+/**
+ * Photovoltaic modules from above: dark blue cells in a silver frame, two modules to a tile, a unit each (the roofs give
+ * their UVs in modules, canopies.ts).
+ */
 function solarMaterial(envTex: MeshStandardMaterial["envMap"]): MeshStandardMaterial {
   const t = canvasTexture(64, 128, (g) => {
     g.fillStyle = "#c2c8cf";
@@ -97,38 +95,45 @@ function solarMaterial(envTex: MeshStandardMaterial["envMap"]): MeshStandardMate
     }
   });
   t.wrapS = t.wrapT = RepeatWrapping;
-  t.repeat.set(6, 13);
   return new MeshStandardMaterial({ map: t, roughness: 0.28, metalness: 0.45, envMap: envTex, envMapIntensity: 0.8 });
 }
 
-/**
- * A helical vertical-axis wind turbine, 3.4 tall: three blades twisting a third of a turn round the axis between two
- * hubs, on a short mast. Built round the origin so it spins about y.
- */
-function turbineBlades(): BufferGeometry {
-  const parts: Part[] = [];
-  for (let b = 0; b < 3; b++) {
-    const pts: Vector3[] = [];
-    for (let k = 0; k <= 12; k++) {
-      const u = k / 12;
-      const a = (b / 3) * Math.PI * 2 + u * (Math.PI * 2) / 3;
-      pts.push(new Vector3(Math.cos(a) * 0.75, 0.2 + u * 3, Math.sin(a) * 0.75));
+/** The harbour sails' membrane: white fabric printed with a narrow band of thin-film cells every 1.5 units across. */
+function membraneMaterial(): MeshStandardMaterial {
+  const t = canvasTexture(64, 64, (g) => {
+    g.fillStyle = "#f5f6f3";
+    g.fillRect(0, 0, 64, 64);
+    g.fillStyle = "#7d8fae";
+    g.fillRect(27, 0, 10, 64);
+    g.fillStyle = "#9aa9c3";
+    for (let y = 4; y < 64; y += 8) g.fillRect(27, y, 10, 1);
+  });
+  return new MeshStandardMaterial({ map: t, roughness: 0.6, side: DoubleSide });
+}
+
+/** See-through solar glass: dark cells with clear glass between, the train showing through. */
+function pvGlassMaterial(envTex: MeshStandardMaterial["envMap"]): MeshStandardMaterial {
+  const t = canvasTexture(64, 64, (g) => {
+    g.clearRect(0, 0, 64, 64);
+    for (const x of [3, 35]) {
+      for (const y of [3, 35]) {
+        g.fillStyle = "#1d2f52";
+        g.fillRect(x, y, 26, 26);
+        g.fillStyle = "#2f4670";
+        g.fillRect(x, y + 12, 26, 1);
+        g.fillRect(x + 12, y, 1, 26);
+      }
     }
-    parts.push({ geo: new TubeGeometry(new CatmullRomCurve3(pts), 16, 0.07, 4, false) });
-    for (const y of [0.2, 3.2]) {
-      const a = (b / 3) * Math.PI * 2 + (y > 1 ? (Math.PI * 2) / 3 : 0);
-      parts.push({ geo: new BoxGeometry(0.75, 0.06, 0.08), position: at(Math.cos(a) * 0.37, y, Math.sin(a) * 0.37), rotation: [0, -a, 0] });
-    }
-  }
-  return merged(parts);
+  });
+  return new MeshStandardMaterial({ map: t, transparent: true, opacity: 0.9, depthWrite: false, side: DoubleSide, roughness: 0.2, metalness: 0.4, envMap: envTex, envMapIntensity: 0.8 });
 }
 
 /**
  * The 2100 station kit on both side platforms: white decks on slender columns, glowing edges, full-height platform
- * screen doors with a light line and the stop's name on their top rail, one of four canopies, lamp strips, a glass
- * lift with a bridge down to the street on the left, and a pair of small wind turbines beside it. No fascia board: the
- * station is the scene. One mesh per material per station (timber and planting painted into one), and every
- * station's turbine rotors in one instanced mesh.
+ * screen doors with a light line and the stop's name on their top rail, each stop's own roof (canopies.ts), the ways
+ * up, and a pair of small wind turbines beside the left platform. No fascia board: the station is the scene. One mesh
+ * per material per station (timber and planting painted into one), every station's turbine rotors in one instanced
+ * mesh and Joyce–Collingwood's louvre fins in another, turning to follow the sun.
  */
 export function Stations() {
   const world = useWorld();
@@ -140,9 +145,14 @@ export function Stations() {
     const f = makeFrame();
     const labels: { canvas: HTMLCanvasElement; texture: { needsUpdate: boolean }; index: number }[] = [];
     const solarMat = solarMaterial(world.envTex);
+    const membraneMat = membraneMaterial();
+    const pvGlassMat = pvGlassMaterial(world.envTex);
+    const lanternMat = new MeshStandardMaterial({ color: 0x3a0d08, emissive: 0xff4a26, emissiveIntensity: 1.3, roughness: 0.6 });
     const turbineGeo = turbineBlades();
     // each rotor: where it stands in the world, its station's turn, the angle it starts at
     const rotors: { p: Vector3; q: Quaternion; a: number }[] = [];
+    // each louvre fin: its centre in the world, its station's turn and the way along the track
+    const fins: { p: Vector3; q: Quaternion; t: Vector3 }[] = [];
     const wood = new MeshStandardMaterial({ vertexColors: true, roughness: 0.75 });
     const groups = stations.map((st, i) => {
       frameAt(stationS[i], f);
@@ -160,11 +170,6 @@ export function Stations() {
       const edgeP: Part[] = [];
       const pane: Part[] = [];
       const steel: Part[] = [];
-      const ribs: Part[] = [];
-      const timber: Part[] = [];
-      const green: Part[] = [];
-      const solar: Part[] = [];
-      const lamps: Part[] = [];
       const bannerA: Part[] = [];
       const bannerB: Part[] = [];
       for (const side of [1, -1]) {
@@ -190,45 +195,6 @@ export function Stations() {
           (z < 0 ? bannerA : bannerB).push({ geo: new PlaneGeometry(1.0, 2.2), position: at(side * 11.1, 4.7, z - Math.sign(z) * 0.6), rotation: [0, Math.PI / 2, 0] });
         }
       }
-      // every roof covers the whole platform
-      const PL = PLATFORM_LEN;
-      const canopy = CANOPY[i % CANOPY.length];
-      if (canopy === "grid") {
-        // a timber gridshell vaulting both tracks, its feet on the platforms' outer edges
-        pane.push({ geo: vault(23, 8.5, PL, 1.4) });
-        for (let z = -PL / 2; z <= PL / 2 + 0.01; z += PL / 12) timber.push({ geo: rib(23, 8.5, 1.42, z, 0.14) });
-        for (let u = -0.8; u <= 0.81; u += 0.2) timber.push({ geo: new BoxGeometry(0.22, 0.22, PL), position: at(u * 11.5, 1.4 + 8.5 * (1 - u * u) - 0.12, 0) });
-        for (const side of [1, -1]) for (const z of [-8, 8]) lamps.push({ geo: new BoxGeometry(0.12, 0.08, 12), position: at(side * 8.6, 4.6, z) });
-      } else if (canopy === "leaf") {
-        // a glass leaf on white ribs, held up by branching columns
-        pane.push({ geo: vault(25, 3.2, PL + 3, 6.4) });
-        for (let z = -(PL + 1) / 2; z <= (PL + 1) / 2 + 0.01; z += (PL + 1) / 8) ribs.push({ geo: rib(25, 3.2, 6.38, z, 0.09) });
-        for (const side of [1, -1]) {
-          for (const z of [-10, 0, 10]) {
-            // a slim trunk flaring into a disc just under the glass
-            ribs.push({ geo: new CylinderGeometry(0.16, 0.24, 5, 8), position: at(side * 11.6, 3.9, z) });
-            ribs.push({ geo: new CylinderGeometry(1.1, 0.2, 0.42, 12), position: at(side * 11.6, 6.6, z) });
-          }
-          lamps.push({ geo: new BoxGeometry(0.12, 0.08, 24), position: at(side * 9.6, 7.3, 0) });
-        }
-      } else if (canopy === "living") {
-        // a solar roof over each platform on timber columns, open over the tracks: modules tilted a little toward the
-        // sun, and a planted fringe along the outer edge, its ferns hanging over
-        for (const side of [1, -1]) {
-          timber.push({ geo: new BoxGeometry(6.8, 0.35, PL), position: at(side * 9.2, 6.4, 0) });
-          solar.push({ geo: new BoxGeometry(5.6, 0.12, PL - 0.4), position: at(side * 8.75, 6.78, 0), rotation: [0, 0, side * 0.08] });
-          green.push({ geo: new BoxGeometry(0.9, 0.5, PL - 0.4), position: at(side * 12.15, 6.8, 0) });
-          for (let z = -(PL / 2 - 1.5); z <= PL / 2 - 1.49; z += (PL - 3) / 11) green.push({ geo: new BoxGeometry(0.5, 0.7, 1.4), position: at(side * 12.55, 6.3, z) });
-          for (const z of [-10, 0, 10]) timber.push({ geo: new BoxGeometry(0.4, 4.9, 0.4), position: at(side * 11.2, 3.85, z) });
-          lamps.push({ geo: new BoxGeometry(0.12, 0.08, 24), position: at(side * 7.4, 6.18, 0) });
-        }
-      } else if (canopy === "ribbed") {
-        // a ribbed arch: white ribs over everything with a glass spine along the crown
-        for (let z = -(PL / 2 - 0.5); z <= PL / 2 - 0.49; z += (PL - 1) / 15) ribs.push({ geo: rib(23, 8, 1.42, z, 0.17) });
-        pane.push({ geo: new BoxGeometry(3, 0.06, PL), position: at(0, 9.3, 0) });
-        ribs.push({ geo: new BoxGeometry(0.3, 0.3, PL), position: at(0, 9.45, 0) });
-        for (const side of [1, -1]) lamps.push({ geo: new BoxGeometry(0.12, 0.08, 25), position: at(side * 8.2, 4.9, 0) });
-      }
       // the ways in: fare gates at the ground, stairs and lifts up to each platform (stationAccess.ts)
       const access = stationAccess(lowEnd, getCityData(lowEnd).lots).filter((e) => e.i === i);
       const painted: Part[] = [];
@@ -239,9 +205,35 @@ export function Stations() {
         steel.push(...p.steel);
         edgeP.push(...p.glow);
       }
+      // the roof, its columns kept off the stairwells, the lifts, the towers' landings and a set's bridge
+      const bridges = setBridges(i);
+      const clear = (x: number, z: number, half: number) => {
+        const side = x > 0 ? 1 : -1;
+        const ax = Math.abs(x);
+        for (const e of access) {
+          if (e.side !== side) continue;
+          if (e.kind === "tower") {
+            if (ax + half > 10.2 && Math.abs(z - e.zTop) < TOWER.d / 2 + 0.6 + half) return false;
+          } else if (e.kind === "end") {
+            if (Math.abs(z - e.zTop) < 2.8 + half) return false;
+          } else if (ax - half < 9.8) {
+            const z0 = e.zTop - e.dir * 3.4;
+            if ((z + half > Math.min(z0, e.zTop) && z - half < Math.max(z0, e.zTop)) || Math.abs(z - e.zLift) < 1.3 + half) return false;
+          }
+        }
+        return !bridges.some((b) => b.side === side && ax + half > 10.2 && z + half > b.z0 - 0.6 && z - half < b.z1 + 0.6);
+      };
+      const roof = canopyParts(CANOPY[i % CANOPY.length], { PL: PLATFORM_LEN, lowEnd, clear });
+      pane.push(...roof.pane);
+      steel.push(...roof.steel);
+      painted.push(...roof.painted);
+      if (roof.fins.length) {
+        g.updateMatrixWorld();
+        for (const c of roof.fins) fins.push({ p: c.clone().applyMatrix4(g.matrixWorld), q: g.quaternion.clone(), t: tH.clone() });
+      }
       // a pair of small wind turbines on masts beside the left platform, turning in the wind off the inlet, clear of
       // the ways in (the interchange has none)
-      if (canopy !== "hub") {
+      if (CANOPY[i % CANOPY.length] !== "hub") {
         const lz = (() => {
           const w = local(15, -10);
           return inRailCut(w.x, w.z, 3) ? 10 : -10;
@@ -263,19 +255,22 @@ export function Stations() {
       const meshes: [Part[], Material, boolean][] = [
         [white, mats.plat, true],
         [edgeP, edgeMat, false],
-        [[...steel, ...ribs], mats.canopy, ribs.length > 0],
-        [[...timber.map((p) => ({ ...p, geo: paint(p.geo, 0xb98a5a) })), ...green.map((p) => ({ ...p, geo: paint(p.geo, 0x5b8a45) })), ...painted], wood, true],
-        [solar, solarMat, false],
-        [lamps, mats.lamp, false],
+        [steel, mats.canopy, true],
+        [painted, wood, true],
+        [roof.solar, solarMat, true],
+        [roof.membrane, membraneMat, true],
+        [roof.lamps, mats.lamp, false],
+        [roof.lanterns, lanternMat, false],
         [bannerA, mats.bannerA, false],
         [bannerB, mats.bannerB, false],
+        [roof.pvGlass, pvGlassMat, false],
         [pane, mats.pane, false],
       ];
       for (const [parts, mat, cast] of meshes) {
         if (!parts.length) continue;
         const m = new Mesh(merged(parts), mat);
         m.castShadow = cast && !lowEnd;
-        m.receiveShadow = mat !== mats.pane && mat !== mats.lamp;
+        m.receiveShadow = !([mats.pane, mats.lamp, lanternMat, pvGlassMat] as Material[]).includes(mat);
         g.add(m);
       }
       // the stop's name on the top rail of both screen-door rows, facing the track
@@ -293,11 +288,16 @@ export function Stations() {
     });
     const rotorMesh = new InstancedMesh(turbineGeo, mats.canopy, rotors.length);
     rotorMesh.frustumCulled = false;
-    return { groups, labels, fonts, rotors, rotorMesh, turbineGeo, solarMat, wood };
+    const finGeo = new BoxGeometry(FIN.len, FIN.t, FIN.w);
+    const uv = finGeo.attributes.uv;
+    for (let k = 0; k < uv.count; k++) uv.setXY(k, (uv.getX(k) * FIN.len) / 1.2, (uv.getY(k) * FIN.w) / 1.2);
+    const finMesh = new InstancedMesh(finGeo, pvGlassMat, fins.length);
+    finMesh.frustumCulled = false;
+    return { groups, labels, fonts, rotors, rotorMesh, turbineGeo, fins, finMesh, finGeo, solarMat, membraneMat, pvGlassMat, lanternMat, wood };
   }, [mats, lowEnd, world]);
 
-  // the turbines turn
-  const spin = useMemo(() => ({ t: 0, m: new Matrix4(), q: new Quaternion(), turn: new Quaternion(), one: new Vector3(1, 1, 1), up: new Vector3(0, 1, 0) }), []);
+  // the turbines turn; the louvres' fins face the sun across the track by day and lie flat at night
+  const spin = useMemo(() => ({ t: 0, m: new Matrix4(), q: new Quaternion(), turn: new Quaternion(), one: new Vector3(1, 1, 1), up: new Vector3(0, 1, 0), across: new Vector3(1, 0, 0) }), []);
   useFrame((_, dt) => {
     spin.t += Math.min(dt, 0.05) * 1.6;
     built.rotors.forEach((r, k) => {
@@ -305,6 +305,15 @@ export function Stations() {
       built.rotorMesh.setMatrixAt(k, spin.m.compose(r.p, spin.q, spin.one));
     });
     built.rotorMesh.instanceMatrix.needsUpdate = true;
+    if (!built.fins.length) return;
+    const sun = world.sunDir;
+    const day = Math.min(1, Math.max(0, (sun.y - 0.02) * 6));
+    built.fins.forEach((f, k) => {
+      const tilt = day * Math.min(1, Math.max(-1, Math.atan2(sun.dot(f.t), Math.max(sun.y, 0.05))));
+      spin.q.copy(f.q).multiply(spin.turn.setFromAxisAngle(spin.across, tilt));
+      built.finMesh.setMatrixAt(k, spin.m.compose(f.p, spin.q, spin.one));
+    });
+    built.finMesh.instanceMatrix.needsUpdate = true;
   });
 
   // repaint the labels once the web fonts are in, so the names use the same faces as the page
@@ -335,9 +344,13 @@ export function Stations() {
       }
       built.turbineGeo.dispose();
       built.rotorMesh.dispose();
+      built.finGeo.dispose();
+      built.finMesh.dispose();
       built.wood.dispose();
-      built.solarMat.map?.dispose();
-      built.solarMat.dispose();
+      for (const m of [built.solarMat, built.membraneMat, built.pvGlassMat, built.lanternMat]) {
+        m.map?.dispose();
+        m.dispose();
+      }
     },
     [built],
   );
@@ -348,6 +361,7 @@ export function Stations() {
         <primitive key={stations[i].id} object={g} />
       ))}
       <primitive object={built.rotorMesh} />
+      {built.fins.length ? <primitive object={built.finMesh} /> : null}
     </>
   );
 }
