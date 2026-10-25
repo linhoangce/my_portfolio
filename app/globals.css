@@ -217,16 +217,12 @@
   .role span {
     @apply text-sm text-fg3;
   }
-  /* the design notes' What's new: a date, then what changed */
-  .news {
-    @apply mt-2 list-none p-0;
+  /* the Inspirations: each a bold name, then why it is there */
+  .inspo {
+    @apply mt-3 flex list-none flex-col gap-1.5 p-0 text-sm text-fg3;
   }
-  .news li {
-    @apply grid gap-x-3 border-t border-border py-2.5 text-sm text-fg3;
-    grid-template-columns: 84px minmax(0, 1fr);
-  }
-  .news .when {
-    @apply pt-px font-mono text-xs text-muted;
+  .inspo b {
+    @apply font-semibold text-fg;
   }
   .more {
     @apply mt-2 flex flex-col;
@@ -507,25 +503,6 @@
 }
 .help .keys dd {
   margin: 0;
-}
-/* the design notes: a wider dialog for reading, its head fixed and the notes scrolling under it */
-.help.notes {
-  width: min(680px, 100%);
-  max-height: min(84dvh, 760px);
-  padding: 16px 0 0;
-  gap: 0;
-}
-.help.notes .menu-head {
-  padding: 0 16px 0 22px;
-}
-/* the notes fade out under the head and at the foot rather than being cut mid-line */
-.notes-body {
-  min-height: 0;
-  overflow: auto;
-  overscroll-behavior: contain;
-  padding: 12px 22px 24px;
-  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 12px, #000 calc(100% - 16px), transparent 100%);
-  mask-image: linear-gradient(180deg, transparent 0, #000 12px, #000 calc(100% - 16px), transparent 100%);
 }
 .top .right {
   display: flex;

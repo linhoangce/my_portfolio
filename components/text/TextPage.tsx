@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Fragment } from "react";
 
 import { PanelFor } from "@/components/panels";
-import { DesignPanel } from "@/components/panels/DesignPanel";
+import { InspirationsPanel } from "@/components/panels/InspirationsPanel";
 import { contact, landAcknowledgement, person, stations } from "@/data";
 
 import { Reveal } from "./Reveal";
@@ -38,11 +38,11 @@ export function TextPage() {
                 <PanelFor id={station.panel} code={station.code} as={index === 0 ? "h1" : "h2"} />
               </section>
             </Reveal>
-            {/* not a stop: the design notes follow Explore, whose link points here */}
+            {/* not a stop: the Inspirations follow the Foreword, whose link points here */}
             {index === 0 ? (
               <Reveal>
-                <section aria-labelledby="design-notes" className="border-t border-border pt-10">
-                  <DesignPanel />
+                <section aria-labelledby="inspirations" className="border-t border-border pt-10">
+                  <InspirationsPanel />
                 </section>
               </Reveal>
             ) : null}
