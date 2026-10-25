@@ -142,7 +142,7 @@ const onSwArc = (p: [number, number]) => swArc.includes(p);
 const EXTRA_WATER: [number, number][][] = [
   rounded(
     [
-      [-78, 176],
+      [-80, 187],
       [-60, 178],
       // BC Place's seawall, 55 units out from the stadium, just past its plaza
       [-41.5, 177.6],
@@ -175,13 +175,18 @@ const EXTRA_WATER: [number, number][][] = [
   ),
   rounded(
     [
-      // the north shore: Yaletown, David Lam and George Wainborn Parks, Beach Avenue
+      // the north shore: Yaletown, then the seawall below David Lam and George Wainborn Parks (the parks between Pacific
+      // Boulevard and the water, as they are), Beach Avenue
       [-40, 190],
       [-62, 181],
-      [-80, 174],
-      [-100, 166],
-      [-120, 158],
-      [-140, 150],
+      [-80, 187],
+      [-100, 187.5],
+      [-112, 187],
+      [-122, 183],
+      [-132, 182],
+      [-142, 182],
+      [-150, 173],
+      [-151, 158],
       [-158, 141],
       [-175, 129],
       [-190, 117],
@@ -293,9 +298,10 @@ function polyNearest(poly: [number, number][], x: number, z: number): [number, n
   return [inside ? -Math.sqrt(d2) : Math.sqrt(d2), cx, cz];
 }
 /**
- * The bank down to the creek where it was drawn wider than the bake (Yaletown and Beach Avenue, Kits Point). There the
- * drawn shore cuts across the bake's hillside, on the north side some 25 units up it and 6 above the water, and the
- * 8-unit ramp down to the sea made a bluff of it: the streets ran down the bluff and their junctions folded over it.
+ * The bank down to the creek where it was drawn wider than the bake (Beach Avenue west of George Wainborn Park, Kits
+ * Point). There the drawn shore cuts across the bake's hillside, on the north side some 25 units up it and 5 above the
+ * water, and the 8-unit ramp down to the sea made a bluff of it: the streets ran down the bluff and their junctions
+ * folded over it.
  * Instead the ground comes up from the water in an even bank, at `grade` (a steep street's in this city) or steeper
  * where that would not meet the bake's hill `reach` back from the shore, and is the bake's again past `reach + fade`.
  * Where the drawn shore keeps to the bake's (by the bridges' north ends, under the hill the West End stands on) the
