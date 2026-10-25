@@ -414,6 +414,44 @@ export function interiorTextures(): { map: CanvasTexture; emissiveMap: CanvasTex
   return { map: texture(c, true), emissiveMap: texture(e, true) };
 }
 
+/**
+ * Light through water: a web of bright caustic lines on black, tiling both ways (the cells of a scatter of points,
+ * bright where two are nearly equally near). The Expo's under-glow (Train.tsx) drifts it under each car after dark.
+ */
+export function causticTexture(): CanvasTexture {
+  const S = 128;
+  const [c, g] = canvas(S, S);
+  let seed = 5;
+  const rnd = () => ((seed = (seed * 9301 + 49297) % 233280) / 233280);
+  const pts: [number, number][] = [];
+  for (let i = 0; i < 14; i++) {
+    const x = rnd() * S;
+    const y = rnd() * S;
+    // each point again across the edges, so the cells wrap
+    for (const dx of [-S, 0, S]) for (const dy of [-S, 0, S]) pts.push([x + dx, y + dy]);
+  }
+  const img = g.createImageData(S, S);
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      let d1 = Infinity;
+      let d2 = Infinity;
+      for (const [px, py] of pts) {
+        const d = Math.hypot(px - x, py - y);
+        if (d < d1) {
+          d2 = d1;
+          d1 = d;
+        } else if (d < d2) d2 = d;
+      }
+      const v = Math.round(255 * Math.pow(Math.max(0, 1 - (d2 - d1) / 7), 3));
+      const k = (y * S + x) * 4;
+      img.data[k] = img.data[k + 1] = img.data[k + 2] = v;
+      img.data[k + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  return texture(c, true);
+}
+
 /** A clipped hedge: small leaves in three greens with dark gaps, tiling both ways (u round the hedge, v along it). */
 export function hedgeTexture(): CanvasTexture {
   const [c, g] = canvas(128, 128);

@@ -5,6 +5,7 @@ import { BoxGeometry, BufferAttribute, BufferGeometry, CatmullRomCurve3, Cylinde
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
 import { CAR, CROSS_LEN, GAP, LANE, PLATFORM_LEN } from "./constants";
+import { EXPO } from "./liveries";
 import { merged } from "./merge";
 import { inRailCut } from "./rail";
 import { isRoad } from "./roadNetwork";
@@ -234,8 +235,9 @@ export function Guideway() {
       const n = fr.length;
       const tOf = (i: number) => (i / (n - 1)) * loop.L;
       const between = (a: number, b: number) => fr.filter((_, i) => tOf(i) >= a && tOf(i) <= b);
-      const stop0 = loop.L / 2 - 14;
-      const stop1 = loop.L / 2 + 14;
+      // the turnback stop at the loop's middle, a little shorter than a station's platform
+      const stop0 = loop.L / 2 - (PLATFORM_LEN / 2 - 1.5);
+      const stop1 = loop.L / 2 + (PLATFORM_LEN / 2 - 1.5);
       // at Waterfront the loop is double-tracked round its circle: a layover track inside the running one, where a
       // train waits out of service; its deck widens inward to carry it
       const [lcx, lcz] = NEAR_LOOP.c;
@@ -324,7 +326,7 @@ export function Guideway() {
         // the train standing on it, at the middle of the circle
         const mid = Math.round(lay.length / 2);
         const step = Math.max(1, Math.round(((CAR + GAP) / (t1 - t0)) * lay.length));
-        const geo = carGeometry(CAR, true, false, lowEnd ? 14 : 22);
+        const geo = carGeometry(CAR, true, false, lowEnd ? 14 : 22, EXPO);
         const dummy = new Object3D();
         for (let k = -1; k <= 1; k++) {
           const f = lay[Math.min(lay.length - 1, Math.max(0, mid + k * step))];
@@ -491,12 +493,12 @@ export function Guideway() {
     const panes = mergeAll(paneParts);
     const plats = mergeAll(platParts);
     const lamps = mergeAll(lampParts);
-    // the parked train painted into one mesh (white body, dark glass, the violet line)
+    // the parked train in one painted mesh: the body in its own colours, dark glass, the cyan line
     const parked = layover.body.length
       ? merged([
-          ...layover.body.map((g) => ({ geo: paint(g, 0xf3f4f6) })),
+          ...layover.body.map((geo) => ({ geo })),
           ...layover.glass.map((g) => ({ geo: paint(g, 0x2a3039) })),
-          ...layover.line.map((g) => ({ geo: paint(g, 0xa78bfa) })),
+          ...layover.line.map((g) => ({ geo: paint(g, 0x3ddcf5) })),
         ])
       : null;
     return { deck, planters, hedges, bed, sleepers, leds, walk, plates, rails, col, arm, canopy, panes, plats, lamps, parked };

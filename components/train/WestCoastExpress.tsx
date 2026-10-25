@@ -16,16 +16,17 @@ import { sdfAt } from "./terrain";
 import { type Frame, UP } from "./track";
 import { WCE_HALF, WCE_LEN, WCE_PLATFORM, WCE_PTS, WCE_S, wceBed, wceBedAt } from "./wce";
 import { bedProfile } from "./bedLift";
+import { GAP } from "./constants";
+import { carGeometry } from "./trainGeometry";
 import { useWorld } from "./world";
 
 const PURPLE = 0x5b2a86;
-const WHITE = 0xeef0f2;
-const DARK = 0x1c2430;
 /** The two tracks' centres, either side of the line. */
 const TRACKS = [-2.1, 2.1];
-const COACH = 8.2;
-const LOCO = 7.2;
-const N_COACH = 4;
+/** A set: four pearl cars (trainGeometry.ts) of this length, a nose at each end. */
+const CAR = 9.2;
+const N_CARS = 4;
+const SET = N_CARS * CAR + (N_CARS - 1) * GAP;
 /** The tunnel portal's length over the line's east end (the waiting train fits inside). */
 const PORTAL_LEN = 50;
 
@@ -57,34 +58,31 @@ function at(s: number, out: { x: number; z: number; tx: number; tz: number }) {
   out.tz = (bz - az) / L;
 }
 
-/** A bi-level coach (along +x): white with a purple band, two rows of windows, a grey roof, on two bogies. */
-function coachGeo(): BufferGeometry {
-  return merged([
-    { geo: paint(new BoxGeometry(COACH, 2.5, 1.9).translate(0, 1.75, 0), WHITE) },
-    { geo: paint(new BoxGeometry(COACH + 0.02, 0.32, 1.92).translate(0, 1.0, 0), PURPLE) },
-    { geo: paint(new BoxGeometry(COACH - 0.8, 0.42, 1.94).translate(0, 1.55, 0), DARK) },
-    { geo: paint(new BoxGeometry(COACH - 0.8, 0.42, 1.94).translate(0, 2.3, 0), DARK) },
-    { geo: paint(new BoxGeometry(COACH, 0.25, 1.7).translate(0, 3.1, 0), 0xb5b9be) },
-    ...[-COACH / 2 + 1.3, COACH / 2 - 1.3].map((x) => ({ geo: paint(new BoxGeometry(1.8, 0.5, 1.6).translate(x, 0.3, 0), 0x22252a) })),
-  ]);
-}
-/** The locomotive (cab toward +x): purple with a white stripe, a sloped cab front, a roof of grilles. */
-function locoGeo(): BufferGeometry {
-  return merged([
-    { geo: paint(new BoxGeometry(LOCO, 2.4, 1.9).translate(0, 1.7, 0), PURPLE) },
-    { geo: paint(new BoxGeometry(LOCO + 0.02, 0.25, 1.92).translate(0, 1.25, 0), WHITE) },
-    { geo: paint(new BoxGeometry(0.9, 0.6, 1.8).translate(LOCO / 2 - 0.6, 2.4, 0), DARK) },
-    { geo: paint(new BoxGeometry(LOCO - 1.6, 0.3, 1.5).translate(-0.6, 3.05, 0), 0x3b3f46) },
-    ...[-LOCO / 2 + 1.2, LOCO / 2 - 1.2].map((x) => ({ geo: paint(new BoxGeometry(1.8, 0.5, 1.6).translate(x, 0.3, 0), 0x22252a) })),
-  ]);
+/** Where car k of a set (0 the lead) stands, back from the set's head at s. */
+const carAt = (head: number, k: number) => head - CAR / 2 - k * (CAR + GAP);
+
+/** The sets' cars: the end cars' body, glass and light line, the middle cars', and every car's skirt. */
+type Cars = { noses: InstancedMesh[]; mids: InstancedMesh[]; skirts: InstancedMesh };
+const turn = new Matrix4().makeRotationY(Math.PI);
+const back = new Matrix4();
+
+/** Stand car k of set j at m (along +x, facing the set's way); the last car is turned round, so its nose leads back. */
+function setCar(cars: Cars, j: number, k: number, m: Matrix4): void {
+  cars.skirts.setMatrixAt(j * N_CARS + k, m);
+  if (k > 0 && k < N_CARS - 1) {
+    for (const im of cars.mids) im.setMatrixAt(2 * j + k - 1, m);
+    return;
+  }
+  const at = k === 0 ? m : back.multiplyMatrices(m, turn);
+  for (const im of cars.noses) im.setMatrixAt(2 * j + (k === 0 ? 0 : 1), at);
 }
 
 /**
  * The West Coast Express along the waterfront (wce.ts): two tracks on a ballast bed, ending at Waterfront in buffer
  * stops (the line's terminus) and, out east past the port, running into a tunnel portal under a planted berm (the line
  * carries on beyond the map); a platform by Waterfront under a canopy with its name; a train laid up on the far track,
- * and one (the locomotive at the east end, four bi-level coaches) that waits at the platform, runs out east into the
- * tunnel, waits there and comes back.
+ * and one that waits at the platform, runs out east into the tunnel, waits there and comes back: each four pearl cars
+ * (trainGeometry.ts), as the Canada Line's, the line's purple their light line.
  */
 export function WestCoastExpress() {
   const world = useWorld();
@@ -169,23 +167,32 @@ export function WestCoastExpress() {
       plates.push(row(14, 1.75, 0).applyMatrix4(o.matrix));
     }
     const sign = new Mesh(merged(plates.map((geo) => ({ geo }))), new MeshBasicMaterial({ map: tex, toneMapped: false }));
-    const vehicleMat = new MeshStandardMaterial({ vertexColors: true, roughness: 0.45, metalness: 0.2 });
-    // the running train's locomotive and coaches first, then the train laid up on the far track, then the yard's sets
+    // the cars, turned to run along +x as the line's frames have them: the end cars with a nose (the last turned round,
+    // instances 2j and 2j + 1 of set j), the middle ones without (the same); the running set first, then the one laid up
+    // on the far track, then the yard's
     const sets = 2 + yard.wceHeads.length;
-    const coaches = new InstancedMesh(coachGeo(), vehicleMat, N_COACH * sets);
-    const loco = new InstancedMesh(locoGeo(), vehicleMat, sets);
+    const lineMat = new MeshStandardMaterial({ color: 0x1b1530, emissive: 0x9b6cf0, emissiveIntensity: 1 });
+    const fleet = (nose: boolean) => {
+      const g = carGeometry(CAR, nose, false, lowEnd ? 14 : 22);
+      return [new InstancedMesh(g.body.rotateY(Math.PI / 2), mats.body, 2 * sets), new InstancedMesh(g.glass.rotateY(Math.PI / 2), mats.window, 2 * sets), new InstancedMesh(g.line.rotateY(Math.PI / 2), lineMat, 2 * sets)];
+    };
+    const noses = fleet(true);
+    const mids = fleet(false);
+    // a dark skirt over the running gear under each car
+    const skirts = new InstancedMesh(new BoxGeometry(CAR - 1.2, 0.62, 2.3).translate(0, 0.42, 0), mats.trim, N_CARS * sets);
+    noses[0].castShadow = mids[0].castShadow = !lowEnd;
+    const cars: Cars = { noses, mids, skirts };
+    for (const m of [...noses, ...mids, skirts]) m.frustumCulled = false;
     yard.wceHeads.forEach((h, j) => {
       const m = new Matrix4();
       const stand = (s: number) => {
         const p = guideAt(s);
         const [x, z] = yardPoint(s, YARD_TRACKS[0]);
-        return m.compose(new Vector3(x, yardTop(s) + 0.3, z), new Quaternion().setFromAxisAngle(UP, Math.atan2(-p.tz, p.tx)), new Vector3(1, 1, 1));
+        // on the yard's rail heads (railYardKit.ts lays them 0.36 over its top)
+        return m.compose(new Vector3(x, yardTop(s) + 0.36, z), new Quaternion().setFromAxisAngle(UP, Math.atan2(-p.tz, p.tx)), new Vector3(1, 1, 1));
       };
-      loco.setMatrixAt(2 + j, stand(h - LOCO / 2));
-      for (let k = 0; k < N_COACH; k++) coaches.setMatrixAt((2 + j) * N_COACH + k, stand(h - LOCO - 0.4 - COACH / 2 - k * (COACH + 0.4)));
+      for (let k = 0; k < N_CARS; k++) setCar(cars, 2 + j, k, stand(carAt(h, k)));
     });
-    coaches.frustumCulled = false;
-    loco.frustumCulled = false;
     // the terminus: a buffer stop on each track (red and white beam on two posts, a red lamp), a concrete end block
     const ends: Part[] = [];
     {
@@ -225,14 +232,19 @@ export function WestCoastExpress() {
     ]);
     // the yard's lamps and the buffer stops' lamps glow after dark
     const fixedMat = shopGlow(new MeshStandardMaterial({ vertexColors: true, roughness: 0.85, side: 2 }), world);
-    return { fixed, fixedMat, sleepers, sign, coaches, loco, vehicleMat, tex };
-  }, [lowEnd, world]);
+    return { fixed, fixedMat, sleepers, sign, cars, lineMat, tex };
+  }, [lowEnd, mats, world]);
 
   useEffect(
     () => () => {
       if (!built) return;
-      for (const g of [built.fixed, built.sleepers, built.coaches.geometry, built.loco.geometry, built.sign.geometry]) g.dispose();
-      for (const m of [built.vehicleMat, built.fixedMat]) m.dispose();
+      const { noses, mids, skirts } = built.cars;
+      for (const g of [built.fixed, built.sleepers, built.sign.geometry]) g.dispose();
+      for (const m of [...noses, ...mids, skirts]) {
+        m.geometry.dispose();
+        m.dispose();
+      }
+      for (const m of [built.lineMat, built.fixedMat]) m.dispose();
       built.tex.dispose();
     },
     [built],
@@ -242,14 +254,13 @@ export function WestCoastExpress() {
   const p = useMemo(() => ({ x: 0, z: 0, tx: 1, tz: 0 }), []);
   useFrame(({ clock }) => {
     if (!built) return;
-    const TRAIN = LOCO + N_COACH * (COACH + 0.4);
-    const home = (WCE_PLATFORM[0] + WCE_PLATFORM[1]) / 2 + TRAIN / 2;
+    const home = (WCE_PLATFORM[0] + WCE_PLATFORM[1]) / 2 + SET / 2;
     const away = WCE_LEN - 2;
     const run = Math.max(1, (away - home) / 9);
     const cycle = 2 * (24 + run);
     const T = clock.elapsedTime % cycle;
     const ease = (u: number) => u * u * (3 - 2 * u);
-    // the east end of the train (the locomotive's front)
+    // the east end of the train (the lead car's nose)
     const head = T < 24 ? home : T < 24 + run ? home + (away - home) * ease((T - 24) / run) : T < 48 + run ? away : away - (away - home) * ease((T - 48 - run) / run);
     const m4 = new Matrix4();
     const q = new Quaternion();
@@ -266,13 +277,8 @@ export function WestCoastExpress() {
       [0, head, TRACKS[1]],
       [1, home, TRACKS[0]],
     ];
-    for (const [i, h, lane] of trains) {
-      built.loco.setMatrixAt(i, place(h - LOCO / 2, lane));
-      for (let k = 0; k < N_COACH; k++) built.coaches.setMatrixAt(i * N_COACH + k, place(h - LOCO - 0.4 - COACH / 2 - k * (COACH + 0.4), lane));
-    }
-    built.loco.instanceMatrix.needsUpdate = true;
-    built.coaches.instanceMatrix.needsUpdate = true;
-    built.vehicleMat.color.copy(world.buildings.solid.color);
+    for (const [i, h, lane] of trains) for (let k = 0; k < N_CARS; k++) setCar(built.cars, i, k, place(carAt(h, k), lane));
+    for (const m of [...built.cars.noses, ...built.cars.mids, built.cars.skirts]) m.instanceMatrix.needsUpdate = true;
   });
 
   if (!built) return null;
@@ -281,8 +287,9 @@ export function WestCoastExpress() {
       <mesh geometry={built.fixed} material={built.fixedMat} receiveShadow />
       <mesh geometry={built.sleepers} material={mats.sleepers} receiveShadow />
       <primitive object={built.sign} />
-      <primitive object={built.coaches} />
-      <primitive object={built.loco} />
+      {[...built.cars.noses, ...built.cars.mids, built.cars.skirts].map((m, i) => (
+        <primitive key={i} object={m} />
+      ))}
     </>
   );
 }
