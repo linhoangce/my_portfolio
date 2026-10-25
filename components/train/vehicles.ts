@@ -157,18 +157,30 @@ function sideBand(x0: number, x1: number, y: number, h: number, z: number, hex: 
   return [1, -1].map((s) => mark(paint(new PlaneGeometry(x1 - x0, h).rotateY(s > 0 ? 0 : Math.PI).translate((x0 + x1) / 2, y, s * (z + 0.006)), hex), 1, 0));
 }
 
-/** A car of `secs`, its axles (x, wheel radius), its lamps at the ends' sections. */
+/** Where a vehicle's lamps are, in its frame: the headlamps' and the tail lamps' [x, y, half the span between the pair]. */
+export type Lamps = { head: [number, number, number]; tail: [number, number, number] };
+
+/**
+ * A car of `secs`, its axles (x, wheel radius), its lamps at the ends' sections; where they are rides on the
+ * geometry's userData.lamps (Lamps), for the lamps that light up after dark (Life.tsx).
+ */
 function car(secs: Sec[], axles: [number, number][], roofGlass: boolean, flat = false, extra: BufferGeometry[] = []): BufferGeometry {
   const nose = secs[secs.length - 1];
   const tail = secs[0];
   const width = Math.max(...secs.map((s) => s[1])) - 0.04;
-  return merge([
+  const headY = nose[2] + (nose[3] - nose[2]) * 0.7;
+  const tailY = tail[2] + (tail[3] - tail[2]) * 0.75;
+  const g = merge([
     loft(secs, roofGlass, flat),
     ...axles.map(([x, r]) => axle(x, r, width)),
-    lightBar(1, nose[0], nose[2] + (nose[3] - nose[2]) * 0.7, nose[1] * 0.82, 0.05, HEAD),
-    lightBar(-1, tail[0], tail[2] + (tail[3] - tail[2]) * 0.75, tail[1] * 0.86, 0.06, TAIL),
+    lightBar(1, nose[0], headY, nose[1] * 0.82, 0.05, HEAD),
+    lightBar(-1, tail[0], tailY, tail[1] * 0.86, 0.06, TAIL),
     ...extra,
   ]);
+  // a lamp at each end of each bar, a little in from its ends
+  const lamps: Lamps = { head: [nose[0], headY, nose[1] * 0.33], tail: [tail[0], tailY, tail[1] * 0.35] };
+  g.userData.lamps = lamps;
+  return g;
 }
 
 /**

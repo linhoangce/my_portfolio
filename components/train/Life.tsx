@@ -3,8 +3,11 @@
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo } from "react";
 import {
+  AdditiveBlending,
   BatchedMesh,
   BoxGeometry,
+  BufferAttribute,
+  BufferGeometry,
   Color,
   CylinderGeometry,
   DoubleSide,
@@ -17,6 +20,8 @@ import {
   MeshBasicMaterial,
   MeshStandardMaterial,
   PlaneGeometry,
+  Points,
+  PointsMaterial,
   Quaternion,
   Vector3,
 } from "three";
@@ -27,9 +32,10 @@ import { PEOPLE_WIDTH, SEA } from "./constants";
 import { merged, type Part } from "./merge";
 import { paint } from "./shapes";
 import { sdfAt } from "./terrain";
+import { dotTexture } from "./textures";
 import { groundAt, UP } from "./track";
-import { boatLights, busSection, sailboat, seabus, yacht } from "./vessels";
-import { asVehicle, canoe, carKinds } from "./vehicles";
+import { boatLights, BUS_LAMPS, busSection, sailboat, seabus, yacht } from "./vessels";
+import { asVehicle, canoe, carKinds, type Lamps } from "./vehicles";
 import { floatplaneAt } from "./airways";
 import { SEABUS_A, SEABUS_B } from "./SeaBus";
 import { useDispose } from "./useDispose";
@@ -45,6 +51,10 @@ const one = new Vector3(1, 1, 1);
 const p = new Vector3();
 const sc = new Vector3();
 const e = new Euler();
+/** The lamps' colours after dark (linear): headlamps a warm white, tail lamps red, and red brighter on the brakes. */
+const HEADLAMP = [1.7, 1.5, 1.2];
+const TAIL_LAMP = [1.5, 0.08, 0.05];
+const BRAKE = 1.8;
 
 /**
  * kind: 0 SeaBus (or, smaller, a False Creek ferry), 1 sailboat, 2 motor yacht, 3 journey canoe (drawn with the
@@ -237,6 +247,29 @@ export function Life() {
       vehicles.setColorAt(id, c.setHex(0x221a16));
       return id;
     });
+    // the headlamps and tail lamps after dark: a pair at each end of every car and bus, as points that keep a few
+    // pixels across however far off (the light bars on the bodies are lost to the eye beyond a block), each shown
+    // only from the way it faces, so a car coming shows its headlamps and one going its tail lamps
+    const lampSpots = kinds.map((g) => g.userData.lamps as Lamps);
+    const nLamps = (cars.length + nb) * 4;
+    const lampGeo = new BufferGeometry();
+    for (const name of ["position", "color", "aFace"]) lampGeo.setAttribute(name, new BufferAttribute(new Float32Array(nLamps * 3), 3));
+    // (a lamp a unit and a half across up close, never under 4 or over 26 CSS pixels, so at the screen's pixel ratio)
+    const lampPx = { value: 1 };
+    const lampMat = new PointsMaterial({ size: 1.5, vertexColors: true, map: dotTexture(), transparent: true, depthWrite: false, toneMapped: false, blending: AdditiveBlending });
+    lampMat.onBeforeCompile = (sh) => {
+      sh.uniforms.uPx = lampPx;
+      sh.vertexShader = sh.vertexShader
+        .replace("#include <common>", "#include <common>\nattribute vec3 aFace;\nuniform float uPx;")
+        .replace(
+          "#include <fog_vertex>",
+          "#include <fog_vertex>\ngl_PointSize = clamp(gl_PointSize, 4.0 * uPx, 26.0 * uPx) * smoothstep(-0.3, 0.25, dot(normalize(cameraPosition - transformed), aFace));",
+        );
+    };
+    lampMat.customProgramCacheKey = () => "vehicleLamps";
+    const lamps = new Points(lampGeo, lampMat);
+    lamps.frustumCulled = false;
+    lamps.visible = false;
     vehicles.castShadow = !lowEnd;
     vehicles.frustumCulled = false;
     vehicles.sortObjects = false;
@@ -314,15 +347,17 @@ export function Life() {
       m.frustumCulled = false;
       return m;
     });
-    return { vehicles, vehMat, vehGlow, carIds, busIds, canoeIds, peopleMesh, boats, boatMeshes, boatLamps, boatMat, lightMat, docks, plane };
+    return { vehicles, vehMat, vehGlow, carIds, busIds, canoeIds, lampSpots, lamps, lampPx, peopleMesh, boats, boatMeshes, boatLamps, boatMat, lightMat, docks, plane };
   }, [data, mats, lowEnd, world.envTex]);
 
   // cars and people are too small to show in the water
-  useEffect(() => skipInMirror(built.vehicles, built.peopleMesh), [built]);
+  useEffect(() => skipInMirror(built.vehicles, built.peopleMesh, built.lamps), [built]);
 
   useDispose(built, (b) => {
     b.vehicles.dispose();
     b.vehMat.dispose();
+    b.lamps.geometry.dispose();
+    (b.lamps.material as PointsMaterial).dispose();
     b.peopleMesh.geometry.dispose();
     b.peopleMesh.dispose();
     for (const m of [...b.boatMeshes, ...b.boatLamps]) {
@@ -415,6 +450,41 @@ export function Life() {
     built.lightMat.color.setScalar(1.6 * lit);
     built.vehMat.color.copy(world.buildings.solid.color);
     built.vehGlow.value = 0.5 + 1.8 * lit;
+    built.lamps.visible = lit > 0.02;
+    built.lampPx.value = state.gl.getPixelRatio();
+    if (built.lamps.visible) {
+      const at = built.lamps.geometry.attributes;
+      const pos = at.position.array as Float32Array;
+      const col = at.color.array as Float32Array;
+      const face = at.aFace.array as Float32Array;
+      const k = Math.min(1, lit * 1.5);
+      let j = 0;
+      // a pair of lamps at x along the vehicle (just proud of its body, out the way they face), y up, half apart
+      const pair = (x: number, y: number, z: number, yaw: number, pitch: number, lx: number, ly: number, half: number, out: 1 | -1, rgb: number[], gain: number) => {
+        const hx = Math.cos(yaw);
+        const hz = -Math.sin(yaw);
+        const ax = lx + out * 0.06;
+        for (const s of [-1, 1]) {
+          pos.set([x + hx * ax - hz * half * s, y + ly + Math.sin(pitch) * ax, z + hz * ax + hx * half * s], j * 3);
+          face.set([hx * out, 0, hz * out], j * 3);
+          col.set([rgb[0] * k * gain, rgb[1] * k * gain, rgb[2] * k * gain], j * 3);
+          j++;
+        }
+      };
+      for (const c of data.traffic.cars) {
+        const { head, tail } = built.lampSpots[c.kind];
+        pair(c.x, c.y, c.z, c.yaw, c.pitch, head[0], head[1], head[2], 1, HEADLAMP, 1);
+        pair(c.x, c.y, c.z, c.yaw, c.pitch, tail[0], tail[1], tail[2], -1, TAIL_LAMP, c.brake ? BRAKE : 1);
+      }
+      for (const c of data.traffic.buses) {
+        const b = c.bus!;
+        pair(b.fx, c.y, b.fz, b.fyaw, c.pitch, BUS_LAMPS.head[0], BUS_LAMPS.head[1], BUS_LAMPS.head[2], 1, HEADLAMP, 1);
+        pair(b.rx, c.y, b.rz, b.ryaw, c.pitch, BUS_LAMPS.tail[0], BUS_LAMPS.tail[1], BUS_LAMPS.tail[2], -1, TAIL_LAMP, c.brake ? BRAKE : 1);
+      }
+      at.position.needsUpdate = true;
+      at.color.needsUpdate = true;
+      at.aFace.needsUpdate = true;
+    }
     for (const m of built.boatLamps) m.visible = lit > 0.02;
     const fp = floatplaneAt(t);
     built.plane.position.set(fp.x, fp.y, fp.z);
@@ -425,6 +495,7 @@ export function Life() {
   return (
     <>
       <primitive object={built.vehicles} />
+      <primitive object={built.lamps} />
       <primitive object={built.peopleMesh} />
       {built.boatMeshes.map((m, i) => (
         <primitive key={`boat${i}`} object={m} />
