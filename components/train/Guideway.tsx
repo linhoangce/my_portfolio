@@ -6,7 +6,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 
 import { CAR, CROSS_LEN, GAP, LANE, PLATFORM_LEN } from "./constants";
 import { merged } from "./merge";
-import { inRailCut } from "./rail";
+import { inRailCut, railNear } from "./rail";
 import { isRoad } from "./roadNetwork";
 import { paint } from "./shapes";
 import { CROSSOVERS, EXT_JOIN, frameAt, type Frame, groundAt, LEN, LOOPS, makeFrame, NEAR_LOOP, SAMPLES, samples, smoothstep01, stationS, UP } from "./track";
@@ -172,15 +172,17 @@ export function Guideway() {
     const bedMain = [ribbon([[6.02, 0.955], [-6.02, 0.955]], all, false)];
     const sleepersMain = [-LANE, LANE].map((lane) => ribbon([[lane + 1.3, 0.96], [lane - 1.3, 0.96]], all, false, 0.65));
     const ledsMain = [ribbon(LED_STRIP, all), ribbon(mirror(LED_STRIP), all.filter((_, i) => !atJoin(sOf(i))))];
-    const walk = ribbon(
-      [
-        [-0.9, 0.95],
-        [0.9, 0.95],
-        [0.9, 1.05],
-        [-0.9, 1.05],
-      ],
-      all,
-    );
+    const walkParts = [
+      ribbon(
+        [
+          [-0.9, 0.95],
+          [0.9, 0.95],
+          [0.9, 1.05],
+          [-0.9, 1.05],
+        ],
+        all,
+      ),
+    ];
     const platesMain = [-LANE, LANE].map((lane) =>
       ribbon(
         [
@@ -233,14 +235,16 @@ export function Guideway() {
     const lampParts: BufferGeometry[] = [];
     const layover: { body: BufferGeometry[]; glass: BufferGeometry[]; line: BufferGeometry[] } = { body: [], glass: [], line: [] };
     const cars: { geo: ReturnType<typeof carGeometry> | null } = { geo: null };
-    // a train of three standing out of service on a track (its frames), at its middle by length, a nose at each end
-    const park = (path: Frame[]) => {
+    // a train of three standing out of service on a track (its frames), its middle car `at` along it (by length; by
+    // default its middle), a nose at each end
+    const park = (path: Frame[], at?: number) => {
       const geo = (cars.geo ??= carGeometry(CAR, true, false, lowEnd ? 14 : 22));
       const cum = [0];
       for (let k = 1; k < path.length; k++) cum.push(cum[k - 1] + path[k].p.distanceTo(path[k - 1].p));
+      const mid = at ?? cum[cum.length - 1] / 2;
       const dummy = new Object3D();
       for (let k = -1; k <= 1; k++) {
-        const j = cum.findIndex((c) => c >= cum[cum.length - 1] / 2 + k * (CAR + GAP));
+        const j = cum.findIndex((c) => c >= mid + k * (CAR + GAP));
         const f = path[j < 0 ? path.length - 1 : j];
         dummy.position.copy(f.p).addScaledVector(UP, 0.98);
         dummy.lookAt(dummy.position.clone().add(f.t));
@@ -265,23 +269,12 @@ export function Guideway() {
       const a0 = onArc.indexOf(true);
       const a1 = onArc.lastIndexOf(true);
       const arc = a0 >= 0 && a1 - a0 > 20 ? fr.slice(a0, a1 + 1) : [];
-      const innerRuns = arc.length ? [between(24, tOf(a0)), between(tOf(a1), loop.L - 24)] : [between(24, loop.L - 24)];
-      // and round its stop a turnback yard on the circle's outer side: a passing track off the running one by a switch
-      // before the stop and back on after it, so a second train turns past one standing there (the stop's platform an
-      // island between the two), and beyond it a storage track off the passing track; with the layover, four tracks
-      // abreast, a spare train on the layover and another on the storage track. The deck widens outward to carry them
-      // (from tp[0] to tp[3]), on columns of its own; the running track's outer parapet, planter and hedge give way
-      const yard = loop.end === "near" && arc.length > 0;
-      const PASS = 12;
-      const STORE = 17.6;
-      // where each leaves, is out, comes back in, and is back on
-      const tp = [stop0 - 22, stop0 - 2, stop1 + 2, stop1 + 18];
-      const ts = [stop0 - 2, stop0 + 4, stop1 - 4, stop1 + 2];
-      const away = (t: number, [a, b, c, d]: number[]) => smoothstep01(Math.max(0, Math.min(1, (t - a) / (b - a), (d - t) / (d - c))));
-      const passLat = (t: number) => PASS * away(t, tp);
-      const storeLat = (t: number) => PASS + (STORE - PASS) * away(t, ts);
-      const edge = (t: number) => 3.6 + Math.max(passLat(t), t > ts[0] && t < ts[3] ? storeLat(t) : 0);
-      const outerRuns = yard ? [between(0, tp[0]), between(tp[3], loop.L)] : [fr];
+      // where the loop's own single-track girders begin: at Waterfront where the approach's two tracks part (the
+      // approach is a deck of its own, below), elsewhere at the line's end, the inner parapets where the necks part
+      const part = loop.split ?? 0;
+      const own = loop.approach ? between(part, loop.L - part) : fr;
+      const inner = loop.approach ? part + 12 : 24;
+      const innerRuns = arc.length ? [between(inner, tOf(a0)), between(tOf(a1), loop.L - inner)] : [between(inner, loop.L - inner)];
       loopDeck.push(
         ribbon(
           [
@@ -296,18 +289,16 @@ export function Guideway() {
             [-3.5, -0.3],
             [-2.9, -1.0],
           ],
-          fr,
+          own,
         ),
-        ...outerRuns.map((r) =>
-          ribbon(
-            [
-              [3.32, 0.95],
-              [3.6, 0.95],
-              [3.6, 1.75],
-              [3.32, 1.75],
-            ],
-            r,
-          ),
+        ribbon(
+          [
+            [3.32, 0.95],
+            [3.6, 0.95],
+            [3.6, 1.75],
+            [3.32, 1.75],
+          ],
+          own,
         ),
         ...innerRuns
           .filter((r) => r.length > 1)
@@ -364,82 +355,62 @@ export function Guideway() {
         // the train standing on it, at the middle of the circle
         park(lay);
       }
-      if (yard) {
-        const idx = fr.map((_, i) => i).filter((i) => tOf(i) >= tp[0] && tOf(i) <= tp[3]);
-        const wide = idx.map((i) => fr[i]);
-        const E = idx.map((i) => edge(tOf(i)));
-        // the widened deck: its slab, the parapet, planter, hedge and lit strip along its outer edge, its track bed
+      if (loop.approach) {
+        // the approach: the line's deck carried on round the curve from its end to where its tracks part, the
+        // running tracks side by side down its middle; on the curve's inside a passing siding, off the inner running
+        // track by a switch at the line's end and back on by one where the tracks part (three tracks abreast
+        // between), a spare train standing on it; the deck widens on that side as it stands out (the curve's outside
+        // keeps clear of the blocks there), on round columns of its own
+        const A = loop.approach;
+        const cum = [0];
+        for (let k = 1; k < A.length; k++) cum.push(cum[k - 1] + A[k].p.distanceTo(A[k - 1].p));
+        const La = cum[cum.length - 1];
+        const SIDING = 8.2;
+        const EASE = 13;
+        // the inside: the way the curve bends from its start
+        const mid = A[Math.floor(A.length / 2)];
+        const inside = Math.sign((mid.p.x - A[0].p.x) * A[0].r.x + (mid.p.z - A[0].p.z) * A[0].r.z) || -1;
+        const away = cum.map((c) => smoothstep01(Math.min(c / EASE, (La - c) / EASE)));
+        const W = away.map((u) => 6.3 + (SIDING - LANE) * u);
+        // the line's own sections, the inside pushed out to the widened edge
+        const out = (prof: [number, number][], k: number): [number, number][] => prof.map(([l, v]) => [Math.sign(l) === inside ? l + inside * (W[k] - 6.3) : l, v]);
         loopDeck.push(
-          ribbon(
-            (k) => [
-              [3.4, -1.0],
-              [E[k], -1.0],
-              [E[k], 0.94],
-              [3.4, 0.94],
-            ],
-            wide,
-          ),
-          ribbon(
-            (k) => [
-              [E[k] - 0.28, 0.95],
-              [E[k], 0.95],
-              [E[k], 1.75],
-              [E[k] - 0.28, 1.75],
-            ],
-            wide,
-          ),
+          ribbon((k) => SOFFIT.map(([l, v]): [number, number] => [Math.sign(l) === inside ? (l * W[k]) / 6.3 : l, v]), A),
+          ribbon((k) => out(PARAPET, k), A),
+          ribbon((k) => out(mirror(PARAPET), k), A),
         );
         loopPlanters.push(
-          ribbon(
-            (k) => [
-              [E[k], 0.7],
-              [E[k] + 1.1, 0.7],
-              [E[k] + 1.1, 1.55],
-              [E[k], 1.55],
-            ],
-            wide,
-          ),
+          ribbon((k) => out(TROUGH, k), A),
+          ribbon((k) => out(mirror(TROUGH), k), A),
         );
-        loopHedges.push(
-          ribbon(
-            (k) => [
-              [E[k] + 1.0, 1.5],
-              [E[k] + 1.04, 1.85],
-              [E[k] + 0.55, 2.12],
-              [E[k] + 0.06, 1.85],
-              [E[k] + 0.1, 1.5],
-            ],
-            wide,
-            false,
-            1.6,
-          ),
-        );
+        loopHedges.push(ribbon((k) => out(HEDGE, k), A, false, 1.6), ribbon((k) => out(mirror(HEDGE), k), A, false, 1.6));
         loopLeds.push(
-          ribbon(
-            (k) => [
-              [E[k], -0.62],
-              [E[k] + 0.08, -0.62],
-              [E[k] + 0.08, -0.48],
-              [E[k], -0.48],
-            ],
-            wide,
-          ),
+          ribbon((k) => out(LED_STRIP, k), A),
+          ribbon((k) => out(mirror(LED_STRIP), k), A),
         );
         loopBed.push(
           ribbon(
             (k) => [
-              [E[k] - 0.28, 0.955],
-              [3.32, 0.955],
+              [inside > 0 ? W[k] - 0.28 : 6.02, 0.955],
+              [inside < 0 ? -(W[k] - 0.28) : -6.02, 0.955],
             ],
-            wide,
+            A,
             false,
           ),
         );
-        // the passing and storage tracks: sleepers, reaction plate, rails; the spare train on the storage track
-        const along = (lat: (t: number) => number, a: number, b: number): Frame[] =>
-          fr.flatMap((f, i) => (tOf(i) >= a && tOf(i) <= b ? [{ p: f.p.clone().addScaledVector(f.r, lat(tOf(i))), t: f.t, r: f.r }] : []));
-        const yardTracks = [along(passLat, tp[0], tp[3]), along(storeLat, ts[0], ts[3])];
-        for (const path of yardTracks) {
+        walkParts.push(
+          ribbon(
+            [
+              [-0.9, 0.95],
+              [0.9, 0.95],
+              [0.9, 1.05],
+              [-0.9, 1.05],
+            ],
+            A,
+          ),
+        );
+        {
+          const path = A.flatMap((f, k): Frame[] => (away[k] > 0 ? [{ p: f.p.clone().addScaledVector(f.r, inside * (LANE + (SIDING - LANE) * away[k])), t: f.t, r: f.r }] : []));
           loopSleepers.push(ribbon([[1.3, 0.96], [-1.3, 0.96]], path, false, 0.65));
           loopPlates.push(
             ribbon(
@@ -452,27 +423,31 @@ export function Guideway() {
               path,
             ),
           );
-          for (const side of [-1, 1]) {
-            const pts = path.map((f) => f.p.clone().addScaledVector(f.r, side * 0.72).addScaledVector(UP, 0.98));
+          for (const rail of [-1, 1]) {
+            const pts = path.map((f) => f.p.clone().addScaledVector(f.r, rail * 0.72).addScaledVector(UP, 0.98));
             tubes.push(new TubeGeometry(new CatmullRomCurve3(pts, false, "catmullrom", 0), Math.ceil(pts.length * (lowEnd ? 0.7 : 1.4)), 0.07, 4, false));
           }
+          // the spare train toward the far end, where the siding runs straight, its last car short of the switch
+          let len = 0;
+          for (let k = 1; k < path.length; k++) len += path[k].p.distanceTo(path[k - 1].p);
+          park(path, len - EASE - 1.5 * (CAR + GAP));
         }
-        park(yardTracks[1]);
-        // round columns under the slab: along its outer side, and between the running and passing tracks where it
-        // is widest
-        for (let k = 0; k < idx.length; k += 5) {
-          for (const lat of [E[k] - 2.4, ...(E[k] > 14 && k % 10 === 0 ? [8.6] : [])]) {
-            if (lat < 7) continue;
-            const f = wide[k];
+        // round columns every 14 units, a second under the siding where it stands out, none on a street or the other
+        // rail
+        for (let c = 7; c < La - 3; c += 14) {
+          const k = cum.findIndex((v) => v >= c);
+          const f = A[k];
+          for (const lat of W[k] > 8 ? [0, inside * (W[k] - 3)] : [0]) {
             const x = f.p.x + f.r.x * lat;
             const z = f.p.z + f.r.z * lat;
+            if (isRoad(x, z, 1) || nearWce(x, z, -2) || railNear(x, z, 2)) continue;
             const gy = groundAt(x, z);
-            const h = f.p.y - 1.0 - gy;
+            const h = f.p.y - 1.9 - gy;
             if (h < 0.5) continue;
-            const c = new CylinderGeometry(0.6, 0.9, h + 0.3, lowEnd ? 8 : 12);
-            c.deleteAttribute("uv");
-            c.translate(x, gy - 0.3 + (h + 0.3) / 2, z);
-            loopDeck.push(c);
+            const col = new CylinderGeometry(0.85, 1.2, h + 0.3, lowEnd ? 8 : 12);
+            col.deleteAttribute("uv");
+            col.translate(x, gy - 0.3 + (h + 0.3) / 2, z);
+            loopDeck.push(col);
           }
         }
       }
@@ -482,7 +457,7 @@ export function Guideway() {
         [4.7, 1.55],
         [3.6, 1.55],
       ];
-      const planted = yard ? outerRuns : [between(0, stop0), between(stop1, loop.L)];
+      const planted = [between(part, stop0), between(stop1, loop.L - part)];
       loopPlanters.push(...planted.map((r) => ribbon(trough, r)));
       const loopHedge: [number, number][] = [
         [4.6, 1.5],
@@ -492,19 +467,17 @@ export function Guideway() {
         [3.7, 1.5],
       ];
       loopHedges.push(...planted.map((r) => ribbon(loopHedge, r, false, 1.6)));
-      loopBed.push(ribbon([[3.32, 0.955], [-3.32, 0.955]], fr, false));
+      loopBed.push(ribbon([[3.32, 0.955], [-3.32, 0.955]], own, false));
       loopSleepers.push(ribbon([[1.3, 0.96], [-1.3, 0.96]], fr, false, 0.65));
       loopLeds.push(
-        ...outerRuns.map((r) =>
-          ribbon(
-            [
-              [3.28, -0.62],
-              [3.36, -0.62],
-              [3.36, -0.48],
-              [3.28, -0.48],
-            ],
-            r,
-          ),
+        ribbon(
+          [
+            [3.28, -0.62],
+            [3.36, -0.62],
+            [3.36, -0.48],
+            [3.28, -0.48],
+          ],
+          own,
         ),
       );
       loopPlates.push(
@@ -523,7 +496,7 @@ export function Guideway() {
         tubes.push(new TubeGeometry(new CatmullRomCurve3(pts, false, "catmullrom", 0), Math.ceil(loop.L / (lowEnd ? 3 : 1.5)), 0.07, 4, false));
       }
       // round columns every 16 units, down to the ground or the seabed
-      for (let t = 8; t < loop.L - 4; t += 16) {
+      for (let t = part + 8; t < loop.L - part - 4; t += 16) {
         const f = fr[Math.round((t / loop.L) * (n - 1))];
         const gy = groundAt(f.p.x, f.p.z);
         const h = f.p.y - 1.6 - gy;
@@ -533,10 +506,8 @@ export function Guideway() {
         c.translate(f.p.x, gy - 0.3 + (h + 0.3) / 2, f.p.z);
         loopDeck.push(c);
       }
-      // the turnback stop: a platform on the outer side under white ribs and a glass spine (at Waterfront an island
-      // platform, the ribs reaching on over the passing track)
+      // the turnback stop: a platform on the outer side under white ribs and a glass spine
       const run = between(stop0, stop1);
-      const reach = yard ? 15.4 : 8.2;
       platParts.push(
         ribbon(
           [
@@ -552,8 +523,8 @@ export function Guideway() {
         ribbon(
           [
             [-1.4, 7.05],
-            [reach - 0.8, 7.05],
-            [reach - 0.8, 7.12],
+            [7.4, 7.05],
+            [7.4, 7.12],
             [-1.4, 7.12],
           ],
           run,
@@ -576,8 +547,8 @@ export function Guideway() {
         const pts: Vector3[] = [];
         for (let j = 0; j <= 12; j++) {
           const u = j / 12;
-          // an arch from the inner parapet over the track to the platform's outer edge (or past the passing track)
-          const lat = -3.4 + u * (reach + 3.4);
+          // an arch from the inner parapet over the track to the platform's outer edge
+          const lat = -3.4 + u * 11.6;
           pts.push(at(lat, 1.4 + 5.7 * Math.sin(u * Math.PI) ** 0.7));
         }
         const rib = new TubeGeometry(new CatmullRomCurve3(pts), 16, 0.12, 5, false);
@@ -628,6 +599,7 @@ export function Guideway() {
     const sleepers = mergeAll([...sleepersMain, ...loopSleepers]);
     const leds = mergeAll([...ledsMain, ...loopLeds]);
     const plates = mergeAll([...platesMain, ...loopPlates]);
+    const walk = mergeAll(walkParts);
     const canopy = mergeAll(canopyParts);
     const panes = mergeAll(paneParts);
     const plats = mergeAll(platParts);

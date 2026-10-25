@@ -71,8 +71,12 @@ for (let i = 0; i <= SAMPLES; i++) {
 /* ------------------------------------------------------------------ turning loops */
 
 export type LoopEnd = "near" | "far";
-/** A balloon loop at one end of the line, level at the end's deck height: out on one track, back on the other. */
-export type Loop = { end: LoopEnd; curve: CatmullRomCurve3; L: number; samples: Frame[] };
+/**
+ * A balloon loop at one end of the line, level at the end's deck height: out on one track, back on the other. With an
+ * approach, `approach` is its centreline's frames from the line's end to where its two tracks part, and `split` how
+ * far along the loop the outbound track leaves it (the inbound rejoins as far from the loop's end).
+ */
+export type Loop = { end: LoopEnd; curve: CatmullRomCurve3; L: number; samples: Frame[]; approach?: Frame[]; split?: number };
 
 type P2 = [number, number];
 const right2 = ([x, z]: P2): P2 => [-z, x];
@@ -81,8 +85,12 @@ const right2 = ([x, z]: P2): P2 => [-z, x];
  * The train leaves the end on the right-hand track (lateral +LANE of the outward heading), runs a neck out to a circle
  * of radius R, goes round it turning left, and comes back down a second neck onto the other track. The circle's centre
  * is straight ahead unless given; `alpha` sets how far round the circle the necks join it (the "light bulb" shape).
+ * With an approach (`split`, `turn`), the two tracks run on together first, side by side: round a curve of radius
+ * `turn` from the line's end (leaving as the line does) until they head for the circle's centre, straight on to
+ * `split` short of the circle, and only part there, the outbound one to the circle's right side and the inbound one
+ * from its left (so they never cross); without, each neck runs from the end on its own.
  */
-function buildLoop(end: LoopEnd, R: number, alpha: number, centre?: P2, neck = 26): Loop {
+function buildLoop(end: LoopEnd, R: number, alpha: number, centre?: P2, neck = 26, split?: number, turn = 18): Loop {
   const e = frameAt(end === "far" ? LEN : 0, makeFrame());
   const sgn = end === "far" ? 1 : -1;
   const hl = Math.hypot(e.t.x, e.t.z);
@@ -90,8 +98,43 @@ function buildLoop(end: LoopEnd, R: number, alpha: number, centre?: P2, neck = 2
   const ro = right2(o);
   const E: P2 = [e.p.x, e.p.z];
   const C: P2 = centre ?? [E[0] + o[0] * (neck + R * Math.sin(alpha)), E[1] + o[1] * (neck + R * Math.sin(alpha))];
-  const gl = Math.hypot(C[0] - E[0], C[1] - E[1]);
-  const g: P2 = [(C[0] - E[0]) / gl, (C[1] - E[1]) / gl];
+  // the shared approach: an arc of radius `turn` leaving E along o and turning toward C (its centre K that far to the
+  // side C is on) until its heading points at C, then straight on to R + split short of it; its points every unit or
+  // so with their headings
+  const approach: { p: P2; h: P2 }[] = [];
+  if (split !== undefined) {
+    const D: P2 = [C[0] - E[0], C[1] - E[1]];
+    const side = Math.sign(D[0] * ro[0] + D[1] * ro[1]) || 1;
+    const m: P2 = [ro[0] * side, ro[1] * side];
+    const rho = turn;
+    const K: P2 = [E[0] + m[0] * rho, E[1] + m[1] * rho];
+    // round K the angle runs the way `side` says (so the arc leaves E along o), the heading at angle a being
+    // (-sin a, cos a) that way; it ends at the first point whose heading runs on straight to C
+    const CK: P2 = [C[0] - K[0], C[1] - K[1]];
+    const a0 = Math.atan2(E[1] - K[1], E[0] - K[0]);
+    const aC = Math.atan2(CK[1], CK[0]);
+    const off = Math.acos(Math.min(1, rho / Math.hypot(CK[0], CK[1])));
+    const headAt = (a: number): P2 => [-Math.sin(a) * side, Math.cos(a) * side];
+    let sweep = Infinity;
+    for (const a of [aC + off, aC - off]) {
+      const sw = (((a - a0) * side) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+      const h = headAt(a);
+      if ((C[0] - K[0] - rho * Math.cos(a)) * h[0] + (C[1] - K[1] - rho * Math.sin(a)) * h[1] > 0) sweep = Math.min(sweep, sw);
+    }
+    const n = Math.ceil(rho * sweep);
+    for (let i = 0; i <= n; i++) {
+      const a = a0 + (side * sweep * i) / n;
+      approach.push({ p: [K[0] + rho * Math.cos(a), K[1] + rho * Math.sin(a)], h: headAt(a) });
+    }
+    const T = approach[approach.length - 1];
+    const run = Math.hypot(C[0] - T.p[0], C[1] - T.p[1]) - (R + split);
+    const k = Math.ceil(run);
+    for (let i = 1; i <= k; i++) approach.push({ p: [T.p[0] + (T.h[0] * run * i) / k, T.p[1] + (T.h[1] * run * i) / k], h: T.h });
+  }
+  // the line the loop's foot heads along: from its end, or from where the approach's tracks part
+  const F: P2 = approach.length ? approach[approach.length - 1].p : E;
+  const gl = Math.hypot(C[0] - F[0], C[1] - F[1]);
+  const g: P2 = [(C[0] - F[0]) / gl, (C[1] - F[1]) / gl];
   const rg = right2(g);
   const ca = Math.cos(alpha);
   const sa = Math.sin(alpha);
@@ -120,7 +163,12 @@ function buildLoop(end: LoopEnd, R: number, alpha: number, centre?: P2, neck = 2
       ]);
     }
   };
-  bezier(Ein, o, Pin, head(nIn));
+  // the tracks either side of the approach
+  const beside = (a: { p: P2; h: P2 }, lat: number): P2 => [a.p[0] + right2(a.h)[0] * lat, a.p[1] + right2(a.h)[1] * lat];
+  if (approach.length) {
+    for (let i = 0; i < approach.length - 1; i++) pts.push(beside(approach[i], LANE));
+    bezier(beside(approach[approach.length - 1], LANE), g, Pin, head(nIn));
+  } else bezier(Ein, o, Pin, head(nIn));
   const a0 = Math.atan2(nIn[1], nIn[0]);
   let sweep = a0 - Math.atan2(nOut[1], nOut[0]);
   while (sweep <= 0) sweep += Math.PI * 2;
@@ -129,8 +177,13 @@ function buildLoop(end: LoopEnd, R: number, alpha: number, centre?: P2, neck = 2
     const a = a0 - (sweep * i) / na;
     pts.push([C[0] + R * Math.cos(a), C[1] + R * Math.sin(a)]);
   }
-  bezier(Pout, head(nOut), Eout, [-o[0], -o[1]]);
-  pts.push(Eout);
+  if (approach.length) {
+    bezier(Pout, head(nOut), beside(approach[approach.length - 1], -LANE), [-g[0], -g[1]]);
+    for (let i = approach.length - 1; i >= 0; i--) pts.push(beside(approach[i], -LANE));
+  } else {
+    bezier(Pout, head(nOut), Eout, [-o[0], -o[1]]);
+    pts.push(Eout);
+  }
   const curve = new CatmullRomCurve3(
     pts.map(([x, z]) => new Vector3(x, e.p.y, z)),
     false,
@@ -147,16 +200,37 @@ function buildLoop(end: LoopEnd, R: number, alpha: number, centre?: P2, neck = 2
     f.r.crossVectors(f.t, UP).normalize();
     list.push(f);
   }
-  return { end, curve, L, samples: list };
+  if (!approach.length) return { end, curve, L, samples: list };
+  // the approach's frames, and how far along the loop its tracks part (its points are close: their chords are its
+  // length); the inbound rejoins it as far from the loop's end, the approach's two tracks being about as long
+  const frames = approach.map(({ p, h }) => {
+    const f = makeFrame();
+    f.p.set(p[0], e.p.y, p[1]);
+    f.t.set(h[0], 0, h[1]);
+    f.r.crossVectors(f.t, UP).normalize();
+    return f;
+  });
+  let parts = 0;
+  for (let i = 1; i < approach.length; i++) parts += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+  return { end, curve, L, samples: list, approach: frames, split: parts };
 }
 
 /** West of Waterfront the loop swings north over Burrard Inlet; east of Patterson it runs straight on over Central Park. */
-/** The loop at Waterfront's end: its circle's centre and radius (a second track runs inside it, Guideway.tsx). */
-export const NEAR_LOOP = { c: [82, -34] as [number, number], r: 16 };
+/**
+ * The loop at Waterfront's end: its circle's centre and radius (a second track runs inside it, Guideway.tsx), how far
+ * short of the circle the approach's tracks part, and the radius the approach turns on.
+ */
+export const NEAR_LOOP = { c: [82, -34] as [number, number], r: 16, split: 8, turn: 18 };
 export const LOOPS: Record<LoopEnd, Loop> = {
-  near: buildLoop("near", NEAR_LOOP.r, 0.6, NEAR_LOOP.c),
+  near: buildLoop("near", NEAR_LOOP.r, 0.6, NEAR_LOOP.c, 26, NEAR_LOOP.split, NEAR_LOOP.turn),
   far: buildLoop("far", 17, 0.7),
 };
+/**
+ * The loop at Waterfront as first laid, its two necks each on its own from the line's end: the city's clearances (its
+ * lots, trees, sets, streets and air) are measured from it, so nothing round the loop moved when its approach was
+ * rebuilt double-tracked; the approach is kept clear of what stands there (Guideway.tsx).
+ */
+const LAID_NEAR = buildLoop("near", NEAR_LOOP.r, 0.6, NEAR_LOOP.c);
 
 /* ------------------------------------------------------------------ the line beyond the loop */
 
@@ -281,8 +355,8 @@ export function trainFrameAt(sc: number, dir: number, lane: number, out: Frame):
 }
 
 /** Every track sample, the loops and the line beyond them included, for the clearance rules (buildings, trees, cameras). */
-export const PATH_SAMPLES: Frame[] = [...samples, ...LOOPS.near.samples, ...LOOPS.far.samples, ...EXTENSION.samples];
-const coarse = [...samples.filter((_, i) => i % 4 === 0), ...LOOPS.near.samples.filter((_, i) => i % 3 === 0), ...LOOPS.far.samples.filter((_, i) => i % 3 === 0), ...EXTENSION.samples.filter((_, i) => i % 3 === 0)];
+export const PATH_SAMPLES: Frame[] = [...samples, ...LAID_NEAR.samples, ...LOOPS.far.samples, ...EXTENSION.samples];
+const coarse = [...samples.filter((_, i) => i % 4 === 0), ...LAID_NEAR.samples.filter((_, i) => i % 3 === 0), ...LOOPS.far.samples.filter((_, i) => i % 3 === 0), ...EXTENSION.samples.filter((_, i) => i % 3 === 0)];
 
 /** Deck height at arc length s. */
 export const deckY = (s: number): number => samples[Math.round(MathUtils.clamp(s / LEN, 0, 1) * SAMPLES)].p.y;
