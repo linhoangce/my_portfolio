@@ -1,19 +1,17 @@
 "use client";
 
-import { FileText, Menu as MenuIcon, Sparkles } from "lucide-react";
+import { FileText, Menu as MenuIcon } from "lucide-react";
 import Link from "next/link";
 
-import { contact, person } from "@/data";
+import { person } from "@/data";
 
 import { useTrain } from "../store";
 import { ThemeToggle } from "./ThemeToggle";
 
-/** A skip link to the text version, the wordmark (back to the first stop), then Ask, the resume, theme and menu (not on phones). */
+/** A skip link to the text version, the wordmark (back to the first stop), then Resume (the text version), theme and menu (not on phones). */
 export function TopBar() {
-  const askOpen = useTrain((s) => s.askOpen);
   const ui = useTrain((s) => s.ui);
   const driveTo = useTrain((s) => s.driveTo);
-  const setAskOpen = useTrain((s) => s.setAskOpen);
   const setUi = useTrain((s) => s.setUi);
 
   return (
@@ -32,14 +30,10 @@ export function TopBar() {
         <span className="name">{person.name}</span>
       </a>
       <div className="right">
-        <button type="button" className="btn-primary" onClick={() => setAskOpen(!askOpen)} aria-expanded={askOpen}>
-          <Sparkles className="h-4 w-4" aria-hidden="true" />
-          <span className="label">Ask the attendant</span>
-        </button>
-        <a href={contact.resume} className="btn" aria-label="Resume" target="_blank" rel="noreferrer noopener">
+        <Link href="/text" className="btn" aria-label="Resume">
           <FileText className="h-4 w-4" aria-hidden="true" />
           <span className="label">Resume</span>
-        </a>
+        </Link>
         <ThemeToggle />
         <button
           type="button"

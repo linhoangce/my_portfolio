@@ -232,6 +232,211 @@ export function floatplane(hex: number): BufferGeometry {
   return merge(parts);
 }
 
+/* ------------------------------------------------------------------ freighters */
+
+export type FreighterKind = "bulk" | "container" | "tanker" | "carCarrier";
+
+/**
+ * A freighter's colours: the hull above the boot-top and the boot-top's antifouling red, the deck, the house, the
+ * funnel and its company band, the cranes and pipes, and the cargo's (hatch covers, or the boxes' palette).
+ */
+export type Livery = { hull: number; boot: number; deck: number; house: number; funnel: number; band: number; gear: number; cargo: number[] };
+
+/**
+ * Each kind's proportions: half length and half beam, the deck's height over the water in ballast, the house's tiers
+ * (a deck each) and how far forward it ends. About twice life, as the cruise ship at Canada Place is.
+ */
+const SHIP = {
+  bulk: { L: 22, B: 3.6, H: 3.0, tiers: 5, house: 5.5 },
+  container: { L: 25, B: 3.8, H: 2.8, tiers: 7, house: 4.5 },
+  tanker: { L: 21, B: 3.9, H: 2.6, tiers: 5, house: 5 },
+  carCarrier: { L: 20, B: 3.4, H: 2.2, tiers: 0, house: 0 },
+} as const;
+/** How deep a fully laden ship sits below its ballast waterline. */
+export const LADEN = 1.2;
+/** Where the antifouling red ends on the hull: the summer load line and a little, as built (in ballast it shows). */
+const BOOT_TOP = 1.5;
+
+/** A freighter's hull in plan: a parallel middle body, a raked bow from 7 back of the stem, a transom stern a little fined. */
+const freighterHull = (L: number, B: number) => (z: number) => {
+  const bow = L - 7;
+  if (z > bow) return B * Math.sqrt(Math.max(0, 1 - ((z - bow) / (L - bow)) ** 2.2));
+  if (z < -L + 5) return B * (1 - 0.14 * ((-L + 5 - z) / 5) ** 2);
+  return B;
+};
+
+/** A rectangle's ring, half width hw, from z0 to z1. */
+const rect = (hw: number, z0: number, z1: number): P2[] => [
+  [hw, z0],
+  [hw, z1],
+  [-hw, z1],
+  [-hw, z0],
+];
+
+/** A crane on its pedestal at z, its jib stowed forward on a slight rise (the bulkers' deck cranes, the tankers' hose crane). */
+function deckCrane(z: number, deckY: number, jib: number, hex: number): BufferGeometry[] {
+  const rise = 0.22;
+  const g = new BoxGeometry(0.3, 0.3, jib)
+    .translate(0, 0, jib / 2)
+    .rotateX(-rise)
+    .translate(0, deckY + 2.6, z + 0.3);
+  return [box(0.9, 2.2, 0.9, 0, deckY + 1.1, z, hex), box(1.1, 0.8, 1.3, 0, deckY + 2.6, z, hex), paint(g, hex)];
+}
+
+/**
+ * A freighter at anchor or under way in English Bay, built as the rest of the harbour's craft are (length along +z,
+ * bow forward, the waterline at y 0), `draft` (0 in ballast, LADEN loaded) deep:
+ * - bulk carrier: hatch covers down the deck, deck cranes if `geared`;
+ * - container ship: stacks of boxes in bays, four across, in the livery's palette;
+ * - tanker: a pipe rack down the centreline, the manifold amidships and its hose crane;
+ * - car carrier: a slab-sided box over the whole hull, its bridge at the top of the front.
+ * Every one but the car carrier has its house aft (tiers of cabins with a band of windows each, the bridge with its
+ * wings on top, a radar mast), a funnel in the company's colours and a foremast on the forecastle. The boot-top's red
+ * shows high in ballast and as a line laden. `seed` varies the cargo.
+ */
+export function freighter(kind: FreighterKind, c: Livery, draft: number, geared: boolean, seed: number, lowEnd: boolean): BufferGeometry {
+  const { L, B, H, tiers, house } = SHIP[kind];
+  const hw = freighterHull(L, B);
+  const step = lowEnd ? 3 : 2;
+  const hull = outline(hw, -L, L, step);
+  const parts: BufferGeometry[] = [
+    ...banded(hull, [
+      [-1.5, BOOT_TOP, c.boot],
+      [BOOT_TOP, H, c.hull],
+    ]),
+    paint(cap(hull, H), c.deck),
+  ];
+  let rnd = seed * 9301 + 49297;
+  const next = () => {
+    rnd = (rnd * 9301 + 49297) % 233280;
+    return rnd / 233280;
+  };
+  const top = (y: number, z0: number, z1: number, hb: number, hex: number) => {
+    const ring = rect(hb, z0, z1);
+    return paint(cap(ring, y), hex);
+  };
+  if (kind === "carCarrier") {
+    // the box: from the transom to a rounded front over the bow, a company stripe along it, the bridge's windows high
+    // across the front and a funnel at the back of the roof
+    const front = L - 5;
+    const body = outline((z) => (z > front ? B * 0.98 * Math.sqrt(Math.max(0, 1 - ((z - front) / 4.6) ** 2)) : Math.min(hw(z), B * 0.98)), -L + 0.4, front + 4.5, step);
+    const roof = H + 9;
+    parts.push(
+      ...banded(body, [
+        [H - 0.01, roof - 3.4, c.hull],
+        [roof - 3.4, roof - 2.6, c.band],
+        [roof - 2.6, roof, c.hull],
+      ]),
+      paint(cap(body, roof), c.deck),
+      paint(cap(body, H, false), c.hull),
+      box(2 * B * 0.86, 0.8, 0.5, 0, roof - 0.7, front + 2.9, GLASS),
+      box(1.4, 1.8, 2.2, 0, roof + 0.9, -L + 3.5, c.funnel),
+      box(1.42, 0.5, 2.22, 0, roof + 1.2, -L + 3.5, c.band),
+      box(1.42, 0.35, 2.22, 0, roof + 1.95, -L + 3.5, 0x1b1d22),
+      paint(new CylinderGeometry(0.1, 0.12, 2.4, 5).translate(0, roof + 1.2, front - 1), 0xdfe3e8),
+    );
+    return merge(parts).translate(0, -draft, 0);
+  }
+  // the forecastle, a deck higher, and the foremast on it
+  const fc = outline((z) => hw(z) - 0.05, L - 4.5, L - 0.15, step);
+  parts.push(...banded(fc, [[H - 0.01, H + 1, c.hull]]), paint(cap(fc, H + 1), c.deck));
+  parts.push(paint(new CylinderGeometry(0.09, 0.12, 3.2, 5).translate(0, H + 2.6, L - 2.6), 0xdfe3e8));
+  // the house aft: a tier a deck, each with its band of windows, then the bridge across the full beam with its wings
+  const z0 = -L + 1.2;
+  const z1 = z0 + house;
+  const hb = B - 0.35;
+  const T = 1.0;
+  const bands: [number, number, number][] = [];
+  for (let k = 0; k < tiers; k++) {
+    const y = H + k * T;
+    bands.push([y, y + 0.64, c.house], [y + 0.64, y + 0.9, GLASS], [y + 0.9, y + T, c.house]);
+  }
+  parts.push(...banded(rect(hb, z0, z1), bands, false));
+  const roofY = H + tiers * T;
+  parts.push(top(roofY, z0, z1, hb, c.house));
+  const bz0 = z1 - 2.4;
+  parts.push(...banded(rect(B + 0.5, bz0, z1 + 0.2), [
+    [roofY, roofY + 0.62, c.house],
+    [roofY + 0.62, roofY + 0.95, GLASS],
+    [roofY + 0.95, roofY + 1.1, c.house],
+  ], false));
+  parts.push(top(roofY + 1.1, bz0, z1 + 0.2, B + 0.5, c.house));
+  // the radar mast on the bridge's roof, its crossbar
+  parts.push(box(0.18, 2.2, 0.18, 0, roofY + 2.2, z1 - 1.2, 0xdfe3e8), box(2.2, 0.12, 0.12, 0, roofY + 2.8, z1 - 1.2, 0xdfe3e8));
+  // the funnel abaft the bridge: the company's colour, its band, a black top
+  const fz = z0 + 1.4;
+  parts.push(box(1.7, 2.6, 2.1, 0, roofY + 1.3, fz, c.funnel), box(1.72, 0.55, 2.12, 0, roofY + 1.5, fz, c.band), box(1.72, 0.4, 2.12, 0, roofY + 2.4, fz, 0x1b1d22));
+  // the cargo deck from the house to the forecastle
+  const zA = z1 + 1.2;
+  const zB = L - 5.2;
+  if (kind === "bulk") {
+    const n = 7;
+    const pitch = (zB - zA) / n;
+    for (let k = 0; k < n; k++) {
+      const zc = zA + pitch * (k + 0.5);
+      parts.push(box(2 * (Math.min(hw(zc + pitch / 2), B) - 1.1), 0.55, pitch * 0.74, 0, H + 0.28, zc, c.cargo[0]));
+      // a crane between every other pair of hatches, its jib over the hatch ahead
+      if (geared && k % 2 === 0 && k < n - 1) parts.push(...deckCrane(zc + pitch / 2, H, pitch * 1.25, c.gear));
+    }
+  } else if (kind === "container") {
+    const bay = 2.4;
+    for (let z = zA; z + bay <= zB + 0.3; z += bay + 0.3) {
+      const half = Math.min(hw(z + bay), B) - 0.45;
+      if (half < 1.6) break;
+      const w = (2 * half) / 4;
+      // lower toward the bow, so the bridge sees over them; one bay in a few left part empty
+      const most = z > L - 12 ? 3 : 5;
+      for (let r = 0; r < 4; r++) {
+        const tiersHere = Math.max(1, Math.round(most - next() * 2.4));
+        const lo = Math.max(1, Math.min(tiersHere, 1 + Math.floor(next() * tiersHere)));
+        const x = -half + w * (r + 0.5);
+        const pick = () => c.cargo[Math.floor(next() * c.cargo.length)];
+        parts.push(box(w - 0.08, lo * 0.55, bay, x, H + (lo * 0.55) / 2, z + bay / 2, pick()));
+        if (tiersHere > lo) parts.push(box(w - 0.08, (tiersHere - lo) * 0.55, bay, x, H + lo * 0.55 + ((tiersHere - lo) * 0.55) / 2, z + bay / 2, pick()));
+      }
+    }
+  } else {
+    // tanker: the pipe rack and the catwalk over it, the manifold's pipes across, the hose crane beside them
+    parts.push(box(0.6, 0.4, zB - zA, 0, H + 0.2, (zA + zB) / 2, c.gear), box(0.9, 0.12, zB - zA, 0.6, H + 1.25, (zA + zB) / 2, c.gear));
+    for (const dz of [-1.2, -0.4, 0.4, 1.2]) parts.push(box(2 * B - 1.0, 0.28, 0.28, 0, H + 0.4, dz, c.gear));
+    parts.push(...deckCrane(3, H, 4.5, c.gear));
+    // and the tank domes down both sides
+    for (let z = zA + 2; z < zB - 1; z += 4.5) for (const s of [-1, 1]) parts.push(box(0.8, 0.35, 0.8, s * (B - 1.3), H + 0.17, z, c.gear));
+  }
+  return merge(parts).translate(0, -draft, 0);
+}
+
+/**
+ * Where a freighter shows its lights after dark (ship's frame, as `freighter` builds it), for the points that keep
+ * them visible from across the bay: an anchor or masthead light forward and aft, white; at anchor the deck's
+ * floodlights and the house's windows, warm; under way the sidelights instead (red to port, +x; green to starboard)
+ * and the stern light.
+ */
+export function freighterLights(kind: FreighterKind, draft: number, underWay: boolean): [number, number, number, number][] {
+  const { L, B, H, tiers, house } = SHIP[kind];
+  const out: [number, number, number, number][] = [];
+  const y = (v: number) => v - draft;
+  if (kind === "carCarrier") {
+    const roof = H + 9;
+    out.push([0, y(roof + 2.4), L - 6, MAST], [0, y(roof + 2.8), -L + 3.5, MAST], [0, y(roof - 0.7), L - 1.6, WARM]);
+    if (underWay) out.push([B, y(roof - 0.5), L - 3, PORT], [-B, y(roof - 0.5), L - 3, STARBOARD], [0, y(H + 1), -L, MAST]);
+    else for (const z of [-L + 6, -2, 6]) out.push([B, y(H + 4), z, WARM], [-B, y(H + 4), z, WARM]);
+    return out;
+  }
+  const z1 = -L + 1.2 + house;
+  const roofY = H + tiers;
+  out.push([0, y(H + 4.3), L - 2.6, MAST], [0, y(roofY + 3.4), z1 - 1.2, MAST]);
+  if (underWay) {
+    out.push([B + 0.5, y(roofY + 0.8), z1 - 0.8, PORT], [-B - 0.5, y(roofY + 0.8), z1 - 0.8, STARBOARD], [0, y(H + 0.6), -L, MAST]);
+    out.push([0, y(H + 2.7), z1 + 0.05, WARM]);
+    return out;
+  }
+  // the floodlights along the deck, the house's lit windows
+  for (let z = z1 + 3; z < L - 5; z += 7) out.push([B - 0.4, y(H + 1.2), z, WARM], [-(B - 0.4), y(H + 1.2), z, WARM]);
+  out.push([1.2, y(H + 1.7), z1 + 0.05, WARM], [-1.2, y(H + 2.7), z1 + 0.05, WARM], [0, y(roofY + 0.8), z1 + 0.25, WARM]);
+  return out;
+}
+
 /* ------------------------------------------------------------------ drones */
 
 /** A quadcopter about two units across: a dark body, four arms with motors and pale prop discs. */

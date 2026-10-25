@@ -4,7 +4,8 @@
  */
 import { PARK_DATA } from "./parkData";
 import { CONVENTION, HARBOUR_GREEN } from "./harbourfront";
-import { addModifier, demAt, discPad, inBasin, inWater, LAKE, lakeLevel, lerp, polySdf, sdfAt, SHORES, SW_POINT } from "./terrain";
+import { SEA } from "./constants";
+import { addModifier, demAt, discPad, groundAt, inBasin, inWater, LAKE, lakeLevel, lerp, polySdf, sdfAt, SHORES, SW_POINT } from "./terrain";
 import { samples } from "./track";
 
 type XZ = [number, number];
@@ -234,7 +235,7 @@ export const LANDMARK_DEFS: LandmarkDef[] = [
   // Canada Place out on its pier over the inlet, the Convention Centre on the shore to the west (they overlapped)
   { key: "canadaPlace", x: -40, z: -76, r: 26, h: 22, margin: 6, lotR: 30 },
   { key: "convention", x: CONVENTION.x, z: CONVENTION.z, r: 24, h: 11, margin: 6, lotR: 24, yaw: CONVENTION.yaw },
-  { key: "bcPlace", x: -14, z: 130, r: 48, h: 47, margin: 6, lotR: 48 },
+  { key: "bcPlace", x: -14, z: 130, r: 48, h: 64, margin: 6, lotR: 48 },
   // Rogers Arena east of BC Place, back from the north shore and long side to the guideway, so the water between
   // BC Place and Science World stays open; Science World on its point with its plaza and science park to the east
   { key: "rogers", x: 46, z: 140, r: 18, h: 11, margin: 7, lotR: 18, yaw: Math.PI / 2 },
@@ -385,6 +386,37 @@ export const BRIDGES: Bridge[] = [
   { name: "Granville Bridge", a: [-170, 98], b: [-186, 236], half: 4.2, clear: 12, kind: "deckTruss" },
   { name: "Burrard Bridge", a: [-196, 84], b: [-266, 168], half: 3.6, clear: 9, kind: "throughTruss" },
 ];
+/**
+ * A bridge's deck, sampled about every 2 units along its centreline (t from a): the unit way along it (ux, uz) and
+ * to its right (rx, rz), whether each sample is over the water, the ground under it (its highest across the deck) and
+ * the road's height. The deck rises from the ground at each end to its clearance over the water (no steeper than a road
+ * should be; Granville's a little gentler). The bridge (landmarkKit.ts) and its traffic (bridgeTraffic.ts) both stand on it.
+ */
+export type BridgeDeck = { L: number; ux: number; uz: number; rx: number; rz: number; T: number[]; wet: boolean[]; ground: number[]; deck: number[]; at: (t: number, lat: number) => XZ };
+export function bridgeDeck(br: Bridge): BridgeDeck {
+  const [ax, az] = br.a;
+  const [bx, bz] = br.b;
+  const L = Math.hypot(bx - ax, bz - az);
+  const ux = (bx - ax) / L;
+  const uz = (bz - az) / L;
+  // across the deck, to the right of a → b
+  const rx = -uz;
+  const rz = ux;
+  const h = br.half;
+  const n = Math.ceil(L / 2) + 1;
+  const T = Array.from({ length: n }, (_, i) => (i * L) / (n - 1));
+  const at = (t: number, lat: number): XZ => [ax + ux * t + rx * lat, az + uz * t + rz * lat];
+  const wet = T.map((t) => sdfAt(...at(t, 0)) < 0);
+  const i0 = wet.indexOf(true);
+  const i1 = wet.lastIndexOf(true);
+  const ground = T.map((t) => Math.max(...[-h, 0, h].map((l) => groundAt(...at(t, l)))));
+  const raw = T.map((_, i) => (wet[i] ? SEA + br.clear * (0.88 + 0.12 * Math.sin((Math.PI * (i - i0)) / Math.max(1, i1 - i0))) : ground[i] + 0.4));
+  // no steeper than the grade from any high point
+  const grade = br.kind === "deckTruss" ? 0.11 : 0.13;
+  const deck = T.map((t) => Math.max(...raw.map((r, j) => r - grade * Math.abs(t - T[j]))));
+  return { L, ux, uz, rx, rz, T, wet, ground, deck, at };
+}
+
 /** Within `pad` of a bridge deck's edge (in plan). */
 export function nearBridge(x: number, z: number, pad: number): boolean {
   for (const { a, b, half } of BRIDGES) {

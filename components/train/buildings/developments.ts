@@ -4,9 +4,10 @@
  * water):
  * - senákw on its own ground, the Sḵwx̱wú7mesh (Squamish) Nation's towers at the south end of the Burrard Bridge:
  *   slender towers in pale glass hung with copper strands woven over and under (the façade family `weave`), set back
- *   to planted crowns, in pairs on podiums of cedar boards banded in formline, one stepping down in planted terraces,
- *   and a cedar hall west of the bridge; welcome figures at its way in, a spindle whorl on its plaza. (Towers in its
- *   manner also stand behind Science World, senakw.ts.)
+ *   to planted crowns, two of them on a podium of cedar boards banded in formline and the rest in the gaps between
+ *   the blocks either side of the bridge's foot, one stepping down in planted terraces, and a cedar hall west of the
+ *   bridge; welcome figures at its way in, a spindle whorl by its eastern tower. (Towers in its manner also stand
+ *   behind Science World, senakw.ts.)
  * - at the north end of the bridge, across False Creek from it, a tower plaited like a cedar-bark basket (`basket`),
  *   its crown flaring like a basket's rim, a carved post at its door;
  * - at the south end of the Granville Bridge, Coast Salish longhouse towers: a big house of cedar planks facing the
@@ -192,8 +193,7 @@ function lanternPavilion(k: DevCtx, w: number, d: number): number {
   return 7.5;
 }
 
-/** senákw's podiums: along the line through each pair of towers. */
-const SENAKW_WEST = { x: -250.8, z: 174.2, ry: -0.557 };
+/** senákw's podium: along the line through its pair of towers. */
 const SENAKW_EAST = { x: -224.9, z: 177.15, ry: 0.492 };
 /** Where a point in a frame (x, z, ry) is: local x along it, local z across. */
 const inFrame = (f: { x: number; z: number; ry: number }, lx: number, lz: number): [number, number] => {
@@ -203,18 +203,17 @@ const inFrame = (f: { x: number; z: number; ry: number }, lx: number, lz: number
 };
 
 export const DEVELOPMENTS: DevBuilding[] = [
-  // senákw: the west podium and its two towers, the tallest by the bridge
-  { name: "senákw west podium", ...SENAKW_WEST, w: 17, d: 9, build: (k) => cedarPodium(k, 17, 9, 3.4, 6) },
-  { name: "senákw I", ...SENAKW_WEST, x: inFrame(SENAKW_WEST, -5, 0)[0], z: inFrame(SENAKW_WEST, -5, 0)[1], w: 6, d: 6, on: "senákw west podium", build: (k) => senakwTower(k, 6, 6, 80, SENAKW_GLASS[0]) },
-  { name: "senákw II", ...SENAKW_WEST, x: inFrame(SENAKW_WEST, 5, 0)[0], z: inFrame(SENAKW_WEST, 5, 0)[1], w: 6, d: 6, on: "senákw west podium", build: (k) => senakwTower(k, 6, 6, 64, SENAKW_GLASS[1], 0.97) },
+  // senákw: the tallest by the bridge's foot, in the gap between the blocks there, and one across the street east
+  { name: "senákw I", x: -257.75, z: 172.25, ry: 0.3, w: 5.2, d: 5.2, build: (k) => senakwTower(k, 5.2, 5.2, 80, SENAKW_GLASS[0]) },
+  { name: "senákw II", x: -231.75, z: 156.75, ry: -0.27, w: 4.8, d: 4.8, build: (k) => senakwTower(k, 4.8, 4.8, 64, SENAKW_GLASS[1], 0.97) },
   // the east podium on the shore, its towers over the water
   { name: "senákw east podium", ...SENAKW_EAST, w: 8, d: 17.5, build: (k) => cedarPodium(k, 8, 17.5, 3.4, 6) },
   { name: "senákw III", ...SENAKW_EAST, x: inFrame(SENAKW_EAST, 0, -5.4)[0], z: inFrame(SENAKW_EAST, 0, -5.4)[1], w: 6.8, d: 6.6, on: "senákw east podium", build: (k) => senakwTower(k, 6.8, 6.6, 90, SENAKW_GLASS[2], 0.92) },
   { name: "senákw IV", ...SENAKW_EAST, x: inFrame(SENAKW_EAST, 0, 5.6)[0], z: inFrame(SENAKW_EAST, 0, 5.6)[1], w: 6, d: 6, on: "senákw east podium", build: (k) => senakwTower(k, 6, 6, 70, SENAKW_GLASS[3]) },
-  // south of the west podium, stepping down toward First Avenue; west of the bridge, by Vanier Park, a tower and the hall
+  // south of the bridge's foot, stepping down toward First Avenue; west of the bridge, toward Vanier Park, a tower and the hall
   { name: "senákw V", x: -247.3, z: 184.2, ry: -0.557, w: 5.6, d: 5.6, build: (k) => senakwTerraces(k, 5.6, 5.6, 7, 4.6, SENAKW_GLASS[1]) },
   { name: "senákw VI", x: -267.3, z: 155.3, ry: -0.557, w: 5.4, d: 5.4, build: (k) => senakwTower(k, 5.4, 5.4, 52, SENAKW_GLASS[2], 0.96) },
-  { name: "senákw hall", x: -278, z: 148.3, ry: 0, w: 5, d: 5, build: (k) => cedarHall(k, 5, 5, 2, ART.bighouse) },
+  { name: "senákw hall", x: -289.75, z: 148.25, ry: 0, w: 5, d: 5, build: (k) => cedarHall(k, 5, 5, 2, ART.bighouse) },
   // across the bridge, at its north end
   { name: "Basket Tower", x: -184.8, z: 84.3, ry: 0.7, w: 7.5, d: 7.5, build: (k) => basketTower(k, 7.5, 96) },
   // the longhouse towers at the Granville Bridge's south end: the big house on the shore, the towers on the rise behind
@@ -229,13 +228,13 @@ export const DEVELOPMENTS: DevBuilding[] = [
 /** A piece of public art at a development (cultureKit.ts builds it, Culture.tsx draws and lights it), on the ground. */
 export type DevPiece = { kind: Kind; x: number; z: number; ry: number; quarter?: number; w?: number };
 export const DEV_PIECES: DevPiece[] = [
-  // senákw's welcome figures facing the bridge's foot, either side of its west podium, and the spindle whorl on its
-  // plaza between the podiums
-  { kind: "welcome", x: -259.8, z: 177.3, ry: -2.55, quarter: 0 },
-  { kind: "welcome", x: -251.8, z: 164.8, ry: -2.02, quarter: 1 },
-  { kind: "whorl", x: -240.3, z: 179.8, ry: 2.6 },
-  { kind: "post", x: -181.4, z: 89.2, ry: 0.7 },
-  { kind: "moongate", x: 82.8, z: 42.6, ry: Math.PI, w: 5 },
+  // senákw's welcome figures facing the bridge's foot, either side of its tallest tower, and the spindle whorl by its
+  // eastern one
+  { kind: "welcome", x: -266, z: 173.25, ry: 3.14, quarter: 0 },
+  { kind: "welcome", x: -254.5, z: 165.5, ry: -1.36, quarter: 1 },
+  { kind: "whorl", x: -236.5, z: 157, ry: 2.6 },
+  { kind: "post", x: -186, z: 91.5, ry: 0.7 },
+  { kind: "moongate", x: 80, z: 42.5, ry: Math.PI, w: 5 },
 ];
 
 /**

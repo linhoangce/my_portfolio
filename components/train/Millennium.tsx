@@ -4,8 +4,9 @@ import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo } from "react";
 import { BoxGeometry, BufferGeometry, CatmullRomCurve3, Color, CylinderGeometry, Float32BufferAttribute, Group, InstancedMesh, Matrix4, Mesh, MeshStandardMaterial, Quaternion, TubeGeometry, Vector3 } from "three";
 
-import { BALLAST, CAR, GAP, LANE, PLATFORM_LEN, TRENCH } from "./constants";
+import { BALLAST, GAP, LANE, PLATFORM_LEN, TRENCH } from "./constants";
 import { mirror, ribbon } from "./Guideway";
+import { MILLENNIUM } from "./liveries";
 import { bedProfile, clearHeights, resample } from "./bedLift";
 import { merged, type Part } from "./merge";
 import { tunnelPortal } from "./portal";
@@ -153,15 +154,18 @@ function cutWalls(step: number): { faces: BufferGeometry[]; ledges: BufferGeomet
   return { faces, ledges };
 }
 const MILL_YELLOW = 0xfacc15;
+/** A Millennium car's length: the pair of them stands whole at the line's 24-unit platforms. */
+const CAR = 11.4;
 
 /**
  * The other rail beside the ride, from OpenStreetMap (rail.ts): the Millennium Line on its own guideway, its LEDs in
  * the line's yellow, up at VCC–Clark a block south-west of the Expo, down in the Grandview Cut with the CN and BNSF
  * freight tracks, under the Expo's viaduct to its platform below Commercial–Broadway's (a glass lift joins the two; the
  * interchange itself is Hub.tsx), and up on its viaducts
- * east past Renfrew, Rupert and Gilmore to Brentwood and Holdom; its stations; two of its trains shuttling the line; a
- * slow freight in the cut; and the Broadway Extension (the line's subway, open in 2027 and, by 2100, on to UBC) from
- * VCC–Clark round to its tunnel portal facing Broadway, with an entrance pavilion at each of its stations along it.
+ * east past Renfrew, Rupert and Gilmore to Brentwood and Holdom; its stations; two of its trains, in the line's own
+ * design after Anna's hummingbird (liveries.ts), shuttling the line; a slow freight in the cut; and the Broadway
+ * Extension (the line's subway, open in 2027 and, by 2100, on to UBC) from VCC–Clark round to its tunnel portal facing
+ * Broadway, with an entrance pavilion at each of its stations along it.
  */
 export function Millennium() {
   const world = useWorld();
@@ -433,15 +437,19 @@ export function Millennium() {
     }
 
     // ------------------------------------------------------------------ trains
+    // two cars in the line's own design (liveries.ts), each over a dark skirt
+    const skirt = new MeshStandardMaterial({ color: 0x14201c, roughness: 0.6, metalness: 0.4 });
     const trains = [0, 1].map((k) => {
       const g = new Group();
       const cars: Group[] = [];
       for (const end of [0, 1]) {
-        const geo = carGeometry(CAR, true, false, lowEnd ? 14 : 22);
+        const geo = carGeometry(CAR, true, false, lowEnd ? 14 : 22, MILLENNIUM);
         const car = new Group();
-        const body = new Mesh(geo.body, mats.body);
+        const body = new Mesh(geo.body, mats.millBody);
         body.castShadow = !lowEnd;
-        car.add(body, new Mesh(geo.glass, mats.window), new Mesh(geo.line, line));
+        const under = new Mesh(new BoxGeometry(2.3, 0.62, CAR - 1.2), skirt);
+        under.position.y = 0.42;
+        car.add(body, new Mesh(geo.glass, mats.window), new Mesh(geo.line, line), under);
         // the second car is the first turned round, so both ends wear a nose
         const inner = new Group();
         inner.rotation.y = end ? Math.PI : 0;
@@ -489,6 +497,7 @@ export function Millennium() {
       hillMat,
       led,
       line,
+      skirt,
       roundel,
       mouth,
       freightMat,
@@ -500,7 +509,7 @@ export function Millennium() {
   useEffect(
     () => () => {
       for (const g of [built.girder, built.bed, built.sleepers, built.leds, built.rails, built.ballast, built.faces, built.ledges, built.white, built.plat, built.pane, built.yellow, built.canopy, built.ribs, built.dark, built.blue]) g.dispose();
-      for (const m of [built.led, built.line, built.roundel, built.mouth, built.freightMat, built.concrete, built.hillMat]) m.dispose();
+      for (const m of [built.led, built.line, built.skirt, built.roundel, built.mouth, built.freightMat, built.concrete, built.hillMat]) m.dispose();
       built.hill.dispose();
       built.piers.geometry.dispose();
       built.piers.dispose();

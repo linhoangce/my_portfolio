@@ -16,14 +16,6 @@ export function ProjectPanel({ project, code, as = "h2" }: { project: Project; c
         <dt>Result</dt>
         <dd>{project.result}</dd>
       </dl>
-      <div className="metrics">
-        {project.metrics.map((m) => (
-          <div key={m.label} className="metric">
-            <div className="v">{m.value}</div>
-            <div className="k">{m.label}</div>
-          </div>
-        ))}
-      </div>
       <Tags tags={project.tags} />
       <Links links={project.links} />
       {project.shot ? (

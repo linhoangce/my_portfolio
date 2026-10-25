@@ -14,7 +14,7 @@ export const RECONCILIATION_AT: [number, number] = [-16.5, -28.3];
 /** Ordered for M (next monument) and the menu list; the Convention Centre is a backdrop, not a monument. */
 export const MONUMENTS: Monument[] = [
   { key: "scienceWorld", name: "Science World", era: "Expo 86 · a geodesic sphere of stainless pyramids · a light at every node", r: 22, cy: 11 },
-  { key: "bcPlace", name: "BC Place", era: "1983 · cable-stayed roof since 2011 · LED crown", r: 50, cy: 20 },
+  { key: "bcPlace", name: "BC Place", era: "1983 · raised for 2100 · solar fabric, a sky garden, a wind turbine on every mast", r: 56, cy: 32 },
   { key: "canadaPlace", name: "Canada Place", era: "Expo 86 · five sails over the cruise pier", r: 46, cy: 8 },
   { key: "reconciliation", name: "Reconciliation Monument", era: "2100 · bronze on granite · after Lloyd Pinay's Veterans Monument", r: 7, cy: 6, at: RECONCILIATION_AT },
   { key: "waterfrontHub", name: "Waterfront Hub", era: "2100 · glass towers and a timber-and-glass canopy over the harbour, after a Perkins&Will concept", r: 40, cy: 24 },

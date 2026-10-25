@@ -2,8 +2,9 @@
  * The four landmarks with the most to them: Canada Place (the five white sails over the cruise terminal, a docked
  * cruise ship), Harbour Centre (an office podium, the banded tower, glass elevators and the Lookout's saucer), Science
  * World (the sphere of stainless pyramids with its double layer of LED nodes, the drum and A-frames, the round base
- * and its deck over the water, the solar-roofed wing and the science park) and BC Place (the LED fascia, lit masts
- * and cable lights); the Waterfront hub; and the bridges over False Creek. Built in each landmark's local frame; client only.
+ * and its deck over the water, the solar-roofed wing and the science park) and BC Place (raised for 2100: the sky
+ * garden, the LED fascia, the solar fabric, the iris and its halo, a wind turbine on every lit mast); the Waterfront hub;
+ * and the bridges over False Creek. Built in each landmark's local frame; client only.
  */
 import {
   AdditiveBlending,
@@ -37,6 +38,7 @@ import {
 } from "three";
 
 import { SEA } from "./constants";
+import { turbineBlades } from "./canopies";
 import { CONVENTION, DECK_Y, FLOAT_DOCK, FORECOURT, FORECOURT_TREES, GREEN_CAFES, harbourfrontBenches, harbourfrontTrees, inConvention, PLAZA, PLAZA_SOUTH, PLAZA_X, PROMENADE, PROMENADE_W } from "./harbourfront";
 import { SET_RECT, toStation } from "./sets/zones";
 import { pavilion, type Pieces, shopGlow, UMBRELLAS, warmLights } from "./pavilion";
@@ -45,8 +47,8 @@ import { EVENT_META } from "./lookTypes";
 import { addReflections } from "./reflectionSources";
 import { merged, type Part } from "./merge";
 import { canvasTexture, cap, merge, type P2, paint, roundRect, walls } from "./shapes";
-import { type Bridge, BRIDGES, type PlacedLandmark, SW_ROOF } from "./sites";
-import { groundAt, polySdf, sdfAt, surfaceAt } from "./terrain";
+import { type Bridge, bridgeDeck, BRIDGES, type PlacedLandmark, SW_ROOF } from "./sites";
+import { polySdf, sdfAt, surfaceAt } from "./terrain";
 import { HUB_BLOCKS, HUB_CANOPY, HUB_DECK, HUB_DECK_BOX, HUB_GALLERY } from "./waterfrontHub";
 import { cabinTexture, cruiseShip, floatplane } from "./vessels";
 import type { World } from "./world";
@@ -1250,29 +1252,131 @@ export function buildScienceWorld(l: PlacedLandmark, world: World): Built {
 
 /* ------------------------------------------------------------------ BC Place */
 
+/** The solar fabric, one scallop across (u) and rim to ring (v): white membrane with a band of thin-film cells. */
+const solarFabricTexture = () =>
+  canvasTexture(64, 128, (g) => {
+    g.fillStyle = "#f3f4f1";
+    g.fillRect(0, 0, 64, 128);
+    g.fillStyle = "#53688c";
+    g.fillRect(15, 14, 34, 96);
+    g.fillStyle = "#7186ab";
+    for (let y = 18; y < 110; y += 8) g.fillRect(15, y, 34, 1);
+    g.fillRect(31, 14, 2, 96);
+  });
+
+/** A round strut from a to b, as a part. */
+function strut(a: Vector3, b: Vector3, r: number): Part {
+  const d = b.clone().sub(a);
+  const geo = new CylinderGeometry(r, r, d.length(), 5);
+  geo.applyQuaternion(new Quaternion().setFromUnitVectors(UPV, d.normalize()));
+  return { geo, position: [(a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2] };
+}
+
 /**
- * BC Place: the bowl, a tall LED fascia round the rim (in the event's colours by day and night) under a white line,
- * and the cable-supported roof: 36 masts leaning out round the rim, a cable from each mast top to the compression ring
- * at the centre, and the white fabric rising between the cables to the ring, sagging into a scallop between each pair,
- * with the retractable roof closed over the middle as a low pillow. After dark the masts glow white, lights run down
- * every cable and the fabric is lit from within.
+ * BC Place as 2100 has raised it, standing well over the station beside it. Round its foot a glazed concourse under the
+ * sky garden, a planted terrace ringing the bowl with trees along a hedge; above, the bowl's fins, every other one a
+ * vertical garden, and a tall LED fascia round the rim (in the event's colours by day and night) under a white line.
+ * The cable-supported roof: 36 masts rising from the terrace, a cable from each mast top to the compression ring at the
+ * centre, and the solar fabric (white membrane, a band of thin-film cells down each scallop) rising between the cables
+ * to the ring, sagging into a scallop between each pair. Inside the ring the retractable roof is a solar iris of 12
+ * petals, part open over the pitch, under a halo in the event's colours; a small wind turbine turns on every mast top.
+ * After dark the masts and turbines glow white, lights run down every cable and the fabric is lit from within.
  */
 export function buildBCPlace(world: World, centre: Vector3): Built {
-  const { events, lowEnd, mats } = world;
+  const { events, lowEnd, mats, envTex } = world;
   const g = new Group();
-  const R = 40;
-  const RIM = 17.6;
+  const R = 42;
+  const RIM = 27;
+  /** The sky garden's floor, on the glazed concourse. */
+  const TERR = 12;
   const rOut = R + 1.4;
-  const rIn = 13;
-  const yIn = 31;
-  const bowl = new Mesh(new CylinderGeometry(R, R - 2.5, RIM - 1.2, 72, 1, true), new MeshStandardMaterial({ color: 0xd8d3c8, roughness: 0.9, side: 2 }));
-  bowl.position.y = (RIM - 1.2) / 2;
+  const rIn = 14;
+  const yIn = 45;
+  const ring = (r: number, n = 96): P2[] => Array.from({ length: n }, (_, i): P2 => [Math.cos((i / n) * Math.PI * 2) * r, Math.sin((i / n) * Math.PI * 2) * r]);
+  const lathe = (pts: P2[], n = 96) => new LatheGeometry(pts.map(([r, y]) => new Vector2(r, y)), n);
+  const stone = new MeshStandardMaterial({ color: 0xe6e2da, roughness: 0.8, side: DoubleSide });
+  // the concourse: glass between slim mullions, set back under the terrace, its windows lit after dark
+  const glassFacade = facade(
+    64,
+    64,
+    (gx) => {
+      gx.fillStyle = "#2a3946";
+      gx.fillRect(0, 0, 64, 64);
+    },
+    (gx, lit) => {
+      let k = 0;
+      for (let x = 1; x < 64; x += 8) {
+        for (const y of [3, 35]) {
+          gx.fillStyle = lit ? WARM[k++ % 4] : "#40586c";
+          gx.fillRect(x, y, 7, 28);
+        }
+      }
+    },
+  );
+  const glassMat = cityToned(world, new MeshStandardMaterial({ map: glassFacade.map, emissiveMap: glassFacade.glow, emissive: 0xffffff, roughness: 0.25, metalness: 0.3, envMap: envTex, envMapIntensity: 0.6 }), 1);
+  const concourseGlass = new Mesh(walls(ring(R - 1.6), 0, TERR - 0.6, { uPer: 4, vPer: (TERR - 0.6) / 3, smooth: true }), glassMat);
+  // the bowl from the terrace to the rim, and a ring along its top (open, so the pitch shows through the iris)
+  const bowl = new Mesh(new CylinderGeometry(R, R - 0.6, RIM - TERR - 0.6, 72, 1, true), new MeshStandardMaterial({ color: 0xd8d3c8, roughness: 0.9, side: DoubleSide }));
+  bowl.position.y = (RIM + TERR - 1.8) / 2;
   const pitch = new Mesh(new CircleGeometry(R - 2.5, 64), new MeshStandardMaterial({ color: 0x3f6b3a, roughness: 1 }));
   pitch.rotation.x = -Math.PI / 2;
   pitch.position.y = 0.3;
-  const concourse = new Mesh(new CylinderGeometry(R + 1.2, R + 1.2, 1.4, 72), new MeshStandardMaterial({ color: 0xe6e2da, roughness: 0.8 }));
-  concourse.position.y = RIM - 0.7;
-  // the fabric: a polar grid rising from the rim to the ring, sagging between the 36 radial cables
+  // the terrace slab with a low planter wall round its edge, and the rim's ring
+  const terrace = new Mesh(
+    merge([
+      lathe([
+        [R - 1.7, TERR - 0.6],
+        [R + 2.5, TERR - 0.6],
+        [R + 2.5, TERR + 0.7],
+        [R + 2.3, TERR + 0.7],
+        [R + 2.3, TERR],
+        [R - 1.7, TERR],
+      ]),
+      lathe([
+        [R - 0.2, RIM - 1.4],
+        [R + 1.2, RIM - 1.4],
+        [R + 1.2, RIM],
+        [R - 0.2, RIM],
+      ]),
+    ]),
+    stone,
+  );
+  // the sky garden, painted into one mesh: the bowl's 72 fins (every other one a vertical garden), the hedge along the
+  // terrace's edge and a tree between each pair of masts
+  const garden: Part[] = [];
+  const finH = RIM - 7.4 - TERR;
+  for (let i = 0; i < 72; i++) {
+    const a = (i / 72) * Math.PI * 2;
+    const green = i % 2 === 1;
+    garden.push({
+      geo: paint(new BoxGeometry(green ? 1.2 : 0.6, finH, green ? 1.5 : 1.1), green ? (i % 4 === 1 ? 0x4d8a3a : 0x5c9a44) : 0xbfb9ad),
+      position: [Math.cos(a) * (R + 0.1), TERR + finH / 2, Math.sin(a) * (R + 0.1)],
+      rotation: [0, -a, 0],
+    });
+  }
+  garden.push({
+    geo: paint(
+      lathe([
+        [R + 1.4, TERR],
+        [R + 2.3, TERR],
+        [R + 2.2, TERR + 1.3],
+        [R + 1.5, TERR + 1.3],
+      ]),
+      0x557f3a,
+    ),
+  });
+  const crowns = [0x4f8a3c, 0x3f7a35, 0x6a9a48];
+  for (let i = 0; i < 36; i++) {
+    const a = ((i + 0.5) / 36) * Math.PI * 2;
+    const x = Math.cos(a) * (R + 1.2);
+    const z = Math.sin(a) * (R + 1.2);
+    garden.push({ geo: paint(new CylinderGeometry(0.14, 0.2, 2.8, 6), 0x7a5a3c), position: [x, TERR + 1.4, z] });
+    garden.push({ geo: paint(new IcosahedronGeometry(1.5, lowEnd ? 0 : 1), crowns[i % 3]), position: [x, TERR + 3.7, z], scale: [1, 1.2, 1] });
+  }
+  const gardenMesh = new Mesh(merged(garden), new MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }));
+  gardenMesh.castShadow = !lowEnd;
+  // the fabric: a polar grid rising from the rim to the ring, sagging between the 36 radial cables, a scallop to each
+  // repeat of the solar texture
   const NS = lowEnd ? 144 : 216;
   const NR = lowEnd ? 10 : 16;
   const rise = (r: number) => {
@@ -1280,13 +1384,15 @@ export function buildBCPlace(world: World, centre: Vector3): Built {
     return RIM + (yIn - RIM) * (1 - (1 - t) * (1 - t));
   };
   const fpos: number[] = [];
+  const fuv: number[] = [];
   const fidx: number[] = [];
   for (let j = 0; j <= NR; j++) {
     const r = rOut - ((rOut - rIn) * j) / NR;
-    const sag = 2.1 * Math.sin((Math.PI * j) / NR);
+    const sag = 2.6 * Math.sin((Math.PI * j) / NR);
     for (let i = 0; i <= NS; i++) {
       const a = (i / NS) * Math.PI * 2;
       fpos.push(Math.cos(a) * r, rise(r) - sag * Math.sin(18 * a) ** 2, Math.sin(a) * r);
+      fuv.push((i / NS) * 36 + 0.5, j / NR);
       if (i < NS && j < NR) {
         const k = j * (NS + 1) + i;
         fidx.push(k, k + 1, k + NS + 1, k + 1, k + NS + 2, k + NS + 1);
@@ -1295,29 +1401,69 @@ export function buildBCPlace(world: World, centre: Vector3): Built {
   }
   const fabric = new BufferGeometry();
   fabric.setAttribute("position", new BufferAttribute(new Float32Array(fpos), 3));
+  fabric.setAttribute("uv", new BufferAttribute(new Float32Array(fuv), 2));
   fabric.setIndex(fidx);
   fabric.computeVertexNormals();
-  const roofMat = new MeshStandardMaterial({ color: 0xffffff, roughness: 0.55, side: DoubleSide, emissive: 0xe4ecff, emissiveIntensity: 0 });
+  const roofMat = new MeshStandardMaterial({ map: solarFabricTexture(), roughness: 0.5, metalness: 0.05, side: DoubleSide, emissive: 0xe4ecff, emissiveIntensity: 0 });
   const roof = new Mesh(fabric, roofMat);
   roof.castShadow = !lowEnd;
-  // the retractable roof, closed: a low pillow inside the ring
-  const pillow = new Mesh(new LatheGeometry([0, 0.25, 0.5, 0.75, 1].map((t) => new Vector2(rIn * (1 - t) + 0.01, yIn + 0.3 + 2.6 * Math.sin((t * Math.PI) / 2))), 72), roofMat);
-  const ring = new Mesh(new TorusGeometry(rIn, 0.7, 8, 72), mats.mast);
-  ring.rotation.x = Math.PI / 2;
-  ring.position.y = yIn + 0.2;
-  const ribs = new InstancedMesh(new BoxGeometry(0.6, RIM - 3.2, 1.1), new MeshStandardMaterial({ color: 0xbfb9ad, roughness: 0.9 }), 72);
+  // the retractable roof: an iris of 12 solar petals, part open over the pitch (alternate petals a little higher, so
+  // the overlaps never meet)
+  const ppos: number[] = [];
+  const rO = 5.5;
+  for (let k = 0; k < 12; k++) {
+    const a0 = (k / 12) * Math.PI * 2;
+    const a1 = a0 + ((Math.PI * 2) / 12) * 1.12;
+    const b0 = a0 + 0.62;
+    const b1 = b0 + 0.3;
+    const lo = yIn + 0.35 + (k % 2) * 0.15;
+    const hi = yIn + 2.6 + (k % 2) * 0.15;
+    const o0 = [Math.cos(a0) * rIn, lo, Math.sin(a0) * rIn];
+    const o1 = [Math.cos(a1) * rIn, lo, Math.sin(a1) * rIn];
+    const i0 = [Math.cos(b0) * rO, hi, Math.sin(b0) * rO];
+    const i1 = [Math.cos(b1) * rO, hi, Math.sin(b1) * rO];
+    ppos.push(...o0, ...i1, ...o1, ...o0, ...i0, ...i1);
+  }
+  const petalGeo = new BufferGeometry();
+  petalGeo.setAttribute("position", new BufferAttribute(new Float32Array(ppos), 3));
+  petalGeo.computeVertexNormals();
+  const iris = new Mesh(petalGeo, new MeshStandardMaterial({ color: 0x3d567d, roughness: 0.3, metalness: 0.5, side: DoubleSide, envMap: envTex, envMapIntensity: 0.8 }));
+  const ringMesh = new Mesh(new TorusGeometry(rIn, 0.7, 8, 72), mats.mast);
+  ringMesh.rotation.x = Math.PI / 2;
+  ringMesh.position.y = yIn + 0.2;
+  // the halo: a ring of light floating over the iris on 12 struts, in the event's colours
+  const HALO = 10.5;
+  const hy = yIn + 7.5;
+  const halo = new Mesh(new TorusGeometry(HALO, 0.32, 8, 96), events.glowB);
+  halo.rotation.x = Math.PI / 2;
+  halo.position.y = hy;
+  const haloStruts = new Mesh(
+    merged(
+      Array.from({ length: 12 }, (_, k) => {
+        const a = ((k + 0.5) / 12) * Math.PI * 2;
+        return strut(new Vector3(Math.cos(a) * rIn, yIn + 0.6, Math.sin(a) * rIn), new Vector3(Math.cos(a) * HALO, hy, Math.sin(a) * HALO), 0.09);
+      }),
+    ),
+    mats.mast,
+  );
   const mastMat = new MeshStandardMaterial({ color: 0xf0f1f3, roughness: 0.6, emissive: 0xffffff, emissiveIntensity: 0 });
-  const MAST = 27;
-  const masts = new InstancedMesh(new CylinderGeometry(0.26, 0.5, MAST, 8), mastMat, 36);
+  const MAST = 46;
+  const masts = new InstancedMesh(new CylinderGeometry(0.28, 0.6, MAST, 8), mastMat, 36);
+  masts.castShadow = !lowEnd;
   const cables = new InstancedMesh(new CylinderGeometry(0.08, 0.08, 1, 5), new MeshStandardMaterial({ color: 0xb8bcc4, roughness: 0.5 }), 36);
+  // the wind crown: a helical turbine on every mast top, turning
+  const turbineGeo = turbineBlades().scale(1.4, 1.4, 1.4);
+  const TURB = 3.4 * 1.4;
+  const turbines = new InstancedMesh(turbineGeo, mastMat, 36);
   const led = new MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
-  const tips = new InstancedMesh(new IcosahedronGeometry(0.42, 1), led, 36);
+  const tips = new InstancedMesh(new IcosahedronGeometry(0.5, 1), led, 36);
   // the fascia: 72 tall LED panels round the rim, and a thin white line above them
-  const fascia = new InstancedMesh(new BoxGeometry(3.6, 3.8, 0.3), led, 72);
+  const FASCIA = 6;
+  const fascia = new InstancedMesh(new BoxGeometry(3.8, FASCIA, 0.3), led, 72);
   const lineMat = new MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
   const topLine = new Mesh(new TorusGeometry(R + 1.45, 0.32, 6, 160), lineMat);
   topLine.rotation.x = Math.PI / 2;
-  topLine.position.y = RIM - 1.0;
+  topLine.position.y = RIM - 1.2;
   const perCable = lowEnd ? 7 : 12;
   const bulbMat = new MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
   const bulbs = new InstancedMesh(new IcosahedronGeometry(0.34, 0), bulbMat, 36 * perCable);
@@ -1325,16 +1471,10 @@ export function buildBCPlace(world: World, centre: Vector3): Built {
   const tang = new Vector3();
   const ringPts: Vector3[] = [];
   const tipPts: Vector3[] = [];
+  const turbAt: Vector3[] = [];
   for (let i = 0; i < 72; i++) {
     const a = (i / 72) * Math.PI * 2;
-    p.set(Math.cos(a) * (R + 0.3), (RIM - 3.2) / 2, Math.sin(a) * (R + 0.3));
-    q.setFromAxisAngle(UPV, -a);
-    m4.compose(p, q, one);
-    ribs.setMatrixAt(i, m4);
-  }
-  for (let i = 0; i < 72; i++) {
-    const a = (i / 72) * Math.PI * 2;
-    p.set(Math.cos(a) * (R + 1.35), RIM - 3.3, Math.sin(a) * (R + 1.35));
+    p.set(Math.cos(a) * (R + 1.35), RIM - 1.4 - FASCIA / 2, Math.sin(a) * (R + 1.35));
     q.setFromAxisAngle(UPV, -a + Math.PI / 2);
     m4.compose(p, q, one);
     fascia.setMatrixAt(i, m4);
@@ -1342,23 +1482,22 @@ export function buildBCPlace(world: World, centre: Vector3): Built {
     ringPts.push(p.clone().add(centre));
   }
   let b = 0;
-  const lean = 0.16;
+  const lean = 0.04;
   for (let i = 0; i < 36; i++) {
-    // the masts stand on the ridges between scallops (where the cables run)
+    // the masts stand on the ridges between scallops (where the cables run), rising from the terrace's edge
     const a = (i / 36) * Math.PI * 2;
     const cx = Math.cos(a);
     const cz = Math.sin(a);
-    // each stands on the rim just outside the fascia
-    const base = R + 2.4;
-    const foot = RIM - 5;
-    p.set(cx * (base + Math.sin(lean) * MAST * 0.5), foot + Math.cos(lean) * MAST * 0.5, cz * (base + Math.sin(lean) * MAST * 0.5));
+    const base = R + 2;
+    p.set(cx * (base + Math.sin(lean) * MAST * 0.5), TERR + Math.cos(lean) * MAST * 0.5, cz * (base + Math.sin(lean) * MAST * 0.5));
     tang.set(-cz, 0, cx);
     q.setFromAxisAngle(tang, -lean);
     m4.compose(p, q, one);
     masts.setMatrixAt(i, m4);
-    const top = new Vector3(cx * (base + Math.sin(lean) * MAST), foot + Math.cos(lean) * MAST, cz * (base + Math.sin(lean) * MAST));
+    const top = new Vector3(cx * (base + Math.sin(lean) * MAST), TERR + Math.cos(lean) * MAST, cz * (base + Math.sin(lean) * MAST));
+    turbAt.push(top.clone());
     const anchor = new Vector3(cx * rIn, yIn + 0.4, cz * rIn);
-    m4.makeTranslation(top.x, top.y + 0.4, top.z);
+    m4.makeTranslation(top.x, top.y + TURB + 0.5, top.z);
     tips.setMatrixAt(i, m4);
     tips.setColorAt(i, new Color(0xffffff));
     tipPts.push(top.clone().add(centre));
@@ -1374,6 +1513,11 @@ export function buildBCPlace(world: World, centre: Vector3): Built {
       bulbs.setMatrixAt(b++, m4);
     }
   }
+  const spin = (t: number) => {
+    for (let i = 0; i < 36; i++) turbines.setMatrixAt(i, m4.compose(turbAt[i], q.setFromAxisAngle(UPV, t * 1.4 + i * 0.7), one));
+    turbines.instanceMatrix.needsUpdate = true;
+  };
+  spin(0);
   registerPattern(events, fascia, "ring", ringPts, centre);
   registerPattern(events, tips, "nodes", tipPts, centre);
   const white = new Color();
@@ -1384,14 +1528,14 @@ export function buildBCPlace(world: World, centre: Vector3): Built {
     lineMat.color.setScalar(0.35 + 0.65 * level);
     bulbMat.color.copy(white.setRGB(1, 1, 1)).multiplyScalar(0.15 + 0.85 * n * (0.85 + 0.15 * Math.sin(t * 2)));
   });
-  g.add(bowl, pitch, concourse, roof, pillow, ring, ribs, masts, cables, tips, fascia, topLine, bulbs);
+  g.add(concourseGlass, bowl, pitch, terrace, gardenMesh, roof, iris, ringMesh, halo, haloStruts, masts, cables, turbines, tips, fascia, topLine, bulbs);
   addReflections(
     [0, 1, 2, 3, 4, 5].map((k) => {
       const a = (k / 6) * Math.PI * 2;
       return { x: centre.x + Math.cos(a) * R, z: centre.z + Math.sin(a) * R, y: centre.y, h: RIM, w: 18, col: k % 2 ? events.glowB.emissive : events.glow.emissive, gain: 0.7 };
     }),
   );
-  return { group: g };
+  return { group: g, animate: spin };
 }
 
 /* ------------------------------------------------------------------ Rogers Arena */
@@ -1696,26 +1840,11 @@ function ribbon(rows: Vector3[][], uv?: (i: number, k: number) => [number, numbe
 function buildBridge(br: Bridge, world: World): Group {
   const { lowEnd, mats } = world;
   const g = new Group();
-  const [ax, az] = br.a;
-  const [bx, bz] = br.b;
-  const L = Math.hypot(bx - ax, bz - az);
-  const ux = (bx - ax) / L;
-  const uz = (bz - az) / L;
-  // across the deck, to the right of a → b
-  const rx = -uz;
-  const rz = ux;
+  const { L, ux, uz, T, wet, ground, deck, at } = bridgeDeck(br);
   const h = br.half;
-  const n = Math.ceil(L / 2) + 1;
-  const T = Array.from({ length: n }, (_, i) => (i * L) / (n - 1));
-  const at = (t: number, lat: number): [number, number] => [ax + ux * t + rx * lat, az + uz * t + rz * lat];
-  const wet = T.map((t) => sdfAt(...at(t, 0)) < 0);
+  const n = T.length;
   const i0 = wet.indexOf(true);
   const i1 = wet.lastIndexOf(true);
-  const ground = T.map((t) => Math.max(...[-h, 0, h].map((l) => groundAt(...at(t, l)))));
-  const raw = T.map((_, i) => (wet[i] ? SEA + br.clear * (0.88 + 0.12 * Math.sin((Math.PI * (i - i0)) / Math.max(1, i1 - i0))) : ground[i] + 0.4));
-  // no steeper than the grade from any high point
-  const grade = br.kind === "deckTruss" ? 0.11 : 0.13;
-  const deck = T.map((t) => Math.max(...raw.map((r, j) => r - grade * Math.abs(t - T[j]))));
   const depth = br.kind === "girder" ? 1.5 : br.kind === "deckTruss" ? 0.7 : 1.2;
   const P = (t: number, lat: number, y: number) => {
     const [x, z] = at(t, lat);

@@ -5,6 +5,7 @@ import { BoxGeometry, BufferAttribute, BufferGeometry, CatmullRomCurve3, Cylinde
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
 import { CAR, CROSS_LEN, GAP, LANE, PLATFORM_LEN } from "./constants";
+import { EXPO } from "./liveries";
 import { merged } from "./merge";
 import { inRailCut, railNear } from "./rail";
 import { isRoad } from "./roadNetwork";
@@ -260,7 +261,7 @@ export function Guideway() {
     // a train of three standing out of service on a track (its frames), its middle car `at` along it (by length; by
     // default its middle), a nose at each end
     const park = (path: Frame[], at?: number) => {
-      const geo = (cars.geo ??= carGeometry(CAR, true, false, lowEnd ? 14 : 22));
+      const geo = (cars.geo ??= carGeometry(CAR, true, false, lowEnd ? 14 : 22, EXPO));
       const cum = [0];
       for (let k = 1; k < path.length; k++) cum.push(cum[k - 1] + path[k].p.distanceTo(path[k - 1].p));
       const mid = at ?? cum[cum.length - 1] / 2;
@@ -282,8 +283,9 @@ export function Guideway() {
       const n = fr.length;
       const tOf = (i: number) => (i / (n - 1)) * loop.L;
       const between = (a: number, b: number) => fr.filter((_, i) => tOf(i) >= a && tOf(i) <= b);
-      const stop0 = loop.L / 2 - 14;
-      const stop1 = loop.L / 2 + 14;
+      // the turnback stop at the loop's middle, a little shorter than a station's platform
+      const stop0 = loop.L / 2 - (PLATFORM_LEN / 2 - 1.5);
+      const stop1 = loop.L / 2 + (PLATFORM_LEN / 2 - 1.5);
       // at Waterfront the loop is double-tracked round its circle: a layover track inside the running one, where a
       // train waits out of service, easing away from it and back over the circle's two halves (so it bends about
       // as tightly all the way round); its deck widens inward to carry it
@@ -653,12 +655,12 @@ export function Guideway() {
     const panes = mergeAll(paneParts);
     const plats = mergeAll(platParts);
     const lamps = mergeAll(lampParts);
-    // the parked train painted into one mesh (white body, dark glass, the violet line)
+    // the parked train in one painted mesh: the body in its own colours, smoked glass, the cyan line
     const parked = layover.body.length
       ? merged([
-          ...layover.body.map((g) => ({ geo: paint(g, 0xf3f4f6) })),
-          ...layover.glass.map((g) => ({ geo: paint(g, 0x2a3039) })),
-          ...layover.line.map((g) => ({ geo: paint(g, 0xa78bfa) })),
+          ...layover.body.map((geo) => ({ geo })),
+          ...layover.glass.map((g) => ({ geo: paint(g, 0x0d1218) })),
+          ...layover.line.map((g) => ({ geo: paint(g, 0x3ddcf5) })),
         ])
       : null;
     return { deck, planters, hedges, bed, sleepers, leds, walk, plates, rails, col, arm, canopy, panes, plats, lamps, parked };

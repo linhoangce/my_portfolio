@@ -51,7 +51,7 @@ import { createEventLights, type EventLights } from "./eventLights";
 import { applyMirror } from "./waterMirror";
 import type { Season } from "./lookTypes";
 import type { LookTargets } from "./lookModel";
-import { groundTexture, hedgeTexture, interiorTextures, peopleAtlas, sleeperTexture, streetLightTexture } from "./textures";
+import { causticTexture, groundTexture, hedgeTexture, interiorTextures, peopleAtlas, sleeperTexture, streetLightTexture } from "./textures";
 import { paintTreeAtlas, treeAtlasTexture } from "./trees/atlas";
 import { createTreeShading, type TreeShading } from "./trees/treeMaterial";
 import { SEA } from "./constants";
@@ -131,7 +131,14 @@ export type World = {
     guideLed: MeshStandardMaterial;
     trainLine: MeshStandardMaterial;
     underGlow: MeshBasicMaterial;
+    /** The pearl car's body (the Canada Line's and the West Coast Express's). */
     body: MeshPhysicalMaterial;
+    /**
+     * The Expo's and the Millennium's bodies (liveries.ts), painted per vertex: the one a deep metallic with a faint
+     * pearl sheen, the other a jewel metallic whose colour shifts strongly with the angle.
+     */
+    expoBody: MeshPhysicalMaterial;
+    millBody: MeshPhysicalMaterial;
     trim: MeshStandardMaterial;
     window: MeshStandardMaterial;
     head: MeshStandardMaterial;
@@ -372,19 +379,46 @@ export function createWorld(gl: WebGLRenderer, scene: Scene, lowEnd: boolean): W
     timber: new MeshStandardMaterial({ color: 0xb98a5a, roughness: 0.7 }),
     roofGreen: new MeshStandardMaterial({ color: 0x5b8a45, roughness: 1 }),
     guideLed: new MeshStandardMaterial({ color: 0x1b1530, emissive: 0xa78bfa, emissiveIntensity: 0.6 }),
-    trainLine: new MeshStandardMaterial({ color: 0x1b1530, emissive: 0xa78bfa, emissiveIntensity: 1 }),
-    underGlow: new MeshBasicMaterial({ color: 0xa78bfa, transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false }),
+    trainLine: new MeshStandardMaterial({ color: 0x0b2230, emissive: 0x3ddcf5, emissiveIntensity: 1 }),
+    underGlow: new MeshBasicMaterial({ color: 0x3ddcf5, map: causticTexture(), transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false }),
     body: new MeshPhysicalMaterial({ color: 0xf3f4f6, metalness: 0.15, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.12, envMap: envTex, envMapIntensity: 0.6 }),
+    expoBody: new MeshPhysicalMaterial({
+      vertexColors: true,
+      metalness: 0.45,
+      roughness: 0.3,
+      clearcoat: 1,
+      clearcoatRoughness: 0.04,
+      // a faint pearl over the blue, as light on water; low-end devices go without
+      iridescence: lowEnd ? 0 : 0.3,
+      iridescenceIOR: 1.3,
+      iridescenceThicknessRange: [150, 420],
+      envMap: envTex,
+      envMapIntensity: 0.85,
+    }),
+    millBody: new MeshPhysicalMaterial({
+      vertexColors: true,
+      metalness: 0.6,
+      roughness: 0.28,
+      clearcoat: 1,
+      clearcoatRoughness: 0.08,
+      // the film's thickness set so the jade flashes rose and magenta at a glancing angle
+      iridescence: lowEnd ? 0 : 1,
+      iridescenceIOR: 1.6,
+      iridescenceThicknessRange: [300, 480],
+      envMap: envTex,
+      envMapIntensity: 1,
+    }),
     trim: new MeshStandardMaterial({ color: 0x2a3039, roughness: 0.6, metalness: 0.4, envMap: envTex, envMapIntensity: 0.25 }),
+    // smoked glass: dark, glossy and reflective, the cabin glowing through it only after dark (textures.ts)
     window: new MeshStandardMaterial({
       map: winTex.map,
       emissiveMap: winTex.emissiveMap,
       emissive: 0xffffff,
       emissiveIntensity: 1.2,
-      roughness: 0.06,
-      metalness: 0.2,
+      roughness: 0.03,
+      metalness: 0.55,
       envMap: envTex,
-      envMapIntensity: 1.1,
+      envMapIntensity: 1.5,
     }),
     head: new MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff5e0, emissiveIntensity: 1.7 }),
     tail: new MeshStandardMaterial({ color: 0x330000, emissive: 0xff2a2a, emissiveIntensity: 2.5 }),
