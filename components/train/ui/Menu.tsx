@@ -1,17 +1,13 @@
 "use client";
 
-import { Keyboard, Sparkles, X } from "lucide-react";
+import { Keyboard, X } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useEffect, useRef } from "react";
-
-import { DesignPanel } from "@/components/panels/DesignPanel";
-import { landAcknowledgement } from "@/data";
 
 import { EVENT_IDS, EVENT_META, type EventId, SEASONS, WEATHERS } from "../lookTypes";
 import { MONUMENTS } from "../monumentData";
 import { useTrain } from "../store";
 import { eventSwatch } from "./MonumentBar";
-import { MAP_SOURCES } from "../mapSources";
 
 const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
 
@@ -109,66 +105,10 @@ export function Menu() {
           ))}
         </div>
       </section>
-      <section>
-        <h3>The land</h3>
-        <p className="land-ack">{landAcknowledgement}</p>
-      </section>
-      <section>
-        <h3>Map data</h3>
-        <ul className="map-sources">
-          {MAP_SOURCES.map((m) => (
-            <li key={m.label}>
-              <a href={m.href} target="_blank" rel="noreferrer noopener">
-                {m.label}
-              </a>
-              : {m.note}
-            </li>
-          ))}
-        </ul>
-      </section>
-      <div className="actions">
-        <button type="button" className="btn" onClick={() => setUi("design")}>
-          <Sparkles className="h-4 w-4" aria-hidden="true" />
-          Design notes
-        </button>
-        <button type="button" className="btn" onClick={() => setUi("help")}>
-          <Keyboard className="h-4 w-4" aria-hidden="true" />
-          Controls
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/**
- * The design notes, as a dialog from the Explore stop or the menu: its head stays put while the notes scroll, and the
- * wheel scrolls them rather than driving the train (data-panel). Focus goes back to whatever opened it.
- */
-export function DesignNotes() {
-  const ui = useTrain((s) => s.ui);
-  const setUi = useTrain((s) => s.setUi);
-  const box = useRef<HTMLDivElement>(null);
-  const open = ui === "design";
-  useEffect(() => {
-    if (!open) return;
-    const opener = document.activeElement as HTMLElement | null;
-    box.current?.focus({ preventScroll: true });
-    return () => opener?.focus({ preventScroll: true });
-  }, [open]);
-  if (!open) return null;
-  return (
-    <div className="help-wrap" onPointerDown={(e) => e.target === e.currentTarget && setUi(null)}>
-      <div ref={box} className="help notes glass" role="dialog" aria-label="Design notes" tabIndex={-1} data-panel>
-        <div className="menu-head">
-          <span className="kicker">Behind the ride</span>
-          <button type="button" className="btn btn-icon" aria-label="Close design notes" onClick={() => setUi(null)}>
-            <X className="h-4 w-4" aria-hidden="true" />
-          </button>
-        </div>
-        <div className="notes-body">
-          <DesignPanel kicker={false} />
-        </div>
-      </div>
+      <button type="button" className="btn" onClick={() => setUi("help")}>
+        <Keyboard className="h-4 w-4" aria-hidden="true" />
+        Controls
+      </button>
     </div>
   );
 }

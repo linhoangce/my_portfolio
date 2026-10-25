@@ -4,6 +4,7 @@ import { ChevronUp } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { PanelFor } from "@/components/panels";
+import { InspirationsPanel } from "@/components/panels/InspirationsPanel";
 import { PanelActions } from "@/components/panels/PanelActions";
 import { stations } from "@/data";
 
@@ -12,10 +13,10 @@ import { useTrain } from "../store";
 /**
  * The station's section as an overlay: on desktop a column at the foot on the left, on a scrim behind its words only;
  * on phones a bottom sheet (collapsed to the kicker, title and two lines of lead until expanded). The panel is the same
- * one /text renders; its
- * parts appear in stages as the train arrives. Hide with E or Esc (remembered for this stay). The stop
- * buttons are StopNav's, at the column's foot whether it is open or not. A visually hidden status line announces each
- * scene once.
+ * one /text renders; its parts appear in stages as the train arrives. The Foreword's button swaps in the Inspirations
+ * in its place, until the visitor goes back, hides the column or leaves the stop. Hide with E or Esc (remembered for
+ * this stay). The stop buttons are StopNav's, at the column's foot whether it is open or not. A visually hidden status
+ * line announces each scene once.
  */
 export function SceneOverlay() {
   const overlay = useTrain((s) => s.overlay);
@@ -24,9 +25,9 @@ export function SceneOverlay() {
   const phase = useTrain((s) => s.scenePhase);
   const filmOn = useTrain((s) => s.filmOn);
   const monument = useTrain((s) => s.monument);
-  const setUi = useTrain((s) => s.setUi);
-  const actions = useMemo(() => ({ openDesign: () => setUi("design") }), [setUi]);
   const [expanded, setExpanded] = useState(false);
+  /** The stop whose column shows the Inspirations instead of its section, if any. */
+  const [inspoAt, setInspoAt] = useState<number | null>(null);
   const [status, setStatus] = useState("");
   const body = useRef<HTMLDivElement>(null);
   const aside = useRef<HTMLElement>(null);
@@ -35,6 +36,8 @@ export function SceneOverlay() {
 
   const open = overlay && !monument;
   const i = Math.min(Math.max(sceneIdx, 0), stations.length - 1);
+  const inspo = open && inspoAt === i;
+  const actions = useMemo(() => ({ showInspirations: () => setInspoAt(i), showForeword: () => setInspoAt(null) }), [i]);
 
   useEffect(() => {
     if (open) {
@@ -44,12 +47,13 @@ export function SceneOverlay() {
       aside.current?.focus({ preventScroll: true });
     } else {
       setExpanded(false);
+      setInspoAt(null);
       if (returnTo.current) {
         returnTo.current.focus({ preventScroll: true });
         returnTo.current = null;
       }
     }
-  }, [open, i]);
+  }, [open, i, inspo]);
 
   useEffect(() => {
     if ((phase === "establish" || (!filmOn && overlay)) && announced.current !== i) {
@@ -67,14 +71,14 @@ export function SceneOverlay() {
         ref={aside}
         className={`scene-ov${open ? " open" : ""}${expanded ? " expanded" : ""}`}
         data-stage={filmOn ? stage : 4}
-        aria-label={`${st.section} section`}
+        aria-label={inspo ? "Inspirations" : `${st.section} section`}
         aria-hidden={!open}
         tabIndex={-1}
       >
         <div className="col" data-panel>
           <div ref={body} className="col-body">
             <PanelActions value={actions}>
-              <PanelFor id={st.panel} code={st.code} />
+              {inspo ? <InspirationsPanel /> : <PanelFor id={st.panel} code={st.code} />}
             </PanelActions>
           </div>
           <div className="col-foot">
