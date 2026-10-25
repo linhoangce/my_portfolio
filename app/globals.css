@@ -405,7 +405,8 @@
     box-shadow: 0 0 0 6px rgb(var(--accent) / 0);
   }
 }
-.linemap .tip {
+.linemap .tip,
+.mon-events .tip {
   position: absolute;
   bottom: calc(100% + 10px);
   left: 50%;
@@ -757,35 +758,96 @@
   text-overflow: ellipsis;
 }
 
-.mon-card {
+/* a landmark's view, with no card: the way back where the stop buttons stand, and bottom centre the landmark's name
+   with the events' lights as stops along a line, straight on the scene like the line map */
+.mon-back {
   position: fixed;
-  right: 16px;
-  bottom: 72px;
-  z-index: 11;
-  width: min(400px, calc(100% - 32px));
-  padding: 20px;
-  border-radius: 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  left: 32px;
+  bottom: 16px;
+  z-index: 12;
 }
-.mon-card h2 {
-  margin: 0;
-  font-size: 30px;
-  line-height: 1.1;
-}
-.mon-card .row {
+.mon-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  z-index: 12;
+  transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
+  gap: 20px;
 }
-.hint-inline {
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: rgb(var(--muted));
+.mon-name {
+  margin: 0;
+  font-size: 26px;
+  line-height: 1;
+  white-space: nowrap;
+  color: #fff;
+  text-shadow:
+    0 1px 3px rgb(0 0 0 / 0.6),
+    0 0 14px rgb(0 0 0 / 0.35);
+}
+.mon-events {
+  position: relative;
+  display: flex;
+  gap: 6px;
+}
+.mon-events .rail {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  top: 50%;
+  height: 2px;
+  margin-top: -1px;
+  border-radius: 2px;
+  background: rgb(255 255 255 / 0.9);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.45);
+}
+.mon-events .ev {
+  position: relative;
+  width: 28px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  padding: 0;
+  background: none;
+}
+.mon-events .ev i {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.45);
+  transition: transform 0.2s;
+}
+.mon-events .ev:hover i {
+  transform: scale(1.2);
+}
+.mon-events .ev[aria-pressed="true"] i {
+  width: 20px;
+  height: 20px;
+  box-shadow:
+    0 0 0 4px rgb(255 255 255 / 0.35),
+    0 1px 3px rgb(0 0 0 / 0.45);
+}
+.mon-events .ev:hover .tip,
+.mon-events .ev:focus-visible .tip,
+.mon-events .ev[aria-pressed="true"] .tip {
+  opacity: 1;
+}
+/* the lit event's name gives way to the one under the pointer */
+.mon-events:hover .ev[aria-pressed="true"]:not(:hover) .tip {
+  opacity: 0;
+}
+/* on a narrower desktop, centred in the room between the way back and the chat button */
+@media (max-width: 1100px) {
+  .mon-bar {
+    left: 232px;
+    right: 80px;
+    transform: none;
+    justify-content: center;
+  }
 }
 .chips {
   display: flex;
@@ -1091,12 +1153,43 @@
   .cap .chip-c span {
     max-width: 140px;
   }
-  .mon-card {
+  /* a landmark's view: the way back and the events' line share the bottom row, the name stands above them */
+  .mon-back {
+    left: 12px;
+    bottom: calc(max(env(safe-area-inset-bottom), 8px) + 18px);
+    padding: 0 12px;
+  }
+  .mon-back .long {
+    display: none;
+  }
+  .mon-bar {
+    left: 12px;
+    right: 12px;
+    bottom: calc(max(env(safe-area-inset-bottom), 8px) + 18px);
+    flex-direction: column;
+    align-items: stretch;
+    gap: 40px;
+    pointer-events: none;
+  }
+  .mon-bar > * {
+    pointer-events: auto;
+  }
+  .mon-name {
+    align-self: center;
+    font-size: 24px;
+  }
+  .mon-events {
+    align-self: flex-end;
+    gap: 4px;
+  }
+  .mon-events .ev {
+    width: 26px;
+  }
+  /* the last stop sits at the screen's edge: its name hangs left of it */
+  .mon-events .ev:last-child .tip {
+    left: auto;
     right: 0;
-    bottom: 0;
-    width: 100%;
-    border-radius: 18px 18px 0 0;
-    padding-bottom: max(env(safe-area-inset-bottom), 16px);
+    transform: none;
   }
   .ask {
     left: 0;
@@ -1107,7 +1200,7 @@
     border-radius: 18px 18px 0 0;
   }
   /* the chat button stands above the stop buttons, and above Contact's links when they are up; it steps aside while a
-     scene's sheet or a landmark's card is up */
+     scene's sheet or a landmark's view is up */
   .ask-fab {
     right: 12px;
     bottom: calc(max(env(safe-area-inset-bottom), 8px) + 70px);
@@ -1118,7 +1211,7 @@
     bottom: calc(max(env(safe-area-inset-bottom), 8px) + 252px);
   }
   html:has(.scene-ov.open) .ask-fab,
-  html:has(.mon-card) .ask-fab {
+  html:has(.mon-bar) .ask-fab {
     display: none;
   }
   .map-credit {

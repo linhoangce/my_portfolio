@@ -9,7 +9,7 @@ import { landAcknowledgement } from "@/data";
 import { EVENT_IDS, EVENT_META, type EventId, SEASONS, WEATHERS } from "../lookTypes";
 import { MONUMENTS } from "../monumentData";
 import { useTrain } from "../store";
-import { eventSwatch } from "./MonumentCard";
+import { eventSwatch } from "./MonumentBar";
 import { MAP_SOURCES } from "../mapSources";
 
 const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
