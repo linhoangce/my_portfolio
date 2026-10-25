@@ -1,6 +1,5 @@
 "use client";
 
-import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useRef } from "react";
 
 import { stations } from "@/data";
@@ -8,14 +7,16 @@ import { stations } from "@/data";
 import { useTrain } from "../store";
 
 /**
- * The line as the navigation: ten stops as dots on a thin rail with the train's position on it, the current stop
- * marked, the next one pulsing, names in tooltips. Phones get a compact "‹ 03 · Awdon ›" stepper instead.
+ * The line as the navigation, bottom centre: ten stops as dots on a thin rail with the train's position on it, the
+ * current stop marked, the next one pulsing, names in tooltips. Not on phones (the stop buttons do the same there) or
+ * while a monument is open.
  */
 export function LineMap() {
   const dockedIdx = useTrain((s) => s.dockedIdx);
   const nextIdx = useTrain((s) => s.nextIdx);
   const sceneIdx = useTrain((s) => s.sceneIdx);
   const phase = useTrain((s) => s.scenePhase);
+  const monument = useTrain((s) => s.monument);
   const driveTo = useTrain((s) => s.driveTo);
   const marker = useRef<HTMLSpanElement>(null);
 
@@ -36,7 +37,7 @@ export function LineMap() {
     return () => window.clearInterval(id);
   }, []);
 
-  const shown = cur ?? nextIdx ?? 0;
+  if (monument) return null;
   return (
     <nav className="linemap" aria-label="Stops on the line">
       <ol>
@@ -60,18 +61,6 @@ export function LineMap() {
           </li>
         ))}
       </ol>
-      <div className="stepper">
-        <button type="button" className="btn btn-icon" aria-label="Previous stop" disabled={shown === 0} onClick={() => driveTo(shown - 1)}>
-          <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-        </button>
-        <span className="here" aria-live="polite">
-          {cur === null ? <b>Next</b> : <b>{stations[shown].code}</b>}
-          {stations[shown].section}
-        </span>
-        <button type="button" className="btn btn-icon" aria-label="Next stop" disabled={shown === stations.length - 1} onClick={() => driveTo(shown + 1)}>
-          <ChevronRight className="h-4 w-4" aria-hidden="true" />
-        </button>
-      </div>
     </nav>
   );
 }

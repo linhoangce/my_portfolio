@@ -1,18 +1,19 @@
 /**
- * The film director: turns an arrival into a scene. Three-free; Drive calls it inside the physics sub-steps, so it
- * runs on the same warped clock. The camera rig reads the phase and blends between its modes on its own.
+ * The scene director: turns an arrival into a scene, the station's section brought in over the view. Three-free; Drive
+ * calls it inside the physics sub-steps, so it runs on the same warped clock. The camera keeps its chase view
+ * throughout.
  *
  * Arm: the visitor is heading for a stop and is within ~1.6 s of the brake curve (50 units, 20 when slow), or sits
- * docked there, unless the visitor dismissed that stop's scene (Esc) and has not stopped anywhere else since. Cut: 0.28 s dip to black, the camera snaps under it. Establish: the
- * authored shot (a short push-in on the set) with the copy revealed in stages. Hold: orbit the set until the visitor
- * drives on. Exit: 1.2 s blend back to the chase; the stop just left cannot re-arm for 3 s, the next one can at once.
+ * docked there, unless the visitor dismissed that stop's scene (Esc) and has not stopped anywhere else since. Cut: a
+ * 0.28 s beat. Establish: the copy revealed in stages. Hold: all of it shown until the visitor drives on. Exit: 1.2 s
+ * for it to go; the stop just left cannot re-arm for 3 s, the next one can at once.
  */
 import { DOCK_DIST, DOCK_V } from "../constants";
 import { type TrainState, useTrain } from "../store";
 
-export const CUT_S = 0.28;
-export const SHOT_S = 4;
-export const EXIT_S = 1.2;
+const CUT_S = 0.28;
+const REVEAL_S = 4;
+const EXIT_S = 1.2;
 
 let plainDocked: number | null = null;
 
@@ -69,7 +70,7 @@ export function stepFilm(st: TrainState, dt: number): void {
   } else if (film.phase === "establish") {
     const T = film.t;
     st.setStage(quick ? 4 : T > 2.4 ? 4 : T > 1.7 ? 3 : T > 1.0 ? 2 : T > 0.5 ? 1 : 0);
-    if (T >= (quick ? 0.6 : SHOT_S)) st.setPhase("hold");
+    if (T >= (quick ? 0.6 : REVEAL_S)) st.setPhase("hold");
   } else if (film.phase === "hold") {
     // the opening hold, Waterfront's scene on first load, reveals everything at once
     if (st.introDone && st.sceneStage < 4) st.setStage(4);
@@ -78,7 +79,7 @@ export function stepFilm(st: TrainState, dt: number): void {
   }
 }
 
-/** Skip the rest of an establishing shot (any drag, zoom or key during it), keeping the camera where it is. */
+/** Show the rest of a scene's copy at once (any drag, zoom or orbit key while it is coming in). */
 export function skipToHold(st: TrainState): void {
   if (st.sim.film.phase !== "establish") return;
   st.setStage(4);

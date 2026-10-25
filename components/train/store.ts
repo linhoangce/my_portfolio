@@ -7,7 +7,7 @@ import { hasSidebar } from "./scene/copy";
 import { type EventId, LOOK_CYCLE, type Season, SEASONS, type Weather, WEATHERS, cycleNext } from "./lookTypes";
 import type { MonumentKey } from "./monumentData";
 
-/** idle → cut (dip to black) → establish (the authored shot) → hold (orbit the set) → exit (blend back to the chase). */
+/** idle → cut (a beat) → establish (the section's copy comes in by stages) → hold (all of it shown) → exit (it goes). */
 export type ScenePhase = "idle" | "cut" | "establish" | "hold" | "exit";
 export type Orbit = { yaw: number; pitch: number; zoom: number };
 export type UiPanel = null | "menu" | "help";
@@ -29,9 +29,8 @@ export type Sim = {
   /** The oncoming train. */
   s2: number;
   dwell2: number;
-  /** The visitor's view: around the chase angles (yaw unbounded), around a scene's set, around a monument. */
+  /** The visitor's view: around the chase angles (yaw unbounded), around a monument. */
   orbit: Orbit & { idle: number };
-  hold: Orbit;
   mon: Orbit;
   /** A/D or ←/→ held: −1, 0, 1. */
   held: number;
@@ -39,7 +38,7 @@ export type Sim = {
   /** The chase camera rides right of the train (1) unless a landmark is there (−1). */
   camSide: 1 | -1;
   camInit: boolean;
-  /** The film director's clock; the React-visible phase and stage are mirrored into the store on change. */
+  /** The scene director's clock; the React-visible phase and stage are mirrored into the store on change. */
   film: { phase: ScenePhase; idx: number; t: number; cooldown: number; startedAt: number };
   /** Simulated seconds per real second; the headless checks raise it, the physics is sub-stepped so it stays exact. */
   warp: number;
@@ -161,7 +160,6 @@ export const useTrain = create<TrainState>((set, get) => ({
     s2: 0,
     dwell2: 0,
     orbit: { yaw: 0, pitch: 0, zoom: 0, idle: 0 },
-    hold: { yaw: 0, pitch: 0, zoom: 0 },
     mon: { yaw: 0, pitch: 0.3, zoom: 0 },
     held: 0,
     dragging: false,
@@ -287,7 +285,6 @@ export const useTrain = create<TrainState>((set, get) => ({
   startScene: (i) => {
     const { sim } = get();
     sim.film = { phase: "cut", idx: i, t: 0, cooldown: 0, startedAt: performance.now() };
-    sim.hold.yaw = sim.hold.pitch = sim.hold.zoom = 0;
     set({ scenePhase: "cut", sceneIdx: i, sceneStage: 0, overlay: false });
   },
   setPhase: (phase) => {

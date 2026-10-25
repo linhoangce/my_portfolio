@@ -80,16 +80,14 @@ export const LOOP_V = 22;
 export const CAM = {
   lambda: 3.2,
   lambdaReduced: 14,
-  chase: { right: 11, up: 9.5, back: 30 },
-  chasePhone: { right: 13, up: 12, back: 44 },
   /**
-   * How far the chase view pulls back and up once the train is going: a broad view down on the line over the city
-   * round it, about 27 degrees down; a little less on low-end devices, where a wider view costs more than they have.
+   * The chase view, the same whether the train runs or stands at a stop: back, up and to the side of the lead car,
+   * about 20 degrees down onto it, looking `ahead` of it down the line so the view runs well out in front; a little
+   * closer on low-end devices, where a wider view costs more than they have.
    */
-  pull: { back: 95, up: 55 },
-  pullLite: { back: 65, up: 38 },
-  station: { right: 30, up: 13, ahead: 20 },
-  stationPhone: { right: 40, up: 17, ahead: 28 },
+  chase: { right: 11, up: 44, back: 120, ahead: 40 },
+  chaseLite: { right: 11, up: 35, back: 96, ahead: 32 },
+  chasePhone: { right: 13, up: 40, back: 112, ahead: 34 },
   cab: { up: 3.1, ahead: 4.4, look: 30 },
   /** How fast the chase view swings back behind the train after 3 s without input, once it is moving. */
   yawDecay: 0.6,

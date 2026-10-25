@@ -203,7 +203,7 @@ export function updateOncoming(sim: Sim, dt: number): void {
 const sameReadout = (a: Readout, b: Readout) =>
   a.kind === b.kind && (a.kind === "end" || b.kind === "end" || (a.idx === b.idx && (a.kind !== "next" || b.kind !== "next" || a.metres === b.metres)));
 
-/** The physics step, the film director on the same clock, and the UI-visible state derived from them (dock, readout, speed, next stop). */
+/** The physics step, the scene director on the same clock, and the UI-visible state derived from them (dock, readout, speed, next stop). */
 export function Drive() {
   const lastDistAt = useRef(0);
 

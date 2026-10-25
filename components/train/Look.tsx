@@ -35,7 +35,7 @@ export function Look() {
   useFrame((state, delta) => {
     const st = useTrain.getState();
     const dt = Math.min(delta, 0.05) * st.sim.warp;
-    // the automatic cycle holds still while a scene is cutting in or establishing
+    // the automatic cycle holds still while a scene's copy is coming in
     const filming = st.scenePhase === "cut" || st.scenePhase === "establish";
     if (st.autoLook && !filming) {
       autoT.current += dt;

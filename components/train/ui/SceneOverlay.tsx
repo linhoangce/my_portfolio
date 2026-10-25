@@ -9,9 +9,9 @@ import { stations } from "@/data";
 import { useTrain } from "../store";
 
 /**
- * The station's section as a film overlay: a left column on a gradient scrim on desktop, a bottom sheet on phones
+ * The station's section as an overlay: a left column on a gradient scrim on desktop, a bottom sheet on phones
  * (collapsed to the kicker, title and two lines of lead until expanded). The panel is the same one /text renders; its
- * parts appear in stages as the establishing shot plays. Hide with E or Esc (remembered for this stay). The stop
+ * parts appear in stages as the train arrives. Hide with E or Esc (remembered for this stay). The stop
  * buttons are StopNav's, at the column's foot whether it is open or not. A visually hidden status line announces each
  * scene once.
  */

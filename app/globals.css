@@ -18,7 +18,6 @@
     --accent: 167 139 250; /* #a78bfa */
     --accent-ink: 11 7 22; /* #0b0716 */
     --glass-a: 0.94;
-    --bar-a: 0.72;
     --shadow: 0 30px 80px -30px rgba(0, 0, 0, 0.9);
     --scrim: rgba(7, 10, 18, 0.3);
     color-scheme: dark;
@@ -36,7 +35,6 @@
     --accent: 91 63 209; /* #5b3fd1 */
     --accent-ink: 255 255 255;
     --glass-a: 0.93;
-    --bar-a: 0.8;
     --shadow: 0 30px 80px -40px rgba(20, 30, 60, 0.35);
     --scrim: rgba(243, 245, 249, 0.25);
     color-scheme: light;
@@ -55,8 +53,7 @@
       --accent: 91 63 209;
       --accent-ink: 255 255 255;
       --glass-a: 0.93;
-      --bar-a: 0.8;
-      --shadow: 0 30px 80px -40px rgba(20, 30, 60, 0.35);
+        --shadow: 0 30px 80px -40px rgba(20, 30, 60, 0.35);
       --scrim: rgba(243, 245, 249, 0.25);
       color-scheme: light;
     }
@@ -267,33 +264,44 @@
 }
 
 /* ------------------------------------------------------------------ the DOM shell over the canvas */
+/* no bar: the wordmark and the buttons stand on the scene, which takes the clicks between them */
 .top {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
-  z-index: 10;
+  z-index: 12;
   height: 64px;
   display: flex;
   align-items: center;
   gap: 14px;
   padding: 0 16px;
-  background: rgb(var(--bg) / var(--bar-a));
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid rgb(var(--border));
+  pointer-events: none;
 }
+.top > * {
+  pointer-events: auto;
+}
+/* the wordmark as a pill like the buttons beside it, so it reads over the scene */
 .brand {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
+  display: inline-flex;
+  align-items: center;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--border));
+  background: rgb(var(--surface));
   white-space: nowrap;
   color: rgb(var(--fg));
   text-decoration: none;
+  transition: border-color 0.15s;
+}
+.brand:hover {
+  border-color: rgb(var(--accent));
 }
 .brand .name {
   font-family: var(--font-serif), Georgia, serif;
-  font-size: 24px;
+  font-size: 22px;
+  line-height: 1;
 }
 .skip {
   position: absolute;
@@ -313,18 +321,26 @@
   transform: none;
 }
 
-/* the line map: ten stops on a rail, the train's position, the current stop ringed, the next one pulsing */
+/* the line map, bottom centre, as tall as the stop buttons beside it: ten stops on a rail, the train's position, the
+   current stop ringed, the next one pulsing. Centred on the screen where there is room, else moved right (and
+   narrowed) to stay clear of the stop buttons and the scene's column at its left and the map credit at its right */
 .linemap {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  justify-content: center;
+  --linemap-clear: max(417px, calc(min(440px, 38vw) + 16px));
+  position: fixed;
+  bottom: 16px;
+  left: max(calc(50% - 280px), var(--linemap-clear));
+  z-index: 12;
+  width: min(560px, calc(100% - var(--linemap-clear) - 200px));
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--border));
+  background: rgb(var(--surface) / var(--glass-a));
 }
 .linemap ol {
   position: relative;
   display: flex;
   justify-content: space-between;
-  width: min(560px, 100%);
+  width: 100%;
   margin: 0;
   padding: 0 4px;
   list-style: none;
@@ -350,9 +366,13 @@
   box-shadow: 0 0 10px rgb(var(--accent) / 0.8);
   transition: left 0.1s linear;
 }
+.linemap li {
+  flex: 0 1 32px;
+  min-width: 0;
+}
 .linemap .dot {
   position: relative;
-  width: 32px;
+  width: 100%;
   height: 32px;
   display: inline-flex;
   align-items: center;
@@ -397,7 +417,7 @@
 }
 .linemap .tip {
   position: absolute;
-  top: calc(100% + 6px);
+  bottom: calc(100% + 10px);
   left: 50%;
   transform: translateX(-50%);
   padding: 4px 9px;
@@ -417,26 +437,6 @@
 .linemap .dot:focus-visible .tip,
 .linemap .dot[aria-current="step"] .tip {
   opacity: 1;
-}
-.linemap .stepper {
-  display: none;
-  align-items: center;
-  gap: 4px;
-}
-.linemap .here {
-  font-size: 13px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 36vw;
-}
-.linemap .here b {
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  color: rgb(var(--accent));
-  margin-right: 6px;
-  font-weight: 500;
 }
 
 .menu {
@@ -513,38 +513,8 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  margin-left: auto;
   white-space: nowrap;
-}
-.drive {
-  position: fixed;
-  left: 50%;
-  bottom: 18px;
-  transform: translateX(-50%);
-  z-index: 9;
-  display: none;
-  gap: 10px;
-}
-.drive button {
-  height: 56px;
-  min-width: 120px;
-  padding: 0 20px;
-  border-radius: 999px;
-  border: 1px solid rgb(var(--border));
-  background: rgb(var(--surface) / var(--glass-a));
-  font-size: 15px;
-  font-weight: 600;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  touch-action: none;
-  user-select: none;
-  -webkit-user-select: none;
-}
-.drive button.go {
-  background: rgb(var(--accent));
-  color: rgb(var(--accent-ink));
-  border-color: rgb(var(--accent));
 }
 
 .keys {
@@ -566,60 +536,10 @@
   flex-wrap: wrap;
 }
 
-/* ------------------------------------------------------------------ film: letterbox, dip, the scene overlay */
-:root {
-  --bar-h: clamp(64px, 10vh, 110px);
-}
-.film-bar {
-  position: fixed;
-  left: 0;
-  right: 0;
-  z-index: 8;
-  height: 0;
-  background: #000;
-  pointer-events: none;
-  transition: height 0.7s cubic-bezier(0.2, 0.7, 0.2, 1);
-}
-.film-bar.t {
-  top: 0;
-}
-.film-bar.b {
-  bottom: 0;
-}
-html[data-film="on"] .film-bar {
-  height: var(--bar-h);
-}
-.film-dip {
-  position: fixed;
-  inset: 0;
-  z-index: 9;
-  background: #000;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.45s ease-out;
-}
-.film-dip.on {
-  opacity: 1;
-  transition: opacity 0.28s ease-in;
-}
-/* in film the top bar sits in the black band: no blur, no border, night tokens so it reads on black */
-html[data-film="on"] .top {
-  background: #000;
-  border-color: transparent;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  --fg: 234 239 247;
-  --fg-2: 213 220 232;
-  --muted: 154 167 187;
-  --surface: 15 21 34;
-  --border: 36 48 71;
-  --accent: 167 139 250;
-  --accent-ink: 11 7 22;
-  color: rgb(var(--fg));
-}
+/* ------------------------------------------------------------------ the scene overlay */
 .scene-ov {
   position: fixed;
-  top: 64px;
+  top: 0;
   bottom: 0;
   left: 0;
   z-index: 11;
@@ -637,16 +557,12 @@ html[data-film="on"] .top {
 .scene-ov:focus {
   outline: none;
 }
-/* in film the column sits between the letterbox bands */
-html[data-film="on"] .scene-ov {
-  top: var(--bar-h);
-  bottom: var(--bar-h);
-}
 .scene-ov .col {
   display: flex;
   flex-direction: column;
   width: min(440px, 38vw);
-  padding: 22px 0 16px 32px;
+  /* the scrim runs up to the top; the copy starts below the wordmark and the buttons */
+  padding: 86px 0 16px 32px;
   pointer-events: none;
 }
 .scene-ov.open .col {
@@ -679,9 +595,6 @@ html[data-film="on"] .scene-ov {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-}
-html[data-film="on"] .stop-nav {
-  bottom: calc(var(--bar-h) + 16px);
 }
 .stop-nav kbd {
   font-size: 11px;
@@ -798,13 +711,13 @@ html:has(.scene-ov.open) .ask {
   background: rgb(91 63 209 / 0.85);
   border-color: rgb(196 181 253);
 }
-/* on a phone, Contact's links sit in a grid along the bottom instead of on the signposts */
+/* on a phone, Contact's links sit in a grid along the bottom, above the stop buttons, instead of on the signposts */
 .caps.docked {
   inset: auto 0 0 0;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
-  padding: 12px 12px max(env(safe-area-inset-bottom), 14px);
+  padding: 12px 12px calc(max(env(safe-area-inset-bottom), 8px) + 70px);
   overflow: visible;
 }
 .caps.docked .cap {
@@ -823,9 +736,9 @@ html:has(.scene-ov.open) .ask {
   max-width: none;
   overflow-wrap: anywhere;
 }
-/* on a desktop whose view has crowded the signposts, the links line up in a row above the lower bar */
+/* on a desktop whose view has crowded the signposts, the links line up in a row above the line map */
 .caps.docked.wide {
-  inset: auto 0 calc(clamp(64px, 10vh, 110px) + 14px) 0;
+  inset: auto 0 96px 0;
   grid-template-columns: repeat(4, minmax(0, 210px));
   justify-content: center;
   padding: 0 16px;
@@ -1068,35 +981,26 @@ html:has(.scene-ov.open) .ask {
   .top .label {
     display: none;
   }
-  .linemap ol {
+  /* the stop buttons step along the line on a phone; the menu's scene settings are for wider screens */
+  .linemap,
+  .top [data-menu-toggle] {
     display: none;
   }
-  .linemap .stepper {
-    display: flex;
-    min-width: 0;
-  }
-  .linemap .stepper .btn-icon {
-    width: 26px;
-    height: 26px;
-    padding: 0;
-    flex: none;
-  }
-  .linemap .here {
-    max-width: 30vw;
-    font-size: 12px;
+  .brand {
+    height: 38px;
+    padding: 0 14px;
   }
   .brand .name {
-    font-size: 16px;
+    font-size: 20px;
   }
-  /* four round icon buttons on the right (Ask, the text version, day and night, the menu), small enough to leave the
-     stop's name room */
+  /* three round icon buttons on the right: Ask, the resume, day and night */
   .top .right {
-    gap: 5px;
+    gap: 8px;
   }
   .top .right .btn,
   .top .right .btn-primary {
-    width: 32px;
-    height: 32px;
+    width: 38px;
+    height: 38px;
     padding: 0;
   }
   .menu {
@@ -1111,16 +1015,6 @@ html:has(.scene-ov.open) .ask {
   .top .btn-primary {
     padding: 0 12px;
   }
-  .drive {
-    display: flex;
-    bottom: 84px;
-  }
-  :root {
-    --bar-h: 58px;
-  }
-  html[data-film="on"] .film-bar.b {
-    height: 0;
-  }
   /* the overlay becomes a bottom sheet: collapsed to the kicker, title, two lines of lead and the stop buttons */
   .scene-ov {
     top: auto;
@@ -1133,10 +1027,6 @@ html:has(.scene-ov.open) .ask {
   }
   .scene-ov.open {
     transform: none;
-  }
-  html[data-film="on"] .scene-ov {
-    top: auto;
-    bottom: 0;
   }
   .scene-ov .col {
     width: 100%;
@@ -1172,8 +1062,7 @@ html:has(.scene-ov.open) .ask {
     min-height: 0;
   }
   /* above the map's credit, which keeps the very bottom */
-  .stop-nav,
-  html[data-film="on"] .stop-nav {
+  .stop-nav {
     left: 12px;
     right: 12px;
     bottom: calc(max(env(safe-area-inset-bottom), 8px) + 18px);
@@ -1192,9 +1081,6 @@ html:has(.scene-ov.open) .ask {
   .scene-ov .col-foot .btn-primary {
     height: 40px;
     padding: 0 12px;
-  }
-  html[data-scene="hold"] .drive {
-    display: none;
   }
   .cap .chip-c b {
     font-size: 16px;
@@ -1221,8 +1107,6 @@ html:has(.scene-ov.open) .ask {
 @media (prefers-reduced-motion: reduce) {
   .scene-ov,
   .scene-ov .panel > *,
-  .film-bar,
-  .film-dip,
   .ask {
     transition: none;
   }
