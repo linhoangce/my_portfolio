@@ -74,9 +74,9 @@ export type LoopEnd = "near" | "far";
 /**
  * A balloon loop at one end of the line, level at the end's deck height: out on one track, back on the other. With an
  * approach, `approach` is its centreline's frames from the line's end to where its two tracks part, and `split` how
- * far along the loop the outbound track leaves it (the inbound rejoins as far from the loop's end).
+ * far along the loop the outbound track leaves it and the inbound one rejoins it.
  */
-export type Loop = { end: LoopEnd; curve: CatmullRomCurve3; L: number; samples: Frame[]; approach?: Frame[]; split?: number };
+export type Loop = { end: LoopEnd; curve: CatmullRomCurve3; L: number; samples: Frame[]; approach?: Frame[]; split?: [number, number] };
 
 type P2 = [number, number];
 const right2 = ([x, z]: P2): P2 => [-z, x];
@@ -88,7 +88,8 @@ const right2 = ([x, z]: P2): P2 => [-z, x];
  * With an approach (`split`, `turn`), the two tracks run on together first, side by side: round a curve of radius
  * `turn` from the line's end (leaving as the line does) until they head for the circle's centre, straight on to
  * `split` short of the circle, and only part there, the outbound one to the circle's right side and the inbound one
- * from its left (so they never cross); without, each neck runs from the end on its own.
+ * from its left (so they never cross), each on one arc that meets the circle tangent to it, curving the other way;
+ * without, each neck runs from the end on its own.
  */
 function buildLoop(end: LoopEnd, R: number, alpha: number, centre?: P2, neck = 26, split?: number, turn = 18): Loop {
   const e = frameAt(end === "far" ? LEN : 0, makeFrame());
@@ -138,9 +139,18 @@ function buildLoop(end: LoopEnd, R: number, alpha: number, centre?: P2, neck = 2
   const rg = right2(g);
   const ca = Math.cos(alpha);
   const sa = Math.sin(alpha);
-  // radial directions of the two joins: the right and left sides of the circle (seen from the end), turned back by alpha
-  const nIn: P2 = [rg[0] * ca - g[0] * sa, rg[1] * ca - g[1] * sa];
-  const nOut: P2 = [-rg[0] * ca - g[0] * sa, -rg[1] * ca - g[1] * sa];
+  // radial directions of the two joins: the right and left sides of the circle (seen from the end), turned back by
+  // alpha; after an approach, where each track's arc out of it touches the circle: the arc's centre Q is beside its
+  // track at the parting, as far out as its radius, and touches the circle when |Q - C| = R + bend
+  const bend = split === undefined ? 0 : ((R + split) ** 2 + LANE ** 2 - R ** 2) / (2 * (R - LANE));
+  const Q = (side: number): P2 => [F[0] + rg[0] * side * (LANE + bend), F[1] + rg[1] * side * (LANE + bend)];
+  const towards = (side: number): P2 => {
+    const q = Q(side);
+    const d = Math.hypot(q[0] - C[0], q[1] - C[1]);
+    return [(q[0] - C[0]) / d, (q[1] - C[1]) / d];
+  };
+  const nIn: P2 = approach.length ? towards(1) : [rg[0] * ca - g[0] * sa, rg[1] * ca - g[1] * sa];
+  const nOut: P2 = approach.length ? towards(-1) : [-rg[0] * ca - g[0] * sa, -rg[1] * ca - g[1] * sa];
   const Pin: P2 = [C[0] + R * nIn[0], C[1] + R * nIn[1]];
   const Pout: P2 = [C[0] + R * nOut[0], C[1] + R * nOut[1]];
   // travelling round with the centre on the left, the heading at radial direction n is (n.z, -n.x)
@@ -163,11 +173,23 @@ function buildLoop(end: LoopEnd, R: number, alpha: number, centre?: P2, neck = 2
       ]);
     }
   };
+  // an arc out of the approach, the track on `side` of it from where they part to the circle (its points every unit
+  // or so, the last short of the circle)
+  const branch = (side: number): P2[] => {
+    const q = Q(side);
+    const s0 = Math.atan2(-rg[1] * side, -rg[0] * side);
+    const s1 = Math.atan2(C[1] - q[1], C[0] - q[0]);
+    let sw = s1 - s0;
+    while (sw > Math.PI) sw -= Math.PI * 2;
+    while (sw < -Math.PI) sw += Math.PI * 2;
+    const k = Math.ceil(Math.abs(sw) * bend);
+    return Array.from({ length: k }, (_, i): P2 => [q[0] + bend * Math.cos(s0 + (sw * i) / k), q[1] + bend * Math.sin(s0 + (sw * i) / k)]);
+  };
   // the tracks either side of the approach
   const beside = (a: { p: P2; h: P2 }, lat: number): P2 => [a.p[0] + right2(a.h)[0] * lat, a.p[1] + right2(a.h)[1] * lat];
   if (approach.length) {
     for (let i = 0; i < approach.length - 1; i++) pts.push(beside(approach[i], LANE));
-    bezier(beside(approach[approach.length - 1], LANE), g, Pin, head(nIn));
+    pts.push(...branch(1));
   } else bezier(Ein, o, Pin, head(nIn));
   const a0 = Math.atan2(nIn[1], nIn[0]);
   let sweep = a0 - Math.atan2(nOut[1], nOut[0]);
@@ -178,7 +200,8 @@ function buildLoop(end: LoopEnd, R: number, alpha: number, centre?: P2, neck = 2
     pts.push([C[0] + R * Math.cos(a), C[1] + R * Math.sin(a)]);
   }
   if (approach.length) {
-    bezier(Pout, head(nOut), beside(approach[approach.length - 1], -LANE), [-g[0], -g[1]]);
+    // the inbound's arc, run from the circle back to where the tracks part
+    pts.push(Pout, ...branch(-1).reverse().slice(0, -1));
     for (let i = approach.length - 1; i >= 0; i--) pts.push(beside(approach[i], -LANE));
   } else {
     bezier(Pout, head(nOut), Eout, [-o[0], -o[1]]);
@@ -201,8 +224,8 @@ function buildLoop(end: LoopEnd, R: number, alpha: number, centre?: P2, neck = 2
     list.push(f);
   }
   if (!approach.length) return { end, curve, L, samples: list };
-  // the approach's frames, and how far along the loop its tracks part (its points are close: their chords are its
-  // length); the inbound rejoins it as far from the loop's end, the approach's two tracks being about as long
+  // the approach's frames, and how far along the loop its tracks part and rejoin (its points are close: their chords
+  // are its length)
   const frames = approach.map(({ p, h }) => {
     const f = makeFrame();
     f.p.set(p[0], e.p.y, p[1]);
@@ -210,9 +233,13 @@ function buildLoop(end: LoopEnd, R: number, alpha: number, centre?: P2, neck = 2
     f.r.crossVectors(f.t, UP).normalize();
     return f;
   });
-  let parts = 0;
-  for (let i = 1; i < approach.length; i++) parts += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
-  return { end, curve, L, samples: list, approach: frames, split: parts };
+  const chord = (i0: number, i1: number) => {
+    let c = 0;
+    for (let i = i0 + 1; i <= i1; i++) c += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+    return c;
+  };
+  const tail = pts.length - approach.length;
+  return { end, curve, L, samples: list, approach: frames, split: [chord(0, approach.length - 1), L - chord(tail, pts.length - 1)] };
 }
 
 /** West of Waterfront the loop swings north over Burrard Inlet; east of Patterson it runs straight on over Central Park. */
@@ -220,7 +247,7 @@ function buildLoop(end: LoopEnd, R: number, alpha: number, centre?: P2, neck = 2
  * The loop at Waterfront's end: its circle's centre and radius (a second track runs inside it, Guideway.tsx), how far
  * short of the circle the approach's tracks part, and the radius the approach turns on.
  */
-export const NEAR_LOOP = { c: [82, -34] as [number, number], r: 16, split: 8, turn: 18 };
+export const NEAR_LOOP = { c: [82, -34] as [number, number], r: 16, split: 13, turn: 18 };
 export const LOOPS: Record<LoopEnd, Loop> = {
   near: buildLoop("near", NEAR_LOOP.r, 0.6, NEAR_LOOP.c, 26, NEAR_LOOP.split, NEAR_LOOP.turn),
   far: buildLoop("far", 17, 0.7),

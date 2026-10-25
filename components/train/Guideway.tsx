@@ -64,6 +64,15 @@ const mergeAll = (geos: BufferGeometry[]): BufferGeometry => {
 
 export const mirror = (profile: [number, number][]): [number, number][] => profile.map(([l, v]) => [-l, v] as [number, number]).reverse();
 
+/**
+ * A track's ease off another, from 0 to 1 as u runs 0 to 1: two arcs of one radius, one each way, so it bends no
+ * tighter than it must to stand that far out over that run.
+ */
+const ease = (u: number): number => {
+  const v = Math.min(1, Math.max(0, u));
+  return v < 0.5 ? 2 * v * v : 1 - 2 * (1 - v) * (1 - v);
+};
+
 /** The guideway's cross-sections (lateral, up from the rails' base), shared with the line beyond the loop (Extension.tsx). */
 export const SOFFIT: [number, number][] = [
   [-3, -1.9],
@@ -96,6 +105,19 @@ export const HEDGE: [number, number][] = [
   [6.85, 2.12],
   [6.36, 1.85],
   [6.4, 1.5],
+];
+/** The guideway's sides where a loop's two tracks part, each the outer side of its own girder (SOFFIT's points, in order). */
+const PARTED: [number, number][] = [
+  [-(LANE + 1.6), -1.6],
+  [LANE + 1.6, -1.6],
+  [LANE + 2.9, -1.0],
+  [LANE + 3.5, -0.3],
+  [LANE + 3.6, 0.9],
+  [LANE + 3.6, 0.95],
+  [-(LANE + 3.6), 0.95],
+  [-(LANE + 3.6), 0.9],
+  [-(LANE + 3.5), -0.3],
+  [-(LANE + 2.9), -1.0],
 ];
 export const LED_STRIP: [number, number][] = [
   [6.13, -0.62],
@@ -263,18 +285,48 @@ export function Guideway() {
       const stop0 = loop.L / 2 - 14;
       const stop1 = loop.L / 2 + 14;
       // at Waterfront the loop is double-tracked round its circle: a layover track inside the running one, where a
-      // train waits out of service; its deck widens inward to carry it
+      // train waits out of service, easing away from it and back over the circle's two halves (so it bends about
+      // as tightly all the way round); its deck widens inward to carry it
       const [lcx, lcz] = NEAR_LOOP.c;
-      const onArc = loop.end === "near" ? fr.map((f) => Math.abs(Math.hypot(f.p.x - lcx, f.p.z - lcz) - NEAR_LOOP.r) < 0.8) : [];
+      const onArc = loop.end === "near" ? fr.map((f) => Math.abs(Math.hypot(f.p.x - lcx, f.p.z - lcz) - NEAR_LOOP.r) < 0.1) : [];
       const a0 = onArc.indexOf(true);
       const a1 = onArc.lastIndexOf(true);
       const arc = a0 >= 0 && a1 - a0 > 20 ? fr.slice(a0, a1 + 1) : [];
+      const LAY = 5.6;
+      const layAt = (k: number) => LAY * smoothstep01(Math.min(tOf(a0 + k) - tOf(a0), tOf(a1) - tOf(a0 + k)) / ((tOf(a1) - tOf(a0)) / 2));
+      // the deck's inner edge on the circle
+      const edge = arc.map((_, k) => 3.6 + (LAY + 0.1) * (layAt(k) / LAY));
       // where the loop's own single-track girders begin: at Waterfront where the approach's two tracks part (the
-      // approach is a deck of its own, below), elsewhere at the line's end, the inner parapets where the necks part
-      const part = loop.split ?? 0;
-      const own = loop.approach ? between(part, loop.L - part) : fr;
-      const inner = loop.approach ? part + 12 : 24;
-      const innerRuns = arc.length ? [between(inner, tOf(a0)), between(tOf(a1), loop.L - inner)] : [between(inner, loop.L - inner)];
+      // approach is a deck of its own, below), elsewhere at the line's end
+      const [part, rejoin] = loop.split ?? [0, loop.L];
+      const A = loop.approach;
+      // the loop's frame at t along it
+      const at = (t: number): Frame => {
+        const f = makeFrame();
+        loop.curve.getPointAt(t / loop.L, f.p);
+        loop.curve.getTangentAt(t / loop.L, f.t).normalize();
+        f.r.crossVectors(f.t, UP).normalize();
+        return f;
+      };
+      // the girders, at Waterfront ending exactly where the approach's deck does
+      const own = A ? [at(part), ...between(part + 0.01, rejoin - 0.01), at(rejoin)] : fr;
+      // their inner parapets: at Waterfront from where the two girders' inner edges cross, meeting there in a point,
+      // round the circle along its widened edge; elsewhere from where the necks have parted
+      let inner: Frame[] = between(24, loop.L - 24);
+      let innerEdge: (k: number) => number = () => 3.6;
+      if (A) {
+        const S = A[A.length - 1];
+        const across = (f: Frame) => (f.p.x - 3.6 * f.r.x - S.p.x) * S.r.x + (f.p.z - 3.6 * f.r.z - S.p.z) * S.r.z;
+        const i0 = fr.findIndex((f, i) => tOf(i) >= part && across(f) >= 0);
+        const i1 = fr.findLastIndex((f, i) => tOf(i) <= rejoin && across(f) <= 0);
+        // the nose's own point first and last, where the two edges meet
+        const nose = (i: number, j: number): Frame => {
+          const u = across(fr[j]) / (across(fr[j]) - across(fr[i]));
+          return { p: fr[j].p.clone().lerp(fr[i].p, u), t: fr[j].t, r: fr[j].r };
+        };
+        inner = [nose(i0, i0 - 1), ...fr.slice(i0, i1 + 1), nose(i1, i1 + 1)];
+        innerEdge = (k: number) => (arc.length && k - 1 + i0 >= a0 && k - 1 + i0 <= a1 ? edge[k - 1 + i0 - a0] : 3.6);
+      }
       loopDeck.push(
         ribbon(
           [
@@ -300,53 +352,33 @@ export function Guideway() {
           ],
           own,
         ),
-        ...innerRuns
-          .filter((r) => r.length > 1)
-          .map((r) =>
-            ribbon(
-              mirror([
-                [3.32, 0.95],
-                [3.6, 0.95],
-                [3.6, 1.75],
-                [3.32, 1.75],
-              ]),
-              r,
-            ),
-          ),
+        ribbon(
+          (k) =>
+            mirror([
+              [innerEdge(k) - 0.28, 0.95],
+              [innerEdge(k), 0.95],
+              [innerEdge(k), 1.75],
+              [innerEdge(k) - 0.28, 1.75],
+            ]),
+          inner,
+        ),
       );
       if (arc.length) {
-        const LAY = 5.6;
-        // the widened deck, its new inner parapet and bed
+        // the widened deck and its bed (its parapet is the girder's inner one, above)
         loopDeck.push(
           ribbon(
-            [
-              [-9.3, -1.0],
+            (k) => [
+              [-edge[k], -1.0],
               [-3.4, -1.0],
               [-3.4, 0.94],
-              [-9.3, 0.94],
-            ],
-            arc,
-          ),
-          ribbon(
-            [
-              [-9.3, 0.95],
-              [-9.02, 0.95],
-              [-9.02, 1.75],
-              [-9.3, 1.75],
+              [-edge[k], 0.94],
             ],
             arc,
           ),
         );
-        loopBed.push(ribbon([[-3.3, 0.955], [-9.02, 0.955]], arc, false));
-        // the layover track: off the running line at one end of the circle, back onto it at the other
-        const t0 = tOf(a0);
-        const t1 = tOf(a1);
-        const lay = arc.map((f, k): Frame => {
-          const t = tOf(a0 + k);
-          const u = Math.min(1, (t - t0) / 16, (t1 - t) / 16);
-          const lat = -LAY * smoothstep01(Math.max(0, u));
-          return { p: f.p.clone().addScaledVector(f.r, lat), t: f.t, r: f.r };
-        });
+        loopBed.push(ribbon((k) => [[-3.3, 0.955], [-(edge[k] - 0.28), 0.955]], arc, false));
+        // the layover track: off the running line where the circle begins, back onto it where it ends
+        const lay = arc.map((f, k): Frame => ({ p: f.p.clone().addScaledVector(f.r, -layAt(k)), t: f.t, r: f.r }));
         loopSleepers.push(ribbon([[1.3, 0.96], [-1.3, 0.96]], lay, false, 0.65));
         for (const side of [-1, 1]) {
           const pts = lay.map((f) => f.p.clone().addScaledVector(f.r, side * 0.72).addScaledVector(UP, 0.98));
@@ -355,27 +387,43 @@ export function Guideway() {
         // the train standing on it, at the middle of the circle
         park(lay);
       }
-      if (loop.approach) {
+      if (A) {
         // the approach: the line's deck carried on round the curve from its end to where its tracks part, the
         // running tracks side by side down its middle; on the curve's inside a passing siding, off the inner running
         // track by a switch at the line's end and back on by one where the tracks part (three tracks abreast
         // between), a spare train standing on it; the deck widens on that side as it stands out (the curve's outside
-        // keeps clear of the blocks there), on round columns of its own
-        const A = loop.approach;
+        // keeps clear of the blocks there), on round columns of its own. The siding eases out over the whole curve,
+        // so it bends about as tightly all the way round it, and back in on the straight.
         const cum = [0];
         for (let k = 1; k < A.length; k++) cum.push(cum[k - 1] + A[k].p.distanceTo(A[k - 1].p));
         const La = cum[cum.length - 1];
         const SIDING = 8.2;
-        const EASE = 13;
+        const EASE = 19;
         // the inside: the way the curve bends from its start
         const mid = A[Math.floor(A.length / 2)];
         const inside = Math.sign((mid.p.x - A[0].p.x) * A[0].r.x + (mid.p.z - A[0].p.z) * A[0].r.z) || -1;
-        const away = cum.map((c) => smoothstep01(Math.min(c / EASE, (La - c) / EASE)));
-        const W = away.map((u) => 6.3 + (SIDING - LANE) * u);
+        // where the curve ends: the first frame heading as the last does
+        const bent = cum[A.findIndex((f) => f.t.dot(A[A.length - 1].t) > 0.99999)];
+        const away = cum.map((c) => Math.min(smoothstep01(c / bent), ease((La - c) / EASE)));
+        // the deck's edges: the line's where it leaves the line's end, the girders' outer ones (LANE + 3.6) where its
+        // tracks part, the inside standing out with the siding; toward the parting its sides take the girders' shape
+        // too (PARTED), so the one runs on into the other
+        const parting = cum.map((c) => ease(1 - (La - c) / EASE));
+        const V = parting.map((u) => 6.3 - (6.3 - LANE - 3.6) * u);
+        const W = away.map((u, k) => V[k] + (SIDING - LANE) * u);
+        const edgeOf = (l: number, k: number) => (Math.sign(l) === inside ? W[k] : V[k]);
         // the line's own sections, the inside pushed out to the widened edge
-        const out = (prof: [number, number][], k: number): [number, number][] => prof.map(([l, v]) => [Math.sign(l) === inside ? l + inside * (W[k] - 6.3) : l, v]);
+        const out = (prof: [number, number][], k: number): [number, number][] => prof.map(([l, v]) => [l + Math.sign(l) * (edgeOf(l, k) - 6.3), v]);
         loopDeck.push(
-          ribbon((k) => SOFFIT.map(([l, v]): [number, number] => [Math.sign(l) === inside ? (l * W[k]) / 6.3 : l, v]), A),
+          ribbon(
+            (k) =>
+              SOFFIT.map(([l, v], j): [number, number] => {
+                const [gl, gv] = PARTED[j];
+                const a = (l * edgeOf(l, k)) / 6.3;
+                return [a + (gl - a) * parting[k], v + (gv - v) * parting[k]];
+              }),
+            A,
+          ),
           ribbon((k) => out(PARAPET, k), A),
           ribbon((k) => out(mirror(PARAPET), k), A),
         );
@@ -384,15 +432,17 @@ export function Guideway() {
           ribbon((k) => out(mirror(TROUGH), k), A),
         );
         loopHedges.push(ribbon((k) => out(HEDGE, k), A, false, 1.6), ribbon((k) => out(mirror(HEDGE), k), A, false, 1.6));
+        // the LED lines step in onto the girders' sides
+        const led = (prof: [number, number][], k: number): [number, number][] => out(prof, k).map(([l, v]) => [l - Math.sign(l) * (6.13 - 0.1 - LANE - 3.28) * parting[k], v]);
         loopLeds.push(
-          ribbon((k) => out(LED_STRIP, k), A),
-          ribbon((k) => out(mirror(LED_STRIP), k), A),
+          ribbon((k) => led(LED_STRIP, k), A),
+          ribbon((k) => led(mirror(LED_STRIP), k), A),
         );
         loopBed.push(
           ribbon(
             (k) => [
-              [inside > 0 ? W[k] - 0.28 : 6.02, 0.955],
-              [inside < 0 ? -(W[k] - 0.28) : -6.02, 0.955],
+              [edgeOf(1, k) - 0.28, 0.955],
+              [-(edgeOf(-1, k) - 0.28), 0.955],
             ],
             A,
             false,
@@ -427,10 +477,9 @@ export function Guideway() {
             const pts = path.map((f) => f.p.clone().addScaledVector(f.r, rail * 0.72).addScaledVector(UP, 0.98));
             tubes.push(new TubeGeometry(new CatmullRomCurve3(pts, false, "catmullrom", 0), Math.ceil(pts.length * (lowEnd ? 0.7 : 1.4)), 0.07, 4, false));
           }
-          // the spare train toward the far end, where the siding runs straight, its last car short of the switch
-          let len = 0;
-          for (let k = 1; k < path.length; k++) len += path[k].p.distanceTo(path[k - 1].p);
-          park(path, len - EASE - 1.5 * (CAR + GAP));
+          // the spare train in the middle of where the siding stands clear of the running track (two thirds out)
+          const clear = cum.filter((_, k) => away[k] >= 2 / 3);
+          park(path, (clear[0] + clear[clear.length - 1]) / 2 - cum[away.findIndex((u) => u > 0)]);
         }
         // round columns every 14 units, a second under the siding where it stands out, none on a street or the other
         // rail
@@ -457,7 +506,7 @@ export function Guideway() {
         [4.7, 1.55],
         [3.6, 1.55],
       ];
-      const planted = [between(part, stop0), between(stop1, loop.L - part)];
+      const planted = A ? [[at(part), ...between(part + 0.01, stop0)], [...between(stop1, rejoin - 0.01), at(rejoin)]] : [between(0, stop0), between(stop1, loop.L)];
       loopPlanters.push(...planted.map((r) => ribbon(trough, r)));
       const loopHedge: [number, number][] = [
         [4.6, 1.5],
@@ -496,7 +545,7 @@ export function Guideway() {
         tubes.push(new TubeGeometry(new CatmullRomCurve3(pts, false, "catmullrom", 0), Math.ceil(loop.L / (lowEnd ? 3 : 1.5)), 0.07, 4, false));
       }
       // round columns every 16 units, down to the ground or the seabed
-      for (let t = part + 8; t < loop.L - part - 4; t += 16) {
+      for (let t = part + 8; t < rejoin - 4; t += 16) {
         const f = fr[Math.round((t / loop.L) * (n - 1))];
         const gy = groundAt(f.p.x, f.p.z);
         const h = f.p.y - 1.6 - gy;
