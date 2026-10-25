@@ -98,6 +98,13 @@ export function noseSection(style: CarStyle, u: number): { cy: number; hx: numbe
   return { cy: style.section.cy + s.dy, hx: style.section.a * s.sx, hy: style.section.b * s.sy };
 }
 
+/**
+ * Half the distance between a car's bogies, which ride on the rails while the rigid body spans between them: at this
+ * spacing a car on a curve of radius R hangs as far inside it at its middle as outside it at its ends (each len² / 16R),
+ * the least it can overhang either way.
+ */
+export const bogieSpacing = (len: number) => len / (2 * Math.SQRT2);
+
 export type CarGeometry = { body: BufferGeometry; glass: BufferGeometry; line: BufferGeometry };
 
 /** The body's texture coordinates run in world units: round the section (about its perimeter) and along the car. */

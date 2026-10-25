@@ -378,9 +378,9 @@ function paintPerson(g: CanvasRenderingContext2D, k: number): void {
 
 /**
  * The panoramic glass, smoked: by day near-black with a faint sky sheen along the top and slim pillars between the
- * panes (the material's reflections do the rest); at night, through the tint, a bright ceiling light line over a dim
- * warm cabin, passengers' heads and shoulders in shadow against it. The top rows stay dark, day and night: a nose's
- * canopy (trainGeometry.ts) takes its colour from there.
+ * panes (the material's reflections do the rest); at night the cabin lit up behind it, a bright ceiling light line
+ * over warm white light, passengers' heads and shoulders in shadow against it. The top rows stay dark, day and night:
+ * a nose's canopy (trainGeometry.ts) takes its colour from there.
  */
 export function interiorTextures(): { map: CanvasTexture; emissiveMap: CanvasTexture } {
   const W = 512;
@@ -397,8 +397,8 @@ export function interiorTextures(): { map: CanvasTexture; emissiveMap: CanvasTex
   h.fillStyle = "#fff3df";
   h.fillRect(0, 9, W, 3);
   const lg = h.createLinearGradient(0, 12, 0, H);
-  lg.addColorStop(0, "rgba(255,238,214,0.5)");
-  lg.addColorStop(1, "rgba(255,226,196,0.26)");
+  lg.addColorStop(0, "rgba(255,240,220,0.95)");
+  lg.addColorStop(1, "rgba(255,228,196,0.7)");
   h.fillStyle = lg;
   h.fillRect(0, 12, W, H - 16);
   let seed = 7;

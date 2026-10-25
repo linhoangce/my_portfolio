@@ -11,7 +11,7 @@ import { inRailCut } from "./rail";
 import { isRoad } from "./roadNetwork";
 import { paint } from "./shapes";
 import { CROSSOVERS, EXT_JOIN, frameAt, type Frame, groundAt, LEN, LOOPS, makeFrame, NEAR_LOOP, SAMPLES, samples, smoothstep01, stationS, UP } from "./track";
-import { carGeometry } from "./trainGeometry";
+import { bogieSpacing, carGeometry } from "./trainGeometry";
 import { useWorld } from "./world";
 import { nearWce } from "./wce";
 
@@ -323,25 +323,40 @@ export function Guideway() {
           const pts = lay.map((f) => f.p.clone().addScaledVector(f.r, side * 0.72).addScaledVector(UP, 0.98));
           tubes.push(new TubeGeometry(new CatmullRomCurve3(pts, false, "catmullrom", 0), Math.ceil(pts.length * (lowEnd ? 0.7 : 1.4)), 0.07, 4, false));
         }
-        // the train standing on it, at the middle of the circle
-        const mid = Math.round(lay.length / 2);
-        const step = Math.max(1, Math.round(((CAR + GAP) / (t1 - t0)) * lay.length));
-        const geo = carGeometry(CAR, true, false, lowEnd ? 14 : 22, EXPO);
+        // the train standing on it round the circle's middle: three cars, each on its two bogies, spaced along this
+        // track itself (inside the circle, it is shorter than the running line), the end cars' noses outward
+        const along: number[] = [0];
+        for (let k = 1; k < lay.length; k++) along.push(along[k - 1] + lay[k].p.distanceTo(lay[k - 1].p));
+        const pointOn = (d: number, out: Vector3) => {
+          let k = 1;
+          while (k < lay.length - 1 && along[k] < d) k++;
+          const u = Math.min(1, Math.max(0, (d - along[k - 1]) / (along[k] - along[k - 1] || 1)));
+          return out.copy(lay[k - 1].p).lerp(lay[k].p, u);
+        };
+        const bogie = bogieSpacing(CAR);
+        const end = carGeometry(CAR, true, false, lowEnd ? 14 : 22, EXPO);
+        const middle = carGeometry(CAR, false, false, lowEnd ? 14 : 22, EXPO);
         const dummy = new Object3D();
+        const fore = new Vector3();
+        const aft = new Vector3();
         for (let k = -1; k <= 1; k++) {
-          const f = lay[Math.min(lay.length - 1, Math.max(0, mid + k * step))];
-          dummy.position.copy(f.p).addScaledVector(UP, 0.98);
-          dummy.lookAt(dummy.position.clone().add(f.t));
-          // the end cars face outward, so the set wears a nose at each end
-          if (k === 1) dummy.rotateY(Math.PI);
+          const d = along[along.length - 1] / 2 + k * (CAR + GAP);
+          pointOn(d + bogie, fore);
+          pointOn(d - bogie, aft);
+          dummy.position.copy(fore).add(aft).multiplyScalar(0.5).addScaledVector(UP, 0.98);
+          // the lead car's nose on along the track, the last car's back the way it came
+          dummy.lookAt(dummy.position.clone().add(k < 0 ? aft.clone().sub(fore) : fore.clone().sub(aft)));
           dummy.updateMatrix();
+          const geo = k === 0 ? middle : end;
           layover.body.push(geo.body.clone().applyMatrix4(dummy.matrix));
           layover.glass.push(geo.glass.clone().applyMatrix4(dummy.matrix));
           layover.line.push(geo.line.clone().applyMatrix4(dummy.matrix));
         }
-        geo.body.dispose();
-        geo.glass.dispose();
-        geo.line.dispose();
+        for (const geo of [end, middle]) {
+          geo.body.dispose();
+          geo.glass.dispose();
+          geo.line.dispose();
+        }
       }
       const trough: [number, number][] = [
         [3.6, 0.7],
