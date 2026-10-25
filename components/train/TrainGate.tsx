@@ -18,7 +18,6 @@ import { LoadBar } from "./ui/LoadBar";
 import { Help, Menu } from "./ui/Menu";
 import { MonumentBar } from "./ui/MonumentBar";
 import { Readout } from "./ui/Readout";
-import { MapCredit } from "./ui/MapCredit";
 import { SceneCaptions } from "./ui/SceneCaptions";
 import { SceneOverlay } from "./ui/SceneOverlay";
 import { StopNav } from "./ui/StopNav";
@@ -136,7 +135,6 @@ export function TrainGate() {
       <TopBar />
       <LoadBar />
       <Readout />
-      <MapCredit />
       <SceneCaptions />
       <SceneOverlay />
       <StopNav />

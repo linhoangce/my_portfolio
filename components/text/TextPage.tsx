@@ -3,11 +3,10 @@ import { Fragment } from "react";
 
 import { PanelFor } from "@/components/panels";
 import { InspirationsPanel } from "@/components/panels/InspirationsPanel";
-import { contact, landAcknowledgement, person, stations } from "@/data";
+import { contact, person, stations } from "@/data";
 
 import { Reveal } from "./Reveal";
 import { TextNav } from "./TextNav";
-import { MAP_SOURCES } from "@/components/train/mapSources";
 
 /**
  * The whole line as one readable page. Server-rendered, no three.js.
@@ -58,20 +57,6 @@ export function TextPage() {
       </main>
 
       <footer className="mx-auto flex max-w-[720px] flex-wrap items-center justify-between gap-3 px-4 pb-12 text-sm text-muted sm:px-6">
-        <p className="w-full text-xs">{landAcknowledgement}</p>
-        <p className="w-full text-xs">
-          The 3D ride&apos;s map:{" "}
-          {MAP_SOURCES.map((m, i) => (
-            <span key={m.label}>
-              {i ? "; " : ""}
-              <a href={m.href} className="hover:text-fg" target="_blank" rel="noreferrer noopener">
-                {m.label}
-              </a>{" "}
-              ({m.note})
-            </span>
-          ))}
-          .
-        </p>
         <p>
           {person.name} · {new Date().getFullYear()}
         </p>

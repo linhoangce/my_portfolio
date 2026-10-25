@@ -224,6 +224,22 @@
   .inspo b {
     @apply font-semibold text-fg;
   }
+  /* the acknowledgements under them: quieter, each part under its own label */
+  .ack-h {
+    @apply mb-0 mt-3 text-[13px] font-semibold text-fg2;
+  }
+  .panel p.ack {
+    @apply mt-1 text-[13px] text-muted;
+  }
+  .acks {
+    @apply mt-1.5 flex list-none flex-col gap-1 p-0 text-[13px] text-muted;
+  }
+  .acks b {
+    @apply font-medium text-fg2;
+  }
+  .acks a {
+    @apply text-fg2 underline underline-offset-[3px];
+  }
   .more {
     @apply mt-2 flex flex-col;
   }
@@ -1150,7 +1166,7 @@
   .scene-ov .col-foot {
     min-height: 0;
   }
-  /* above the map's credit, which keeps the very bottom */
+  /* a little above the very bottom, clear of the home indicator */
   .stop-nav {
     left: 12px;
     right: 12px;
@@ -1238,9 +1254,6 @@
   html:has(.mon-bar) .ask-fab {
     display: none;
   }
-  .map-credit {
-    right: 10px;
-  }
 }
 @media (prefers-reduced-motion: reduce) {
   .scene-ov,
@@ -1281,38 +1294,3 @@
   }
 }
 
-/* the map data's credit, bottom-right, as small as it may be and still be read */
-.map-credit {
-  position: fixed;
-  right: 76px;
-  bottom: 6px;
-  z-index: 8;
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 10px;
-  letter-spacing: 0.04em;
-  color: rgb(var(--muted));
-  opacity: 0.75;
-  text-decoration: none;
-}
-.map-credit:hover {
-  opacity: 1;
-  color: rgb(var(--fg));
-}
-.map-sources {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 12px;
-  line-height: 1.45;
-  color: rgb(var(--muted));
-}
-.land-ack {
-  font-size: 12px;
-  line-height: 1.5;
-  color: rgb(var(--muted));
-}
-.map-sources a {
-  color: rgb(var(--fg));
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}

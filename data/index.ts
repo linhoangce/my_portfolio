@@ -80,7 +80,7 @@ export const person = {
   url: "https://linh-hoang.vercel.app",
 };
 
-/** The land the ride's city stands on: said in the menu, the text version and on the plaque at Waterfront. */
+/** The land the ride's city stands on: said in the Inspirations' acknowledgements and on the plaque at Waterfront. */
 export const landAcknowledgement =
   "This ride's Vancouver stands on the unceded, traditional and ancestral territories of the xʷməθkʷəy̓əm (Musqueam), Sḵwx̱wú7mesh (Squamish) and səlilwətaɬ (Tsleil-Waututh) Nations.";
 
@@ -90,15 +90,15 @@ export const depart = {
 };
 
 export type Inspiration = { title: string; copy: string };
+/** A piece of the ride's Indigenous art: what it is, where or what it is after, and the real work it follows, if one. */
+export type ArtCredit = { name: string; note: string; work?: string };
 
 /** Where the ride's new designs came from, and the city they add up to. The Foreword's button swaps it in on the ride. */
 export const inspirations: { title: string; intro: string; items: Inspiration[]; vision: string } = {
   title: "Inspirations",
-  intro: "This is Musqueam, Squamish and Tsleil-Waututh land, and home to people from everywhere. I wanted the city of 2100 to show both.",
+  intro: "I wanted the Vancouver of 2100 to show whose land it stands on and everyone who made it home.",
   items: [
-    { title: "Coast Salish art", copy: "So you see whose land this is first. General forms only: crests belong to their families." },
-    { title: "Reconciliation monument", copy: "So reconciliation stands at the city's front door." },
-    { title: "senákw towers", copy: "So Indigenous-led building shapes the skyline." },
+    { title: "Indigenous art", copy: "So you see whose land this is first. Each piece is named below." },
     { title: "Hogan's Alley and Japantown plaques", copy: "To remember communities the city pushed out." },
     { title: "Project Gallery and festival lights", copy: "To celebrate every culture that made Vancouver home." },
     { title: "Trains", copy: "After the blue whale and Anna's hummingbird, animals of this coast." },
@@ -107,6 +107,20 @@ export const inspirations: { title: string; intro: string; items: Inspiration[];
   ],
   vision:
     "Denser but greener: built round free transit, powered by its roofs, open to people, and shaped by the Nations whose land this is and every community that made it home.",
+};
+
+/** Under the Inspirations: the land (landAcknowledgement), the Indigenous art by name, and the map's sources (mapSources.ts). */
+export const acknowledgements: { art: string; works: ArtCredit[] } = {
+  art: "The ride's Indigenous art is inspired by Coast Salish tradition, not made by its artists: it keeps to the tradition's general forms and copies no family's or Nation's crest.",
+  works: [
+    { name: "Welcome figures", note: "Waterfront's plaza, either side of the land acknowledgement." },
+    { name: "Spindle whorl", note: "The Harbour Market at Burrard." },
+    { name: "Big house and its house posts", note: "Thornton Park, by Main Street." },
+    { name: "Woven columns", note: "After Musqueam weaver Debra Sparrow's", work: "Blanketing the City" },
+    { name: "Formline murals", note: "A salmon, an orca, a moon and a sun on the city's walls." },
+    { name: "Reconciliation monument", note: "At the canoe landing, after Lloyd Pinay's", work: "National Aboriginal Veterans Monument" },
+    { name: "Towers after senákw", note: "The Sḵwx̱wú7mesh (Squamish) Nation's development at the Burrard Bridge." },
+  ],
 };
 
 export const about = {
