@@ -15,7 +15,8 @@ export function addReflections(sources: ReflectSource[]): void {
   reflectRegistry.version++;
 }
 
-export function clearReflections(): void {
-  reflectRegistry.list.length = 0;
+/** Take these sources (as added) back out. */
+export function removeReflections(sources: ReflectSource[]): void {
+  reflectRegistry.list = reflectRegistry.list.filter((s) => !sources.includes(s));
   reflectRegistry.version++;
 }

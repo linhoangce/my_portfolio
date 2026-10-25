@@ -8,6 +8,8 @@
  *   docks on its roof out of the taxis' way, a gangway to the quay;
  * - the Commercial–Broadway Skyport, a deck on the tallest of the Broadway & Commercial towers (built with the tower,
  *   buildings/heroes.ts): two pads, a glass lounge with a drone deck of six docks on its roof, safety nets;
+ * - the Clark Park Vertiport across the square from the station, the regional routes' port: a deck of four pads over a
+ *   glass hall (laid out in sets/squares.ts, built with Commercial–Broadway's set from the parts here);
  * - (the rail yard's drone port is on its shed's roof: railYardKit.ts).
  * The layout as data, shared by the builders and the fliers; the floats' geometry painted (its lights marked to glow
  * after dark, pavilion.ts lit) for SeaBus.tsx's mesh. Pure apart from three.js geometry.
@@ -91,7 +93,7 @@ const GLASS = 0x9fbfcf;
 const box = (w: number, h: number, d: number, x: number, y: number, z: number, hex: number) => paint(new BoxGeometry(w, h, d).translate(x, y, z), hex);
 
 /** A taxi pad on a deck at y: the dark pad, its white touchdown ring and aiming bar, a ring of green light round its edge. */
-function pad(out: BufferGeometry[], x: number, y: number, z: number): void {
+export function pad(out: BufferGeometry[], x: number, y: number, z: number): void {
   out.push(paint(new CylinderGeometry(PAD_R, PAD_R, 0.12, 28).translate(x, y + 0.06, z), PAD));
   out.push(paint(new RingGeometry(1.5, 1.78, 28).rotateX(-Math.PI / 2).translate(x, y + 0.125, z), MARK));
   out.push(box(0.3, 0.02, 1.6, x, y + 0.13, z, MARK));
@@ -112,7 +114,7 @@ function dock(out: BufferGeometry[], s: Spot): void {
 }
 
 /** Safety nets along a deck's edge from a to b at height y, leaning out and down toward (ox, oz), framed at their rim. */
-function nets(out: BufferGeometry[], ax: number, az: number, bx: number, bz: number, y: number, ox: number, oz: number): void {
+export function nets(out: BufferGeometry[], ax: number, az: number, bx: number, bz: number, y: number, ox: number, oz: number): void {
   const L = Math.hypot(bx - ax, bz - az);
   // built along local x, reaching out along local +z and down; a turn by ry takes +z to (sin ry, cos ry)
   const ry = Math.atan2(ox, oz);
@@ -122,7 +124,7 @@ function nets(out: BufferGeometry[], ax: number, az: number, bx: number, bz: num
 }
 
 /** A windsock on its pole, the sock streaming east, lit after dark, a red light on top. */
-function windsock(out: BufferGeometry[], x: number, y: number, z: number): void {
+export function windsock(out: BufferGeometry[], x: number, y: number, z: number): void {
   out.push(paint(new CylinderGeometry(0.07, 0.09, 4.6, 6).translate(x, y + 2.3, z), WHITE_HEX));
   for (let k = 0; k < 4; k++) {
     const r0 = 0.42 - k * 0.07;
@@ -132,7 +134,7 @@ function windsock(out: BufferGeometry[], x: number, y: number, z: number): void 
 }
 
 /** A glass box on a deck: glass walls lit from within after dark, white mullions, a white slab, a green roof. */
-function glassBox(out: BufferGeometry[], b: Box, y: number, h: number): void {
+export function glassBox(out: BufferGeometry[], b: Box, y: number, h: number): void {
   const cx = (b.x0 + b.x1) / 2;
   const cz = (b.z0 + b.z1) / 2;
   const w = b.x1 - b.x0;
