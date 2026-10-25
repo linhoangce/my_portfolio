@@ -397,8 +397,8 @@ export function interiorTextures(): { map: CanvasTexture; emissiveMap: CanvasTex
   h.fillStyle = "#fff3df";
   h.fillRect(0, 9, W, 3);
   const lg = h.createLinearGradient(0, 12, 0, H);
-  lg.addColorStop(0, "rgba(255,214,160,0.42)");
-  lg.addColorStop(1, "rgba(255,196,140,0.2)");
+  lg.addColorStop(0, "rgba(255,238,214,0.5)");
+  lg.addColorStop(1, "rgba(255,226,196,0.26)");
   h.fillStyle = lg;
   h.fillRect(0, 12, W, H - 16);
   let seed = 7;
