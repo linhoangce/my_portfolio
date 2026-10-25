@@ -19,7 +19,6 @@ import {
   FrontSide,
   Group,
   IcosahedronGeometry,
-  LatheGeometry,
   InstancedBufferAttribute,
   InstancedMesh,
   type Material,
@@ -55,6 +54,8 @@ import { moreProjects, roles, stations } from "@/data";
 import { merged, type Part } from "../merge";
 import { cap, type P2, paint, walls } from "../shapes";
 import { useTrain } from "../store";
+import { FAIRMONT, inFairmont } from "../fairmont";
+import { inDock, standY } from "../harbourfront";
 import { groundAt, sdfAt, surfaceAt } from "../terrain";
 import { dotTexture } from "../textures";
 import { frameAt, makeFrame, PATH_SAMPLES, stationS, UP } from "../track";
@@ -825,68 +826,54 @@ function christmasTree(c: Ctx, a: number, l: number, base: number, height: numbe
   };
 }
 
-// ------------------------------------------------------------------ 01 About · Burrard: the cedar atrium
+// ------------------------------------------------------------------ 01 About · Burrard: the hotel garden's cedar
 function about(c: Ctx): Partial<BuiltSet> {
-  const { mats } = c.world;
-  // the line bends back past the cedar toward Granville: it stands as near its spot as the guideway allows, and the
-  // canopy reaches out over the track, high enough for the trains to run under it
-  let L0 = 28;
-  while (L0 > 19 && trackClear(c, 0, L0) < 10) L0 -= 0.5;
-  const g = c.G(0, L0);
-  // a mass-timber canopy with an oculus the cedar grows through, on columns that keep off the guideway
-  const deckY = Math.max(g + 9, 1.4 + 7);
-  cedar(c, 0, L0, g, 36, deckY + 0.9);
-  const dress = christmasTree(c, 0, L0, g, 36, deckY + 0.9);
-  const annulus = (r0: number, r1: number, h: number) =>
-    new LatheGeometry([new Vector2(r0, 0), new Vector2(r1, 0), new Vector2(r1, h), new Vector2(r0, h), new Vector2(r0, 0)], 40);
-  c.add(mats.timber, annulus(3.2, 10, 0.6), c.L(0, L0, deckY - 0.6));
-  c.add(mats.roofGreen, annulus(3.4, 9.7, 0.3), c.L(0, L0, deckY));
-  // up to four columns on a ring under the deck, each the clear spot nearest a diagonal
-  const ring = Array.from({ length: 16 }, (_, k) => (k / 16) * Math.PI * 2).filter((th) => trackClear(c, Math.cos(th) * 7.5, L0 + Math.sin(th) * 7.5) > 9);
-  const posts: [number, number][] = [];
-  for (const want of [0.25, 0.75, 1.25, 1.75].map((q) => q * Math.PI)) {
-    const best = ring.reduce<number | null>((b, th) => (b === null || Math.abs(Math.sin((th - want) / 2)) < Math.abs(Math.sin((b - want) / 2)) ? th : b), null);
-    if (best === null) break;
-    ring.splice(ring.indexOf(best), 1);
-    posts.push([Math.cos(best) * 7.5, L0 + Math.sin(best) * 7.5]);
-  }
-  legs(c, mats.timber, posts, deckY);
-  // a moss wall behind, where the track leaves room
-  if ([-9, 0, 9].every((a) => trackClear(c, a, L0 + 11) > 9)) c.add(new MeshStandardMaterial({ color: 0x4d6b35, roughness: 1 }), new BoxGeometry(1, 7, 18), c.L(0, L0 + 11, g + 3.5));
+  // the Fairmont Waterfront (fairmont.ts, a hero building) stands in the pocket the line's loop leaves, facing the
+  // pier: its podium's roof is the hotel's garden, the red cedar growing in it between the tower and the line
+  const { podium: P, cedar: C } = FAIRMONT;
+  const top = c.G(P.a, P.l) + P.h;
+  cedar(c, C.a, C.l, top, C.h, top + 2.6);
+  const dress = christmasTree(c, C.a, C.l, top, C.h, top + 2.6);
+  // its bed: a low timber planter round the trunk, moss in it
+  c.add(c.world.mats.timber, new CylinderGeometry(2.4, 2.5, 0.6, 20), c.L(C.a, C.l, top + 0.3));
+  c.add(new MeshStandardMaterial({ color: 0x4d6b35, roughness: 1 }), new CylinderGeometry(2.2, 2.2, 0.1, 20), c.L(C.a, C.l, top + 0.62));
   // the Harbour Market round it
-  harbourMarket(c, L0, posts);
+  harbourMarket(c, top);
   return {
-    focus: new Vector3(...c.L(0, L0 - 6, deckY + 6)),
+    focus: new Vector3(...c.L(C.a + 3, C.l - 1, top + 6)),
     update: dress,
   };
 }
 
 /**
- * The Harbour Market, from the harbour's edge round the cedar's canopy to the line's far side (sets/squares.ts):
+ * The Harbour Market, from the harbour's edge round the hotel to the line's far side (sets/squares.ts):
  * - paving over it all;
  * - the pavilions, stalls, food trucks, fountain and stage of its layout;
- * - café tables under the canopy round the cedar;
- * - festoons strung between the canopy's columns and over the stalls by the water.
+ * - café tables on the hotel's garden terrace (fairmont.ts), round the cedar, at `top`;
+ * - festoons strung over the stalls by the water.
  */
-function harbourMarket(c: Ctx, L0: number, posts: [number, number][]): void {
+function harbourMarket(c: Ctx, top: number): void {
   const sq = SQUARES.find((s) => s.i === 1) as Square;
   const vc = shopGlow(new MeshStandardMaterial({ vertexColors: true, roughness: 0.75 }), c.world);
   const kit = squareKit(c, sq, vc);
   const d = SET_RECT[0] as [number, number, number, number];
   paveSquare(c, vc, -22, 34, 8, 60, (a, l, i, j) => {
     const [x, z] = fromStation(1, a, l);
-    if (sdfAt(x, z) < 0.6 || inLandmark(x, z, 1.5)) return null;
+    // the dock's rim and quay pave their own, and none under the hotel
+    if (sdfAt(x, z) < 0.6 || inLandmark(x, z, 1.5) || inDock(x, z, 0.4) || inFairmont(x, z)) return null;
     // the Waterfront set paves its own
     const [da, dl] = toStation(0, x, z);
     if (da > d[0] && da < d[1] && dl > d[2] && dl < d[3]) return null;
     return i % 4 === 0 || j % 4 === 0 ? 0xb9b2a5 : (i + j) % 2 ? 0xd6d0c4 : 0xccc5b7;
   });
-  // café tables under the canopy, round the cedar, each with two chairs
-  for (let k = 0; k < 8; k++) {
-    const th = (k / 8) * Math.PI * 2 + 0.2;
-    const a = Math.cos(th) * 5.4;
-    const l = L0 + Math.sin(th) * 5.4;
-    if (trackClear(c, a, l) < 4.5) continue;
+  // café tables on the hotel's garden terrace, east of the cedar, each with two chairs
+  const { podium: P, cedar: C } = FAIRMONT;
+  for (const [a, l] of [7.5, 10.5, 13.5, 16.5].flatMap((a) => [
+    [a, C.l - 1.2],
+    [a + 1.5, C.l + 1.6],
+  ])) {
+    if (a > P.a + P.w / 2 - 1 || trackClear(c, a, l) < 4.5) continue;
+    const th = Math.atan2(l - C.l, a - C.a);
     const out: Pieces = { solid: [], glass: [], warm: [] };
     out.solid.push(
       paint(new CylinderGeometry(0.45, 0.45, 0.06, 8).translate(0, 0.78, 0), 0xf2efe9),
@@ -894,10 +881,9 @@ function harbourMarket(c: Ctx, L0: number, posts: [number, number][]): void {
       paint(new BoxGeometry(0.4, 0.45, 0.4).translate(0, 0.22, 0.75), 0xa98260),
       paint(new BoxGeometry(0.4, 0.45, 0.4).translate(0, 0.22, -0.75), 0xa98260),
     );
-    kit.put(out, a, l, [Math.cos(th), Math.sin(th)]);
+    kit.put(out, a, l, [Math.cos(th), Math.sin(th)], top);
   }
-  // festoons from column to column under the canopy, and zigzag over the stalls by the water
-  if (posts.length > 2) festoons(c, vc, kit.lit, [...posts, posts[0]], 4.8);
+  // festoons zigzag over the stalls by the water
   festoons(c, vc, kit.lit, [
     [-17.5, 35.5],
     [-14.5, 41],
@@ -3661,8 +3647,13 @@ export function buildSets(world: World): BuiltSet[] {
       lowEnd: world.lowEnd,
       group,
       L: (a, l, u) => [l, u, a * zs],
-      G: (a, l) => groundAt(fr.x + t.x * (a + A0) + n.x * l, fr.z + t.z * (a + A0) + n.z * l) - fr.y,
-      S: (a, l) => surfaceAt(fr.x + t.x * (a + A0) + n.x * l, fr.z + t.z * (a + A0) + n.z * l, world.lowEnd ? 2 : 1) - fr.y,
+      // the ground, or the harbourfront's rim and quay where a set reaches into the dock (harbourfront.ts)
+      G: (a, l) => standY(fr.x + t.x * (a + A0) + n.x * l, fr.z + t.z * (a + A0) + n.z * l) - fr.y,
+      S: (a, l) => {
+        const x = fr.x + t.x * (a + A0) + n.x * l;
+        const z = fr.z + t.z * (a + A0) + n.z * l;
+        return (inDock(x, z) ? standY(x, z) : surfaceAt(x, z, world.lowEnd ? 2 : 1)) - fr.y;
+      },
       add: (mat, geo, pos = [0, 0, 0], rot = [0, 0, 0], scale = [1, 1, 1]) => {
         const hex = plainHex(mat);
         const into = hex === null ? mat : painted;

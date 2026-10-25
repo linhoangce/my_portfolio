@@ -3,10 +3,10 @@
  * Registering the pads here, at import, keeps them ahead of the first groundAt call (which freezes the ground).
  */
 import { PARK_DATA } from "./parkData";
-import { CONVENTION, HARBOUR_GREEN } from "./harbourfront";
+import { CONVENTION, DOCK, HARBOUR_GREEN, inDock, QUAY_Y, RIM } from "./harbourfront";
 import { lionsGateDeck } from "./lionsGate";
 import { SEA } from "./constants";
-import { addModifier, demAt, discPad, groundAt, inBasin, inWater, LAKE, lakeLevel, lerp, polySdf, sdfAt, SHORES, SW_POINT } from "./terrain";
+import { addModifier, addUnbakedModifier, demAt, discPad, groundAt, inBasin, inWater, LAKE, lakeLevel, lerp, polySdf, sdfAt, SHORES, SW_POINT } from "./terrain";
 import { samples } from "./track";
 
 type XZ = [number, number];
@@ -115,6 +115,99 @@ const HINGE = shaped(
   [],
   0.45,
 );
+/**
+ * The creek's north shore as one waterfront of lawns from the bay below Beach Avenue to BC Place's, the seawall walk
+ * along their foot: George Wainborn Park, David Lam Park and Coopers' Park, each down to a unit short of the water and
+ * its ground left as the bank has it, planted thickly with a row of trees along the streets it meets. George Wainborn
+ * keeps the city's outline toward the streets and reaches west to the bay; David Lam runs from Pacific Street and
+ * Pacific Boulevard to the seawall, west to George Wainborn and east under the Cambie Bridge; Coopers' Park lies where
+ * it is, along the seawall east of the bridge, between the Roundhouse's blocks and the water (the city's outline of it
+ * lies under BC Place here, which is larger than life).
+ */
+const GEORGE_WAINBORN: Park = {
+  ...shaped(
+    "George Wainborn Park",
+    [
+      [-128.6, 161.6],
+      [-129.7, 160],
+      [-131.4, 158.9],
+      [-137.1, 159.4],
+      [-140.3, 157.7],
+      [-148, 157.5],
+      [-150.7, 158],
+      [-150.2, 164],
+      [-149.4, 170],
+      [-146, 173.1],
+      [-142, 176.2],
+      [-138, 177.4],
+      [-134, 178.9],
+      [-130, 181.3],
+      [-127, 181.7],
+      [-126.5, 171.1],
+      [-128.7, 167.8],
+    ],
+    [],
+    0.7,
+    false,
+  ),
+  rows: 5,
+};
+const DAVID_LAM: Park = {
+  ...shaped(
+    "David Lam Park",
+    [
+      [-128.6, 161.6],
+      [-124, 161.5],
+      [-120, 162.5],
+      [-114, 164.5],
+      [-108.4, 163.5],
+      [-101.1, 162],
+      [-91, 158],
+      [-82.2, 166.7],
+      [-78.5, 170],
+      [-78, 185],
+      [-82, 185.7],
+      [-90, 186.3],
+      [-98, 186.4],
+      [-106, 186.3],
+      [-110, 186],
+      [-114, 185.2],
+      [-118, 183.7],
+      [-122, 182.4],
+      [-127, 181.7],
+      [-126.5, 171.1],
+      [-128.7, 167.8],
+    ],
+    [],
+    0.7,
+    false,
+  ),
+  rows: 5,
+};
+const COOPERS: Park = {
+  ...shaped(
+    "Coopers' Park",
+    [
+      [-75, 170],
+      [-73, 174],
+      [-48, 174],
+      [-43.4, 173.5],
+      [-45, 176.8],
+      [-50, 176.8],
+      [-54, 176.9],
+      [-58, 177.6],
+      [-62, 178.6],
+      [-66, 179.8],
+      [-70, 181.6],
+      [-74, 183.4],
+      [-76, 184.3],
+    ],
+    [],
+    0.7,
+    false,
+  ),
+  rows: 5,
+};
 
 /**
  * The four parks round False Creek's east basin keep the shapes the ride drew for them (mapped, then fitted round the
@@ -145,7 +238,7 @@ const SLOPE = shaped(
   0.6,
   false,
 );
-const DRAWN = [CREEKSIDE, NEFC, HINGE, THORNTON, HARBOUR];
+const DRAWN = [CREEKSIDE, NEFC, HINGE, THORNTON, HARBOUR, GEORGE_WAINBORN, DAVID_LAM, COOPERS];
 const MAPPED: Park[] = PARK_DATA.flatMap(({ name, poly: enc }) => {
   const bin = atob(enc);
   const u8 = new Uint8Array(bin.length);
@@ -243,10 +336,11 @@ export const LANDMARK_DEFS: LandmarkDef[] = [
   { key: "scienceWorld", x: SW_POINT.x, z: SW_POINT.z, r: 16, h: 28, margin: 8, lotR: 32, yaw: -SW_FAN },
   // the 2100 hub on a deck over the harbour east of the old CPR station, its gallery reaching out into the inlet
   { key: "waterfrontHub", x: 38, z: -30, r: 20, h: 62, margin: 4, lotR: 22 },
-  // smaller monuments (Nominatim positions); the cauldron and the orca stand in Jack Poole Plaza (harbourfront.ts)
+  // smaller monuments (Nominatim positions); the cauldron by the water in Jack Poole Plaza and the orca at the
+  // Convention Centre's east end, both on the plaza's quay (harbourfront.ts), stand where they are put
   { key: "gate", x: 55.2, z: 67.4, r: 4.5, h: 9, margin: 10, lotR: 6 },
-  { key: "cauldron", x: -60, z: -37, r: 4, h: 11, margin: 10, lotR: 4 },
-  { key: "orca", x: -53, z: -38.2, r: 3, h: 6, margin: 10, lotR: 3 },
+  { key: "cauldron", x: -58.5, z: -38.5, r: 4, h: 11, margin: 10, lotR: 4 },
+  { key: "orca", x: -63, z: -37.5, r: 3, h: 6, margin: 10, lotR: 3 },
   { key: "steamClock", x: 26.6, z: 22, r: 1.5, h: 6, margin: 10, lotR: 3 },
 ];
 
@@ -269,6 +363,8 @@ export function pushOut(x: number, z: number, need: number): [number, number] {
 
 export type PlacedLandmark = LandmarkDef & { px: number; pz: number; padY: number };
 const SMALL = new Set<LandmarkKey>(["gate", "cauldron", "orca", "steamClock"]);
+/** Small monuments placed by hand: on the plaza's quay, which `dryClear` (dry land only) would push off. */
+const PINNED = new Set<LandmarkKey>(["cauldron", "orca"]);
 /** The nearest spot to (x, z) on dry land, clear of the track and of the big landmarks already placed. */
 function dryClear(l: LandmarkDef, placed: PlacedLandmark[]): [number, number] {
   for (let r = 0; r < 80; r += 3) {
@@ -287,17 +383,18 @@ function dryClear(l: LandmarkDef, placed: PlacedLandmark[]): [number, number] {
 /** Landmarks standing in the water (the Canada Place pier, the Convention Centre) keep a deck just above the sea. */
 export const LANDMARKS: PlacedLandmark[] = [];
 for (const l of LANDMARK_DEFS) {
-  const [px, pz] = SMALL.has(l.key) ? dryClear(l, LANDMARKS) : pushOut(l.x, l.z, l.r + l.margin + 0.5);
+  const [px, pz] = PINNED.has(l.key) ? [l.x, l.z] : SMALL.has(l.key) ? dryClear(l, LANDMARKS) : pushOut(l.x, l.z, l.r + l.margin + 0.5);
   const wet = inWater(px, pz);
   let padY = 0;
-  if (!wet) {
+  // the Convention Centre and what stands in the dock stand on its decks
+  if (l.key === "convention" || (SMALL.has(l.key) && inDock(px, pz))) padY = QUAY_Y;
+  else if (!wet) {
     let s = 0;
     for (let k = 0; k < 9; k++) s += demAt(px + Math.cos(k * 0.7) * l.r * 0.6, pz + Math.sin(k * 0.7) * l.r * 0.6);
     padY = s / 9;
     // round the east basin the pad stops at the water: a seawall, not a filled-in shore
     const pad = discPad(px, pz, l.r + 4, 14, padY);
-    // the Convention Centre stands on the shore with its seaward side on piles: no pad, which would fill the water in
-    if (!SMALL.has(l.key) && l.key !== "convention") addModifier((x, z, h) => (inBasin(x, z) ? h : pad(x, z, h)));
+    if (!SMALL.has(l.key)) addModifier((x, z, h) => (inBasin(x, z) ? h : pad(x, z, h)));
     else padY = demAt(px, pz);
   }
   LANDMARKS.push({ ...l, px, pz, padY });
@@ -593,3 +690,15 @@ for (const p of PARKS) {
     return lerp(level + 0.25, h, Math.min(1, Math.max(0, (r - 1.15) / 0.75)));
   });
 }
+// the dock (harbourfront.ts): last, after the station pads that filled it, the seabed again (on what was dry land, a
+// little under the sea), falling to it from the city's ground over the rim's band inside its landward edge; the city's
+// lots and trees are laid out without it (they keep out of the dock)
+addUnbakedModifier(
+  (x, z, h) => {
+    if (!inDock(x, z)) return h;
+    const k = Math.min(1, -polySdf(DOCK, x, z) / RIM);
+    const bed = Math.min(h, sdfAt(x, z) < 0 ? demAt(x, z) : SEA - 1.2);
+    return lerp(h, bed, k * k * (3 - 2 * k));
+  },
+  [-119, 15, -74, -24.3],
+);

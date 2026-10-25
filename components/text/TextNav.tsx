@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { TrainFront } from "lucide-react";
 
+import { BlossomMark } from "@/components/brand/BlossomMark";
 import { person, stations } from "@/data";
 
 const items = stations.filter((s) => ["about", "experience", "awdon", "contact"].includes(s.panel));
@@ -9,7 +10,8 @@ export function TextNav() {
   return (
     <header className="sticky top-0 z-20 border-b border-border bg-bg/80 backdrop-blur-md">
       <nav aria-label="Primary" className="mx-auto flex max-w-[720px] items-center justify-between gap-4 px-4 py-3 sm:px-6">
-        <a href="#top" className="font-serif text-xl tracking-tight text-fg">
+        <a href="#top" className="flex items-center gap-2 font-serif text-xl tracking-tight text-fg [--mark-ring:rgb(var(--bg))]">
+          <BlossomMark className="h-[22px] w-[22px]" />
           {person.name}
         </a>
         <ul className="hidden items-center gap-5 text-sm text-muted sm:flex">

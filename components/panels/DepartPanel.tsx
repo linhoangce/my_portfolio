@@ -1,10 +1,10 @@
 import { depart } from "@/data";
 import { InspirationsLink } from "./PanelActions";
-import { type HeadingTag, kickerFor, Links, PanelShell } from "./PanelShell";
+import { type HeadingTag, Links, PanelShell } from "./PanelShell";
 
-export function DepartPanel({ code, as = "h2" }: { code?: string; as?: HeadingTag }) {
+export function DepartPanel({ as = "h2" }: { as?: HeadingTag }) {
   return (
-    <PanelShell id="depart" title={depart.title} kicker={kickerFor(code, "Explore")} as={as}>
+    <PanelShell id="depart" title={depart.title} as={as}>
       <p className="lead">{depart.lead}</p>
       <Links links={[]}>
         <li>

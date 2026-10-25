@@ -9,7 +9,7 @@ import { type HeadingTag, PanelShell } from "./PanelShell";
  */
 export function InspirationsPanel({ as = "h2" }: { as?: HeadingTag }) {
   return (
-    <PanelShell id="inspirations" title={inspirations.title} kicker="Behind the ride" as={as} className="scroll-mt-20">
+    <PanelShell id="inspirations" title={inspirations.title} as={as} className="scroll-mt-20">
       <p className="lead">{inspirations.intro}</p>
       <ul className="inspo">
         {inspirations.items.map((item) => (

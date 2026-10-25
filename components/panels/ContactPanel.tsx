@@ -1,9 +1,9 @@
 import { contact } from "@/data";
-import { type HeadingTag, kickerFor, Links, PanelShell } from "./PanelShell";
+import { type HeadingTag, Links, PanelShell } from "./PanelShell";
 
-export function ContactPanel({ code, as = "h2" }: { code?: string; as?: HeadingTag }) {
+export function ContactPanel({ as = "h2" }: { as?: HeadingTag }) {
   return (
-    <PanelShell id="contact" title={contact.heading} kicker={kickerFor(code, "Contact")} as={as}>
+    <PanelShell id="contact" title={contact.heading} as={as}>
       <a className="email" href={`mailto:${contact.email}`}>
         {contact.email}
       </a>

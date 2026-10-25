@@ -93,12 +93,14 @@ export function hubDrops(): { x: number; y: number; z: number }[] {
 /**
  * Water the boats keep out of (world boxes x0, x1, z0, z1; harbourTraffic.ts):
  * - the hub's deck and gallery;
- * - the Canada Place pier with the cruise ship alongside it;
+ * - the Canada Place pier with the cruise ships alongside it;
+ * - the forecourt's deck east of the pier's root and its canoe landing (harbourfront.ts);
  * - the Convention Centre's seaward side;
  * - the bay off Harbour Green with its floatplane dock (harbourfront.ts).
  */
 export const NO_SAIL: [number, number, number, number][] = [
-  [-66, -6, -129, -30],
+  [-66, -6, -136, -30],
+  [-26, 4, -58, -23],
   [-120, -66, -68, -40],
   [-132, -104, -92, -58],
   [HUB_AT.x + HUB_DECK_BOX.x0 - 6, HUB_AT.x + HUB_DECK_BOX.x1 + 6, HUB_AT.z + HUB_DECK_BOX.z0 - 6, HUB_AT.z + HUB_DECK_BOX.z1 + 6],

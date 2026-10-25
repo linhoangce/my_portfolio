@@ -97,7 +97,7 @@ export function fixedObstacles(skip: Set<string>): Obstacle[] {
     out.push({ x: l.px, z: l.pz, c: 1, s: 0, hw: l.r, hd: l.r, top: l.padY + l.h, round: true });
   }
   // the cruise ship alongside the Canada Place pier
-  out.push(boxObstacle(-66, -6, -129, -30, 24));
+  out.push(boxObstacle(-66, -6, -136, -30, 24));
   // the Lions Gate: its towers and the deck between its anchorages
   const nw = narrowsLine();
   for (const z of [nw.zS - 9, nw.zN + 9]) out.push(boxObstacle(nw.x - 6, nw.x + 6, z - 2, z + 2, 45));

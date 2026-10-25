@@ -142,7 +142,7 @@ const onSwArc = (p: [number, number]) => swArc.includes(p);
 const EXTRA_WATER: [number, number][][] = [
   rounded(
     [
-      [-78, 176],
+      [-80, 187],
       [-60, 178],
       // BC Place's seawall, 55 units out from the stadium, just past its plaza
       [-41.5, 177.6],
@@ -175,13 +175,18 @@ const EXTRA_WATER: [number, number][][] = [
   ),
   rounded(
     [
-      // the north shore: Yaletown, David Lam and George Wainborn Parks, Beach Avenue
+      // the north shore: Yaletown, then the seawall below David Lam and George Wainborn Parks (the parks between Pacific
+      // Boulevard and the water, as they are), Beach Avenue
       [-40, 190],
       [-62, 181],
-      [-80, 174],
-      [-100, 166],
-      [-120, 158],
-      [-140, 150],
+      [-80, 187],
+      [-100, 187.5],
+      [-112, 187],
+      [-122, 183],
+      [-132, 182],
+      [-142, 182],
+      [-150, 173],
+      [-151, 158],
       [-158, 141],
       [-175, 129],
       [-190, 117],
@@ -268,12 +273,67 @@ export const LAKE = { x: 400, z: 374, rx: 20, rz: 13 };
 const lakeR = (x: number, z: number) => Math.hypot((x - LAKE.x) / LAKE.rx, (z - LAKE.z) / LAKE.rz);
 export const lakeLevel = (): number => demMetres(LAKE.x, LAKE.z) * TERRAIN_V;
 
+/** The nearest point of a polygon's edge, and the signed distance to it (negative inside). */
+function polyNearest(poly: [number, number][], x: number, z: number): [number, number, number] {
+  let d2 = Infinity;
+  let cx = x;
+  let cz = z;
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [ax, az] = poly[j];
+    const [bx, bz] = poly[i];
+    const ex = bx - ax;
+    const ez = bz - az;
+    const t = Math.min(1, Math.max(0, ((x - ax) * ex + (z - az) * ez) / (ex * ex + ez * ez)));
+    const px = ax + ex * t;
+    const pz = az + ez * t;
+    const e2 = (x - px) ** 2 + (z - pz) ** 2;
+    if (e2 < d2) {
+      d2 = e2;
+      cx = px;
+      cz = pz;
+    }
+    if (az > z !== bz > z && x < ax + ((z - az) * (bx - ax)) / (bz - az)) inside = !inside;
+  }
+  return [inside ? -Math.sqrt(d2) : Math.sqrt(d2), cx, cz];
+}
+/**
+ * The bank down to the creek where it was drawn wider than the bake (Beach Avenue west of George Wainborn Park, Kits
+ * Point). There the drawn shore cuts across the bake's hillside, on the north side some 25 units up it and 5 above the
+ * water, and the 8-unit ramp down to the sea made a bluff of it: the streets ran down the bluff and their junctions
+ * folded over it.
+ * Instead the ground comes up from the water in an even bank, at `grade` (a steep street's in this city) or steeper
+ * where that would not meet the bake's hill `reach` back from the shore, and is the bake's again past `reach + fade`.
+ * Where the drawn shore keeps to the bake's (by the bridges' north ends, under the hill the West End stands on) the
+ * ground is left as it was.
+ */
+const CREEK_BANK = { grade: 0.3, reach: 40, fade: 12 };
+const smin = (a: number, b: number, k: number): number => {
+  const t = Math.max(0, k - Math.abs(a - b)) / k;
+  return Math.min(a, b) - (t * t * k) / 4;
+};
+function creekBank(x: number, z: number, h: number): number {
+  const b = EXTRA_BOX[1];
+  const { grade, reach, fade } = CREEK_BANK;
+  const r = reach + fade;
+  if (x < b[0] - r || x > b[1] + r || z < b[2] - r || z > b[3] + r) return h;
+  const [d, cx, cz] = polyNearest(EXTRA_WATER[1], x, z);
+  if (d < 0 || d >= r) return h;
+  // how far into the bake's land the shore nearest here was drawn (its field stops counting at 12.7)
+  const cut = sstep(3, 9, bilinear(SDF_CITY, (k) => SDF_BAKED[k] / SDF_CITY.scale, cx, cz));
+  if (!cut) return h;
+  // the bank's grade: from just over the water at the shore up to the bake's hill `reach` straight back from it
+  const top = SEA + 1;
+  const g = d > 1e-3 ? Math.max(grade, (demMetres(cx + ((x - cx) / d) * reach, cz + ((z - cz) / d) * reach) * TERRAIN_V - top) / reach) : grade;
+  return lerp(h, smin(h, top + g * d, 1), cut * (1 - sstep(reach, r, d)));
+}
+
 /** Coast-clamped DEM height in world units, before any modifier: continuous at the shore, land at least 0.3 above the sea plane. */
 export function demAt(x: number, z: number): number {
   const sd = sdfAt(x, z);
   if (sd < 0 && lakeR(x, z) > 1.6) return Math.max(-3, SEA + 0.4 * sd);
   const land = Math.max(demMetres(x, z) * TERRAIN_V, 0.3);
-  return lakeR(x, z) <= 1.6 ? land : SEA + (land - SEA) * sstep(0, 8, sd);
+  return lakeR(x, z) <= 1.6 ? land : creekBank(x, z, SEA + (land - SEA) * sstep(0, 8, sd));
 }
 
 export type Modifier = (x: number, z: number, h: number) => number;
@@ -307,9 +367,19 @@ export function addModifier(m: Modifier): void {
   modifiers.push(m);
 }
 
-const finalAt = (x: number, z: number): number => {
+/** A box of world x0, x1, z0, z1. */
+type Box = [number, number, number, number];
+/** Modifiers the city is laid out without (see `asBaked`), each with the box outside which it changes nothing. */
+const unbaked: { m: Modifier; box: Box }[] = [];
+/** Register a modifier the city's lots and trees do not see: they are laid out on the ground as it was without it. */
+export function addUnbakedModifier(m: Modifier, box: Box): void {
+  addModifier(m);
+  unbaked.push({ m, box });
+}
+
+const finalAt = (x: number, z: number, skip?: Modifier[]): number => {
   let h = demAt(x, z);
-  for (const m of modifiers) h = m(x, z, h);
+  for (const m of modifiers) if (!skip?.includes(m)) h = m(x, z, h);
   return h;
 };
 
@@ -325,18 +395,22 @@ export const terrainRaster = (): { grid: GridDef; hf: Float32Array } => ({ grid:
 const raster = (): Float32Array => (baked && bakedRaster ? bakedRaster : (frozen ?? freeze()));
 
 /**
- * Run f on the ground and the shore as baked, Deadman's Island standing: the city lays its lots and plants its trees
- * this way, so every number it draws is drawn as before and the island's own lots and trees (taken out after) do not
- * move the rest. Only the island's box differs.
+ * Run f on the ground and the shore as baked, Deadman's Island standing and without the unbaked modifiers (the
+ * harbourfront's dock): the city lays its lots and plants its trees this way, so every number it draws is drawn as
+ * before and the lots and trees on the changed ground (taken out after) do not move the rest. Only those boxes differ.
  */
 export function asBaked<T>(f: () => T): T {
   const hf = frozen ?? freeze();
   if (!bakedRaster) {
     const out = hf.slice();
     const g = RASTER;
+    const skip = unbaked.map((u) => u.m);
     field = SDF_BAKED;
-    for (let j = Math.max(0, Math.floor((ISLET_BOX.z0 - g.z0) / g.step) - 1); j <= Math.min(g.nz - 1, Math.ceil((ISLET_BOX.z1 - g.z0) / g.step) + 1); j++) {
-      for (let i = Math.max(0, Math.floor((ISLET_BOX.x0 - g.x0) / g.step) - 1); i <= Math.min(g.nx - 1, Math.ceil((ISLET_BOX.x1 - g.x0) / g.step) + 1); i++) out[j * g.nx + i] = finalAt(g.x0 + i * g.step, g.z0 + j * g.step);
+    // the carving and the unbaked modifiers change nothing outside their boxes, so each box is worked out again alone
+    for (const [x0, x1, z0, z1] of [[ISLET_BOX.x0, ISLET_BOX.x1, ISLET_BOX.z0, ISLET_BOX.z1] as Box, ...unbaked.map((u) => u.box)]) {
+      for (let j = Math.max(0, Math.floor((z0 - g.z0) / g.step) - 1); j <= Math.min(g.nz - 1, Math.ceil((z1 - g.z0) / g.step) + 1); j++) {
+        for (let i = Math.max(0, Math.floor((x0 - g.x0) / g.step) - 1); i <= Math.min(g.nx - 1, Math.ceil((x1 - g.x0) / g.step) + 1); i++) out[j * g.nx + i] = finalAt(g.x0 + i * g.step, g.z0 + j * g.step, skip);
+      }
     }
     field = SDF;
     bakedRaster = out;

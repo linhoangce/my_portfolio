@@ -10,6 +10,7 @@
 import { BoxGeometry, Color, CylinderGeometry, Matrix4, Quaternion, SphereGeometry, TorusGeometry, Vector3 } from "three";
 
 import type { Rng } from "../cityModel";
+import { FAIRMONT, FAIRMONT_PLAN, FAIRMONT_TURN, fairmontXZ } from "../fairmont";
 import { fromStation } from "../sets/zones";
 import { pushOut } from "../sites";
 import { groundAt, surfaceAt } from "../terrain";
@@ -31,6 +32,11 @@ export type Hero = {
   h: number;
   /** Placed by hand clear of the guideway (its towers kept back), so not pushed out. */
   fixed?: boolean;
+  /**
+   * Built where a set and the guideway already keep the lots and the streets out (the Fairmont Waterfront): it takes
+   * no part in the city's layout (no footprint reserved, no street hidden), which lays out as it did without it.
+   */
+  late?: boolean;
   build: (s: Sink, x: number, z: number, yb: number, yt: number, rng: Rng, terrace: Ctx["terrace"]) => void;
 };
 
@@ -86,6 +92,36 @@ const RAW: Hero[] = [
       cap(s, "roof", ring);
       walls(s, "copper", fp.rect(5, 5), x, z, yt + 33, yt + 36, { tint: T(0xbfe0d0) });
       hip(s, "copper", x, z, 5, 5, yt + 36, 2.2);
+    },
+  },
+  {
+    name: "Fairmont Waterfront",
+    // its real corner is the forecourt's and the Waterfront set's here: placed by hand in the pocket the line's loop
+    // leaves at Burrard, facing the pier, the About stop's cedar in its podium's garden (fairmont.ts)
+    ...(() => {
+      const [x, z] = fairmontXZ(FAIRMONT.tower.a, FAIRMONT.tower.l);
+      return { x, z };
+    })(),
+    r: 12,
+    fixed: true,
+    late: true,
+    h: FAIRMONT.podium.h + FAIRMONT.tower.h + 1.6,
+    build: (s, x, z, yb, yt) => {
+      const { podium: P, tower: TW } = FAIRMONT;
+      const r0 = FAIRMONT_TURN;
+      const [px, pz] = fairmontXZ(P.a, P.l);
+      // the podium in warm stone, its roof the garden
+      const pod = walls(s, "stone", fp.rect(P.w, P.d), px, pz, yb, yt + P.h, { tint: T(0xd9cfbf), yRef: yt, r0 });
+      cap(s, "garden", pod);
+      // the slab in sea-green glass, its harbour face in three angled bays, the top floors stepping back
+      const sea = T(0x9fd2ca);
+      const y1 = yt + P.h + TW.h - 3.4;
+      const shaft = walls(s, "glass", FAIRMONT_PLAN, x, z, yt + P.h, y1, { tint: sea, yRef: yt, r0 });
+      cap(s, "roof", shaft);
+      const crown = walls(s, "glass", FAIRMONT_PLAN.map(([a, b]) => [a * 0.86, b * 0.78] as [number, number]), x, z, y1, y1 + 3.4, { tint: sea, yRef: yt, r0 });
+      cap(s, "roof", crown);
+      // a plant room on top, behind the crown's harbour face
+      box(s, "concrete", x - Math.sin(r0) * 1, y1 + 3.4, z + Math.cos(r0) * 1, 7, 1.6, 3, T(0xd8d4cc), -r0);
     },
   },
   {
@@ -290,6 +326,8 @@ export const HEROES: Hero[] = RAW.map((h) => {
   const [x, z] = pushOut(h.x, h.z, h.r + 18);
   return { ...h, x, z };
 });
+/** The heroes the city's layout keeps clear of (their footprints, the streets under them): all but the late ones. */
+export const LAYOUT_HEROES: Hero[] = HEROES.filter((h) => !h.late);
 
 /**
  * Where a hero stands: the lowest ground under its square (its walls start there) and the highest (its floors are

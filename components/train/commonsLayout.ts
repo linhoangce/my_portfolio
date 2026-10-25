@@ -355,14 +355,14 @@ const CULTURE: Feature[] = [
   { kind: "mural", ...inSet(5, -19.2, 36, 1, 0), cell: ART.hands, w: 5.4, site: "commercial" },
   { kind: "flag", ...inSet(5, -19.4, 46, 1, 0), cell: ART.pride, site: "commercial" },
   { kind: "flag", ...inSet(5, -19.4, 50, 1, 0), cell: ART.trans, site: "commercial" },
-  // the canoe landing on the slope of the Canada Place forecourt down to the harbour: the reconciliation monument at its
-  // head, its plaque to the water, two carved posts at the top of its steps, a fire circle between, the steps
-  // (Culture.tsx lays them on the ground) running down to a float where two journey canoes are drawn up
+  // the canoe landing off the Canada Place forecourt's deck (harbourfront.ts): the reconciliation monument at its head
+  // on the rim behind the deck, its plaque to the water, a fire circle on the deck, two carved posts at the top of its
+  // steps, the steps (Culture.tsx) running down from the deck's edge to a float where two journey canoes are drawn up
   { kind: "monument", x: RECONCILIATION_AT[0], z: RECONCILIATION_AT[1], ry: Math.PI, w: 5.6, d: 5.6, site: "forecourt" },
-  { kind: "fire", x: -16.5, z: -34.6, ry: 0, site: "forecourt" },
-  { kind: "post", x: -24.4, z: -36.2, ry: Math.PI, site: "forecourt" },
-  { kind: "post", x: -8.6, z: -36.2, ry: Math.PI, site: "forecourt" },
-  { kind: "landing", x: -16.5, z: -45.5, ry: Math.PI, w: 15, d: 19, site: "forecourt" },
+  { kind: "fire", x: -16.5, z: -39, ry: 0, site: "forecourt" },
+  { kind: "post", x: -23.4, z: -45.6, ry: Math.PI, site: "forecourt" },
+  { kind: "post", x: -9.6, z: -45.6, ry: Math.PI, site: "forecourt" },
+  { kind: "landing", x: -16.5, z: -51.5, ry: Math.PI, w: 13, d: 9, site: "forecourt" },
 ];
 
 const MARKET_HEX = [0xe4572e, 0xd2452f, 0xf3a712, 0x29a19c, 0xc8281e, 0xe84393];
