@@ -993,7 +993,7 @@ html:has(.scene-ov.open) .ask {
   .brand .name {
     font-size: 20px;
   }
-  /* three round icon buttons on the right: Ask, the text version, day and night */
+  /* three round icon buttons on the right: Ask, the resume, day and night */
   .top .right {
     gap: 8px;
   }
