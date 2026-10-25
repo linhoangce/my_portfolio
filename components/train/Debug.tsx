@@ -15,7 +15,8 @@ import { orbitBy, zoomBy } from "./scene/view";
 import type { MonumentKey } from "./monumentData";
 import { useTrain } from "./store";
 import { BLOCKERS } from "./cityModel";
-import { getCityData } from "./cityData";
+import { getCityData, getTreeData } from "./cityData";
+import { type BoatPose, Harbour } from "./harbourTraffic";
 import { sdfAt } from "./terrain";
 import { CROSSOVERS, deckY, groundAt, LEN, LOOPS, lowAt, profile, SAMPLES, samples, STATION_XZ, stationS } from "./track";
 import { useWorld } from "./world";
@@ -70,6 +71,12 @@ export type TrainDebug = {
   state: () => Record<string, unknown>;
   /** The water's signed distance at a point (negative on water), for the shore checks. */
   sdf: (x: number, z: number) => number;
+  /**
+   * Fingerprints of what is generated, for the determinism checks: the air taxis' tracks and timetable, the drones'
+   * rounds, a fresh harbour's sailings over its first 900 s (every boat's pose every 5 s), and the lots, houses and
+   * trees outside `box` (x0, x1, z0, z1; by default the Inlet Walk's corridor) with the counts inside it.
+   */
+  digest: (box?: [number, number, number, number]) => Record<string, string | number>;
   /** Static geometry for the headless checks: track samples, footprints, blockers, station points. */
   geometry: () => {
     samples: [number, number, number, number, number, number, number][];
@@ -87,6 +94,23 @@ declare global {
   interface Window {
     __train?: TrainDebug;
   }
+}
+
+/** A running FNV-1a hash of numbers to a thousandth, for `digest`. */
+function digester() {
+  let h = 0x811c9dc5;
+  const one = (v: number) => {
+    const n = Number.isFinite(v) ? Math.round(v * 1000) : Number.isNaN(v) ? 0x7fffffff : 0x7ffffffe;
+    h = Math.imul(h ^ (n & 0xffff), 0x01000193);
+    h = Math.imul(h ^ ((n >>> 16) & 0xffff), 0x01000193);
+  };
+  return {
+    add: (...v: number[]) => v.forEach(one),
+    adds: (...arrs: ArrayLike<number>[]) => {
+      for (const a of arrs) for (let i = 0; i < a.length; i++) one(a[i]);
+    },
+    hex: () => (h >>> 0).toString(16).padStart(8, "0"),
+  };
 }
 
 /** `window.__train`: a debug handle for the headless checks (frames, draw calls, simulation state, jumps). */
@@ -282,6 +306,51 @@ export function Debug() {
         return out;
       },
       sdf: (x, z) => sdfAt(x, z),
+      digest: (box = [-14, 34, -330, -16]) => {
+        const lowEnd = st().env.lowEnd;
+        const inBox = (x: number, z: number) => x > box[0] && x < box[1] && z > box[2] && z < box[3];
+        const taxis = digester();
+        for (const s of airTaxis(lowEnd).services) {
+          taxis.add(s.n, s.c, ...s.offsets);
+          for (const tr of s.tracks) taxis.adds(tr.x, tr.y, tr.z);
+        }
+        const drones = digester();
+        for (const r of deliveryDrones(lowEnd).routes) {
+          const tr = track(r.round, () => false);
+          drones.add(r.port, r.c, ...r.offsets);
+          drones.adds(tr.x, tr.y, tr.z);
+        }
+        const boats = digester();
+        const harbour = new Harbour(lowEnd);
+        const pose: BoatPose = { x: 0, z: 0, yaw: 0, v: 0 };
+        for (let t = 0; t <= 900; t++) {
+          harbour.update(t, 1e9);
+          if (t % 5) continue;
+          for (let i = 0; i < harbour.hulls.length; i++) {
+            harbour.pose(i, t, pose);
+            boats.add(pose.x, pose.z, pose.yaw);
+          }
+        }
+        const city = getCityData(lowEnd);
+        const lots = digester();
+        let lotsIn = 0;
+        for (const l of city.lots) {
+          if (inBox(l.x, l.z)) lotsIn++;
+          else lots.add(l.x, l.z, l.w, l.d, l.top);
+        }
+        let housesIn = 0;
+        for (const h of city.houses) {
+          if (inBox(h.x, h.z)) housesIn++;
+          else lots.add(h.x, h.y, h.z, h.ry);
+        }
+        const trees = digester();
+        let treesIn = 0;
+        for (const t of getTreeData(lowEnd)) {
+          if (inBox(t.x, t.z)) treesIn++;
+          else trees.add(t.x, t.y, t.z, t.sp, t.s);
+        }
+        return { lowEnd: lowEnd ? 1 : 0, taxis: taxis.hex(), drones: drones.hex(), boats: boats.hex(), boatsN: harbour.hulls.length, lots: lots.hex(), lotsN: city.lots.length, lotsIn, housesIn, trees: trees.hex(), treesN: getTreeData(lowEnd).length, treesIn };
+      },
       geometry: () => {
         const city = getCityData(st().env.lowEnd);
         return {
