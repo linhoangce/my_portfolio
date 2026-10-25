@@ -235,7 +235,7 @@ export const LANDMARK_DEFS: LandmarkDef[] = [
   // Canada Place out on its pier over the inlet, the Convention Centre on the shore to the west (they overlapped)
   { key: "canadaPlace", x: -40, z: -76, r: 26, h: 22, margin: 6, lotR: 30 },
   { key: "convention", x: CONVENTION.x, z: CONVENTION.z, r: 24, h: 11, margin: 6, lotR: 24, yaw: CONVENTION.yaw },
-  { key: "bcPlace", x: -14, z: 130, r: 48, h: 47, margin: 6, lotR: 48 },
+  { key: "bcPlace", x: -14, z: 130, r: 48, h: 64, margin: 6, lotR: 48 },
   // Rogers Arena east of BC Place, back from the north shore and long side to the guideway, so the water between
   // BC Place and Science World stays open; Science World on its point with its plaza and science park to the east
   { key: "rogers", x: 46, z: 140, r: 18, h: 11, margin: 7, lotR: 18, yaw: Math.PI / 2 },

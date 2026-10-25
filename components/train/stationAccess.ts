@@ -83,6 +83,8 @@ const BRIDGES: { i: number; z0: number; z1: number }[] = [
   { i: 3, z0: -3.4, z1: 3.4 },
   { i: 8, z0: -8, z1: -4.9 },
 ];
+/** Station i's set bridges: the platform each lands on (`side` as an Access's) and the stretch along it. */
+export const setBridges = (i: number): { side: 1 | -1; z0: number; z1: number }[] => BRIDGES.filter((b) => b.i === i).map((b) => ({ side: -SET_SIDE[i] as 1 | -1, z0: b.z0, z1: b.z1 }));
 
 /** A building's footprint, as the city lays them out (buildings/city.ts Lot). */
 type Footprint = { x: number; z: number; w: number; d: number; ry?: number; fw?: number; fd?: number };
