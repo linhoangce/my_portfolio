@@ -47,7 +47,8 @@ function canRide(): boolean {
 /**
  * Client gate for the home page: checks capabilities, redirects to /text when the ride would be a bad experience,
  * otherwise lazy-loads the scene chunk under the DOM shell (top bar, the stop buttons and the line map, the scene's
- * column, the attendant and its button).
+ * column, the attendant and its button). The column is there from the first paint, server-rendered while the gate
+ * checks, so the Foreword is up to read while the scene loads.
  */
 export function TrainGate() {
   const router = useRouter();
@@ -101,7 +102,13 @@ export function TrainGate() {
       </div>
     );
   }
-  if (gate === "checking") return <div className="fixed inset-0 bg-bg" aria-hidden="true" />;
+  if (gate === "checking")
+    return (
+      <>
+        <div className="fixed inset-0 bg-bg" aria-hidden="true" />
+        <SceneOverlay />
+      </>
+    );
   if (gate === "lost") {
     return (
       <div className="fixed inset-0 z-40 flex flex-col items-center justify-center gap-4 bg-bg px-6 text-center" role="alert">
