@@ -1,18 +1,21 @@
 /**
  * Vancouver's streets around the ride (streetData.ts, generalized from OpenStreetMap) as a graph the city can ask
  * questions of: how far a point is from the nearest road and which road it is; every edge's centreline, width and
- * height along it (a deck where a road crosses the Grandview Cut); where a road is not drawn (under a landmark, a hero
- * or a station's set, across the Expo's fenced right-of-way where it runs at grade); the signalled junctions and their
- * timing, which the signal heads and the cars share; and the land use under any point. Built once, on first use, after
- * the terrain has every modifier in.
+ * height along it (a deck where a road crosses the Grandview Cut, the bridges over False Creek and the First
+ * Narrows); where a road is not drawn (under a landmark, a hero or a station's set, across the Expo's fenced
+ * right-of-way where it runs at grade, over the water, into the side of a bridge's low deck); the signalled junctions
+ * and their timing, which the signal heads and the cars share; and the land use under any point. Built once, on first
+ * use, after the terrain has every modifier in.
  */
 import { TRENCH } from "./constants";
 import { BROADWAY_LINE, BROADWAY_PORTAL, cutAxis, inRailCut, MILL_LINE, profileAt } from "./rail";
+import { onPeninsula } from "./buildings/eras";
 import { HEROES } from "./buildings/heroes";
 import { LANDUSE } from "./landuseData";
 import { inSetZone } from "./sets/zones";
 import { inHarbourfront, inHarbourGreen } from "./harbourfront";
-import { inLandmark } from "./sites";
+import { lionsGateDeck } from "./lionsGate";
+import { BRIDGES, deckOf, inLandmark, underLowDeck } from "./sites";
 import { STREETS } from "./streetData";
 import { WCE_HALF, wceDist } from "./wce";
 import { demAt, groundAt, sdfAt } from "./terrain";
@@ -21,6 +24,12 @@ import { frameAt, LEN, lowAt, makeFrame } from "./track";
 export type RoadClass = 0 | 1 | 2 | 3;
 /** Half-width with the sidewalks, per class (motorway, arterial, collector, local), as the ride has always drawn them. */
 export const HALF = [4.2, 3.44, 2.9, 2.41];
+/**
+ * On the downtown peninsula (downtown, the West End, Yaletown) the streets are drawn narrower, their sidewalks as wide
+ * (a lane less on a two-way arterial): the blocks between them are bigger, and the city fills them in (city.ts). The
+ * motorways and the bridges keep their width.
+ */
+export const HALF_PENINSULA = [4.2, 2.75, 2.3, 1.95];
 /** Sidewalk width inside that half-width (none beside a motorway). */
 export const WALK = [0, 0.85, 0.8, 0.7];
 
@@ -28,7 +37,13 @@ export type REdge = {
   a: number;
   b: number;
   cls: RoadClass;
+  /** Half-width as drawn (and driven, walked and planted). */
   half: number;
+  /**
+   * Half-width the city was laid out against (HALF): its lots, its bus stops and its hidden stretches are where they
+   * were before the peninsula's streets were drawn narrower, so none of them moved.
+   */
+  lay: number;
   /** 1 one-way from a to b, -1 from b to a, 0 both ways. */
   oneway: -1 | 0 | 1;
   median: boolean;
@@ -47,6 +62,11 @@ export type REdge = {
   deck: Uint8Array;
   /** Over the Broadway Subway: 0 not, 1 its distance along running west, 2 running east. */
   subway: 0 | 1 | 2;
+  /**
+   * Carried on a bridge's deck from end to end (False Creek's, the Lions Gate): drawn by the bridge, so none of it is
+   * shown as a street, yet the cars drive it, on its deck.
+   */
+  span: boolean;
 };
 export type RNode = { x: number; z: number; edges: number[]; signal: boolean; deg: number };
 export type Roads = { nodes: RNode[]; edges: REdge[]; ped: [number, number][] };
@@ -144,16 +164,22 @@ export function roads(): Roads {
     const n = pts.length / 2;
     const cum = new Float32Array(n);
     for (let i = 1; i < n; i++) cum[i] = cum[i - 1] + Math.hypot(pts[i * 2] - pts[i * 2 - 2], pts[i * 2 + 1] - pts[i * 2 - 1]);
+    const bridge = !!((f >> 5) & 1);
+    // the peninsula's streets narrower, by where the street's middle is
+    const mid = Math.max(0, cum.findIndex((c) => c >= cum[n - 1] / 2));
+    const [mx, mz] = [pts[mid * 2], pts[mid * 2 + 1]];
+    const half = !bridge && onPeninsula(mx, mz) ? HALF_PENINSULA[cls] : HALF[cls];
     edges.push({
       a,
       b,
       cls,
-      half: HALF[cls],
+      half,
+      lay: HALF[cls],
       oneway: ow === 1 ? 1 : ow === 2 ? -1 : 0,
       median: !!((f >> 4) & 1),
-      bridge: !!((f >> 5) & 1),
+      bridge,
       // no more lanes than the drawn carriageway holds a car's width each (1.25)
-      lanes: Math.max(1, Math.min(((f >> 6) & 3) + 1, Math.floor(((HALF[cls] - WALK[cls]) * (ow ? 2 : 1)) / 1.25))),
+      lanes: Math.max(1, Math.min(((f >> 6) & 3) + 1, Math.floor(((half - WALK[cls]) * (ow ? 2 : 1)) / 1.25))),
       name: names[ni] ?? "",
       pts,
       cum,
@@ -162,6 +188,7 @@ export function roads(): Roads {
       shown: new Uint8Array(n - 1).fill(1),
       deck: new Uint8Array(n - 1),
       subway: 0,
+      span: false,
     });
     nodes[a].edges.push(k);
     nodes[b].edges.push(k);
@@ -172,10 +199,25 @@ export function roads(): Roads {
   const ped: [number, number][] = [];
   for (let i = 0; i < P.length / 2; i++) ped.push(displace(P[i * 2] / 10, P[i * 2 + 1] / 10));
 
-  // where a road is not drawn, and how high it runs
+  // where a road is not drawn (by its laid-out width, so the stretches hidden stay as they were), and how high it runs
   buildFence();
   const hidden = (x: number, z: number, half: number) =>
-    sdfAt(x, z) < 1 || inLandmark(x, z, 0) || inHarbourfront(x, z, half) || inHarbourGreen(x, z, half) || wceDist(x, z) < WCE_HALF + 1 + half || inSetZone(x, z, 0) || HEROES.some((h) => (h.x - x) ** 2 + (h.z - z) ** 2 < (h.r - 1) ** 2) || fenced(x, z, 9 + half);
+    sdfAt(x, z) < 1 ||
+    inLandmark(x, z, 0) ||
+    inHarbourfront(x, z, half) ||
+    inHarbourGreen(x, z, half) ||
+    wceDist(x, z) < WCE_HALF + 1 + half ||
+    inSetZone(x, z, 0) ||
+    HEROES.some((h) => (h.x - x) ** 2 + (h.z - z) ** 2 < (h.r - 1) ** 2) ||
+    fenced(x, z, 9 + half) ||
+    underLowDeck(x, z, half);
+  // a long stretch whose ends and middle are ashore can still cross open water (the map's own Lions Gate Bridge, at
+  // the water's level across the First Narrows)
+  const overWater = (ax: number, az: number, bx: number, bz: number) => {
+    const L = Math.hypot(bx - ax, bz - az);
+    for (let s = 3; s < L - 1; s += 3) if (sdfAt(ax + ((bx - ax) * s) / L, az + ((bz - az) * s) / L) < -1) return true;
+    return false;
+  };
   const underHero = (x: number, z: number, half: number) => HEROES.some((h) => Math.abs(h.x - x) < h.r - 1 + half - 0.4 && Math.abs(h.z - z) < h.r - 1 + half - 0.4);
   edges.forEach((e) => {
     const n = e.pts.length / 2;
@@ -183,7 +225,7 @@ export function roads(): Roads {
     for (let i = 0; i + 1 < n; i++) {
       const mx = (e.pts[i * 2] + e.pts[i * 2 + 2]) / 2;
       const mz = (e.pts[i * 2 + 1] + e.pts[i * 2 + 3]) / 2;
-      if (hidden(mx, mz, e.half) || hidden(e.pts[i * 2], e.pts[i * 2 + 1], e.half) || hidden(e.pts[i * 2 + 2], e.pts[i * 2 + 3], e.half) || underHero(mx, mz, e.half)) e.shown[i] = 0;
+      if (hidden(mx, mz, e.lay) || hidden(e.pts[i * 2], e.pts[i * 2 + 1], e.lay) || hidden(e.pts[i * 2 + 2], e.pts[i * 2 + 3], e.lay) || underHero(mx, mz, e.lay) || overWater(e.pts[i * 2], e.pts[i * 2 + 1], e.pts[i * 2 + 2], e.pts[i * 2 + 3])) e.shown[i] = 0;
     }
   });
   // over the Millennium's trench a road crosses on a bridge from one bank's lip to the other's, or ends at its rim
@@ -205,7 +247,8 @@ export function roads(): Roads {
     for (const [e, j] of ends) e.y[j] = y;
   });
   tidyFragments(nodes, edges);
-  // the segment hash, every segment in every cell its swept width touches
+  addBridges(nodes, edges, hidden);
+  // the segment hash, every segment in every cell its swept width (as laid out, the wider) touches
   edges.forEach((e, k) => {
     const n = e.pts.length / 2;
     for (let i = 0; i + 1 < n; i++) {
@@ -216,7 +259,7 @@ export function roads(): Roads {
       const s = segEdge.length;
       segEdge.push(k);
       segIdx.push(i);
-      const pad = e.half + 1;
+      const pad = e.lay + 1;
       for (let ci = Math.floor((Math.min(ax, bx) - pad) / H); ci <= Math.floor((Math.max(ax, bx) + pad) / H); ci++) {
         for (let cj = Math.floor((Math.min(az, bz) - pad) / H); cj <= Math.floor((Math.max(az, bz) + pad) / H); cj++) {
           const key = ci * 100000 + cj;
@@ -549,6 +592,132 @@ function tidyFragments(nodes: RNode[], edges: REdge[]): void {
   }
 }
 
+/** How far under a deck's road the cars' deck height is given (traffic.ts lifts a car on a deck by 0.12). */
+const RIDE = 0.1;
+/** The causeway's missing links, one way each, from the map's node at the first point to the one at the second. */
+const CAUSEWAY_MENDS: [[number, number], [number, number]][] = [
+  [
+    [-190.2, -136.8],
+    [-200.2, -141.2],
+  ],
+  [
+    [-195.3, -107.5],
+    [-195.7, -101.7],
+  ],
+];
+/**
+ * The bridges, carried into the network:
+ * - over False Creek, each from the end of the street it carries on at one end (sites.ts BRIDGES) to the other's, along
+ *   its deck at the deck's height, two lanes each way where its markings put them;
+ * - the Lions Gate, from the causeway (its junction nearest the deck's south end, short of it) up a stretch of new road
+ *   through the park to where the deck comes down to the ground, then over the First Narrows to its north end on the
+ *   North Shore, where the map ends (traffic.ts brings cars in from there and takes them off), one lane each way in
+ *   its outer lanes.
+ * A span is drawn by its bridge, not as a street; the causeway's new stretch is a street like any other.
+ */
+function addBridges(nodes: RNode[], edges: REdge[], hidden: (x: number, z: number, half: number) => boolean): void {
+  const nodeAt = (x: number, z: number, r = 1.5) => {
+    let best = -1;
+    let bd = r;
+    nodes.forEach((n, i) => {
+      const d = Math.hypot(n.x - x, n.z - z);
+      if (d < bd) {
+        bd = d;
+        best = i;
+      }
+    });
+    return best;
+  };
+  const add = (a: number, b: number, xs: number[], ys: number[], cls: RoadClass, half: number, lanes: number, name: string, span: boolean, oneway: -1 | 0 | 1 = 0) => {
+    const pts = new Float32Array(xs);
+    const n = pts.length / 2;
+    const cum = new Float32Array(n);
+    for (let i = 1; i < n; i++) cum[i] = cum[i - 1] + Math.hypot(pts[i * 2] - pts[i * 2 - 2], pts[i * 2 + 1] - pts[i * 2 - 1]);
+    const shown = new Uint8Array(n - 1);
+    if (!span) for (let i = 0; i + 1 < n; i++) shown[i] = hidden((pts[i * 2] + pts[i * 2 + 2]) / 2, (pts[i * 2 + 1] + pts[i * 2 + 3]) / 2, half) ? 0 : 1;
+    const k = edges.length;
+    edges.push({ a, b, cls, half, lay: half, oneway, median: false, bridge: !oneway, lanes, name, pts, cum, y: Float32Array.from(ys), len: cum[n - 1], shown, deck: new Uint8Array(n - 1).fill(span ? 1 : 0), subway: 0, span });
+    for (const nd of [a, b]) {
+      nodes[nd].edges.push(k);
+      nodes[nd].deg++;
+    }
+  };
+  for (const br of BRIDGES) {
+    const a = nodeAt(...br.a);
+    const b = nodeAt(...br.b);
+    if (a < 0 || b < 0) continue;
+    const d = deckOf(br);
+    const xs: number[] = [];
+    const ys: number[] = [];
+    d.T.forEach((t, i) => {
+      xs.push(...d.at(t, 0));
+      ys.push(d.deck[i] + 0.04 - RIDE);
+    });
+    // its ends on the streets' ends exactly
+    xs.splice(0, 2, nodes[a].x, nodes[a].z);
+    xs.splice(xs.length - 2, 2, nodes[b].x, nodes[b].z);
+    // an arterial, its lanes centred where the deck's markings put them (the lane offsets come in from the kerb's walk)
+    add(a, b, xs, ys, 1, 0.93 * br.half + WALK[1], 2, br.name, true);
+  }
+  // the causeway's carriageways where the map lost their ends: the northbound one on into the junction the bridge's road
+  // leaves from, the southbound one out onto Georgia Street (without them the causeway's south end is a pocket the cars
+  // could drive into and never leave, and the park and the bridge beyond it are cut off from the city)
+  for (const [[ax, az], [bx, bz]] of CAUSEWAY_MENDS) {
+    const a = nodeAt(ax, az);
+    const b = nodeAt(bx, bz);
+    if (a < 0 || b < 0) continue;
+    const m = Math.max(1, Math.ceil(Math.hypot(nodes[b].x - nodes[a].x, nodes[b].z - nodes[a].z) / 2));
+    const xs: number[] = [];
+    const ys: number[] = [];
+    for (let k = 0; k <= m; k++) {
+      const x = nodes[a].x + ((nodes[b].x - nodes[a].x) * k) / m;
+      const z = nodes[a].z + ((nodes[b].z - nodes[a].z) * k) / m;
+      xs.push(x, z);
+      ys.push(groundAt(x, z));
+    }
+    add(a, b, xs, ys, 0, HALF[2], 1, "Stanley Park Causeway", false, 1);
+  }
+  const lg = lionsGateDeck();
+  let join = -1;
+  let jd = 90;
+  nodes.forEach((n, i) => {
+    const d = Math.hypot(n.x - lg.X, n.z - lg.zEndS);
+    if (d < jd && n.z > lg.zEndS + 20 && n.edges.some((k) => edges[k].name === "Stanley Park Causeway")) {
+      jd = d;
+      join = i;
+    }
+  });
+  if (join < 0) return;
+  const south = nodes.push({ x: lg.X, z: lg.zEndS, edges: [], signal: false, deg: 0 }) - 1;
+  const north = nodes.push({ x: lg.X, z: lg.zEndN, edges: [], signal: false, deg: 0 }) - 1;
+  // north out of the junction, well clear of the loop the causeway takes west, and swinging over to come onto the
+  // deck straight
+  const [jx, jz] = [nodes[join].x, nodes[join].z];
+  const reach = (jz - lg.zEndS) * 0.4;
+  const m = Math.ceil(jd / 4);
+  const ax: number[] = [];
+  const ay: number[] = [];
+  for (let k = 0; k <= m; k++) {
+    const u = k / m;
+    const [b0, b1, b2, b3] = [(1 - u) ** 3, 3 * u * (1 - u) ** 2, 3 * u * u * (1 - u), u ** 3];
+    const x = (b0 + b1) * jx + (b2 + b3) * lg.X;
+    const z = b0 * jz + b1 * (jz - reach) + b2 * (lg.zEndS + reach) + b3 * lg.zEndS;
+    ax.push(x, z);
+    ay.push(groundAt(x, z));
+  }
+  add(join, south, ax, ay, 0, HALF[0], 1, "Stanley Park Causeway", false);
+  const sx: number[] = [];
+  const sy: number[] = [];
+  for (let z = lg.zEndS; z > lg.zEndN; z -= 2) {
+    sx.push(lg.X, z);
+    sy.push(lg.deckAt(z) - RIDE);
+  }
+  sx.push(lg.X, lg.zEndN);
+  sy.push(lg.deckAt(lg.zEndN) - RIDE);
+  // one lane each way, in the outer lanes 2.4 either side of the middle
+  add(south, north, sx, sy, 0, 4.8, 1, "Lions Gate Bridge", true);
+}
+
 /** Centreline point at distance s along an edge. */
 export function pointAt(e: REdge, s: number): [number, number] {
   const n = e.pts.length / 2;
@@ -590,8 +759,11 @@ export function heightAt(e: REdge, s: number): number {
 }
 
 export type Near = { edge: number; seg: number; t: number; d: number; s: number; side: number };
-/** The nearest road centreline within 14 units: edge, segment, parameter, distance, distance along, side (+1 right of a→b). */
-export function roadNear(x: number, z: number, out: Near): Near | null {
+/**
+ * The nearest road centreline within 14 units: edge, segment, parameter, distance, distance along, side (+1 right of
+ * a→b); nearest by kerb, each road at its drawn width (or `laid`, its laid-out width).
+ */
+export function roadNear(x: number, z: number, out: Near, laid = false): Near | null {
   const { edges } = roads();
   const c = hash.get(Math.floor(x / H) * 100000 + Math.floor(z / H));
   if (!c) return null;
@@ -608,7 +780,7 @@ export function roadNear(x: number, z: number, out: Near): Near | null {
     const dx = x - ax - t * ex;
     const dz = z - az - t * ez;
     // measured from the road's edge, so a wide road counts as near as its kerb
-    const d = Math.hypot(dx, dz) - e.half;
+    const d = Math.hypot(dx, dz) - (laid ? e.lay : e.half);
     if (d < best) {
       best = d;
       out.edge = segEdge[si];
@@ -657,6 +829,11 @@ export function roadDist(x: number, z: number): number {
   const n = roadNear(x, z, scratch);
   return n ? n.d - roads().edges[n.edge].half : 99;
 }
+/** As roadDist, each road at the width the city was laid out against (REdge.lay). */
+export function layDist(x: number, z: number): number {
+  const n = roadNear(x, z, scratch, true);
+  return n ? n.d - roads().edges[n.edge].lay : 99;
+}
 export const isRoad = (x: number, z: number, pad = 0): boolean => roadDist(x, z) < pad;
 
 /* ------------------------------------------------------------------ junctions */
@@ -666,9 +843,9 @@ export type Junction = { x: number; z: number; poly: [number, number][]; setback
 /**
  * A junction where three or more drawn roads meet: each road's kerbs run in to meet its neighbours' (the corner where
  * one road's left kerb crosses the next one's right), each road stops short of the junction by its corners' distance,
- * and the junction itself is one asphalt polygon through those points.
+ * and the junction itself is one asphalt polygon through those points. `laid`: as the roads were laid out (REdge.lay).
  */
-export function junction(node: number): Junction | null {
+export function junction(node: number, laid = false): Junction | null {
   const { nodes, edges } = roads();
   const nd = nodes[node];
   const arms: { k: number; ux: number; uz: number; h: number; ang: number; len: number }[] = [];
@@ -680,7 +857,7 @@ export function junction(node: number): Junction | null {
     if (!(atA ? e.shown[0] : e.shown[n - 2])) continue;
     const [x0, z0, x1, z1] = atA ? [e.pts[0], e.pts[1], e.pts[2], e.pts[3]] : [e.pts[n * 2 - 2], e.pts[n * 2 - 1], e.pts[n * 2 - 4], e.pts[n * 2 - 3]];
     const L = Math.hypot(x1 - x0, z1 - z0) || 1;
-    arms.push({ k, ux: (x1 - x0) / L, uz: (z1 - z0) / L, h: e.half, ang: Math.atan2(z1 - z0, x1 - x0), len: e.len });
+    arms.push({ k, ux: (x1 - x0) / L, uz: (z1 - z0) / L, h: laid ? e.lay : e.half, ang: Math.atan2(z1 - z0, x1 - x0), len: e.len });
   }
   if (arms.length < 3) return null;
   arms.sort((a, b) => a.ang - b.ang);

@@ -11,7 +11,7 @@ import { merged, type Part } from "./merge";
 import { isRoad } from "./roadNetwork";
 import { groundAt, RASTER } from "./terrain";
 import { buildExtension, EXT_GAP, EXT_JOIN, type Frame, frameAt, LEN, makeFrame, UP } from "./track";
-import { carGeometry } from "./trainGeometry";
+import { bogieSpacing, carGeometry } from "./trainGeometry";
 import { useWorld } from "./world";
 
 const at = (v: Vector3): [number, number, number] => [v.x, v.y, v.z];
@@ -25,6 +25,8 @@ const at = (v: Vector3): [number, number, number] => [v.x, v.y, v.z];
  * the line (from further off it is lost in the haze).
  */
 const REACH = { full: 900, lite: 650 };
+/** Half the distance between a car's bogies (trainGeometry.ts bogieSpacing). */
+const BOGIE = bogieSpacing(CAR);
 
 export function Extension({ heightAt }: { heightAt: (x: number, z: number) => number }) {
   const world = useWorld();
@@ -233,11 +235,11 @@ export function Extension({ heightAt }: { heightAt: (x: number, z: number) => nu
     if (!g?.visible) return;
     const { s, dir } = where(clock.elapsedTime);
     for (let k = 0; k < 2; k++) {
-      // each car on a ±4.5-unit chord, in the right-hand lane for its way of travel
+      // each car on its two bogies (as the line's own trains ride), in the right-hand lane for its way of travel
       const sc = s - dir * (k - 0.5) * (CAR + GAP);
-      pointAt(sc + 4.5 * dir, pa);
-      pointAt(sc - 4.5 * dir, pb);
-      pointAt(sc, pc);
+      pointAt(sc + BOGIE * dir, pa);
+      pointAt(sc - BOGIE * dir, pb);
+      pc.copy(pa).add(pb).multiplyScalar(0.5);
       ext.curve.getTangentAt(Math.min(1, Math.max(0, sc / ext.L)), tc);
       r.crossVectors(tc, UP).normalize();
       pc.addScaledVector(r, dir * LANE).addScaledVector(UP, 0.98);

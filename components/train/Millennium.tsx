@@ -17,7 +17,7 @@ import { paint } from "./shapes";
 import { STATION_FRAMES } from "./sets/zones";
 import { rib, vault } from "./Stations";
 import { type Frame, groundAt, makeFrame, UP } from "./track";
-import { carGeometry } from "./trainGeometry";
+import { bogieSpacing, carGeometry } from "./trainGeometry";
 import { useWorld } from "./world";
 
 /** Frames every `step` along a line between two arc lengths. */
@@ -156,6 +156,8 @@ function cutWalls(step: number): { faces: BufferGeometry[]; ledges: BufferGeomet
 const MILL_YELLOW = 0xfacc15;
 /** A Millennium car's length: the pair of them stands whole at the line's 24-unit platforms. */
 const CAR = 11.4;
+/** Half the distance between a car's bogies (trainGeometry.ts bogieSpacing). */
+const BOGIE = bogieSpacing(CAR);
 
 /**
  * The other rail beside the ride, from OpenStreetMap (rail.ts): the Millennium Line on its own guideway, its LEDs in
@@ -581,12 +583,12 @@ export function Millennium() {
     for (const tr of built.trains) {
       const { s, dir } = where(t + tr.phase * oneWay * 2);
       tr.cars.forEach((car, k) => {
-        // each car on a ±4.5-unit chord, as the Expo's cars ride
+        // each car on its two bogies, as the Expo's cars ride: the body midway between them, along their chord
         const sc = s - dir * (k - 0.5) * (CAR + GAP);
-        onLine(sc + 4.5 * dir, fa);
-        onLine(sc - 4.5 * dir, fb);
+        onLine(sc + BOGIE * dir, fa);
+        onLine(sc - BOGIE * dir, fb);
         onLine(sc, fc);
-        car.position.copy(fc.p).addScaledVector(fc.r, dir * LANE).addScaledVector(UP, 0.98);
+        car.position.copy(fa.p).add(fb.p).multiplyScalar(0.5).addScaledVector(fc.r, dir * LANE).addScaledVector(UP, 0.98);
         look.copy(fa.p).sub(fb.p).normalize();
         car.lookAt(fp.copy(car.position).add(look));
       });

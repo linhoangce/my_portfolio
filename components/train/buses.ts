@@ -8,7 +8,7 @@
  */
 import { stations } from "@/data";
 
-import { junction, pointAt, type REdge, roadDist, roads } from "./roadNetwork";
+import { junction, layDist, pointAt, type REdge, roads } from "./roadNetwork";
 import { STATION_XZ } from "./track";
 
 export type BusRoute = {
@@ -20,8 +20,12 @@ export type BusRoute = {
   stops: number[][];
   len: number;
 };
-/** A stop: where, facing, its route and station; at a station a bus bay under a canopy (its length) where one fits. */
-export type BusStop = { x: number; z: number; ry: number; route: string; station: number | null; exchange: boolean; len: number };
+/**
+ * A stop: where, facing, its route and station; at a station a bus bay under a canopy (its length) where one fits. It
+ * was placed against the streets as laid out (REdge.lay), where it stood then (lx, lz) and the city keeps clear of; it
+ * stands as far back from the kerb as drawn (x, z).
+ */
+export type BusStop = { x: number; z: number; lx: number; lz: number; ry: number; route: string; station: number | null; exchange: boolean; len: number };
 /** A station's stop on a route that passes within this distance of it. */
 const STATION_REACH = 60;
 /** Stops between stations, about this far apart along a route. */
@@ -135,10 +139,10 @@ function nodeNear(name: string | null, x: number, z: number): number {
   return best;
 }
 
-/** Where a stop may stand on a step: clear of the junction box at each end and its crosswalk. */
+/** Where a stop may stand on a step: clear of the junction box at each end and its crosswalk (as laid out). */
 function stopRange(k: number, dir: 1 | -1): [number, number] {
   const e = roads().edges[k];
-  const sb = (node: number) => junction(node)?.setback.get(k) ?? 0;
+  const sb = (node: number) => junction(node, true)?.setback.get(k) ?? 0;
   const enter = dir > 0 ? e.a : e.b;
   const leave = dir > 0 ? e.b : e.a;
   return [sb(enter) + 3, e.len - sb(leave) - 5];
@@ -181,7 +185,8 @@ export function busNetwork(): { routes: BusRoute[]; stops: BusStop[] } {
     }
     if (!ok || path.length < 2) continue;
     const r: BusRoute = { name: spec.name, path, stops: path.map(() => []), len: path.reduce((s, [k]) => s + edges[k].len, 0) };
-    // where a stop's shelter goes at distance t along step pi: set back from the kerb, as long as fits (null: none does)
+    // where a stop's shelter goes at distance t along step pi: set back from the kerb, as long as fits (null: none does);
+    // found against the streets as laid out, then moved in by as much as its street is drawn narrower
     const spot = (pi: number, t: number, station: number | null) => {
       const [k, dir] = path[pi];
       const e = edges[k];
@@ -193,7 +198,7 @@ export function busNetwork(): { routes: BusRoute[]; stops: BusStop[] } {
           for (const w of [-0.7, 0.7]) {
             const px = x + hx * u - hz * (off - w);
             const pz = z + hz * u + hx * (off - w);
-            if (roadDist(px, pz) < 0.15) return false;
+            if (layDist(px, pz) < 0.15) return false;
           }
         }
         return true;
@@ -202,7 +207,7 @@ export function busNetwork(): { routes: BusRoute[]; stops: BusStop[] } {
       let off = -1;
       let len = 2.6;
       for (const L of station !== null ? [8.6, 5.4, 2.6] : [2.6]) {
-        for (let o = e.half + 0.8; o <= e.half + (L > 3 ? 5 : 3); o += 0.5) {
+        for (let o = e.lay + 0.8; o <= e.lay + (L > 3 ? 5 : 3); o += 0.5) {
           if (fits(o, L)) {
             off = o;
             break;
@@ -211,14 +216,19 @@ export function busNetwork(): { routes: BusRoute[]; stops: BusStop[] } {
         len = L;
         if (off >= 0) break;
       }
-      if (off < 0) return { x: x - hz * (e.half + 0.8), z: z + hx * (e.half + 0.8), ry: Math.atan2(hz, -hx), len: 2.6, fit: false };
-      return { x: x - hz * off, z: z + hx * off, ry: Math.atan2(hz, -hx), len, fit: true };
+      const fit = off >= 0;
+      if (!fit) {
+        off = e.lay + 0.8;
+        len = 2.6;
+      }
+      const drawn = off - (e.lay - e.half);
+      return { x: x - hz * drawn, z: z + hx * drawn, lx: x - hz * off, lz: z + hx * off, ry: Math.atan2(hz, -hx), len, fit };
     };
     const place = (pi: number, t: number, station: number | null) => {
       r.stops[pi].push(t);
       r.stops[pi].sort((p, q) => p - q);
-      const { x, z, ry, len } = spot(pi, t, station);
-      stops.push({ x, z, ry, route: spec.name, station, exchange: len > 3, len });
+      const { x, z, lx, lz, ry, len } = spot(pi, t, station);
+      stops.push({ x, z, lx, lz, ry, route: spec.name, station, exchange: len > 3, len });
     };
     // a stop at each station the route passes, at the nearest clear spot, once each time it passes
     STATION_XZ.forEach(([sx, sz], si) => {
@@ -280,9 +290,9 @@ export function busNetwork(): { routes: BusRoute[]; stops: BusStop[] } {
   return built;
 }
 
-/** Near a bus stop's shelter (or an exchange's canopy), with a pad. */
-export function nearBusStop(x: number, z: number, pad = 0): boolean {
-  return busNetwork().stops.some((s) => (s.x - x) ** 2 + (s.z - z) ** 2 < ((s.exchange ? s.len / 2 + 0.3 : 1.8) + pad) ** 2);
+/** Near a bus stop's shelter (or an exchange's canopy), with a pad; `laid`: where it stood against the streets as laid out. */
+export function nearBusStop(x: number, z: number, pad = 0, laid = false): boolean {
+  return busNetwork().stops.some((s) => ((laid ? s.lx : s.x) - x) ** 2 + ((laid ? s.lz : s.z) - z) ** 2 < ((s.exchange ? s.len / 2 + 0.3 : 1.8) + pad) ** 2);
 }
 
 /** The station's name a stop serves, for its board. */

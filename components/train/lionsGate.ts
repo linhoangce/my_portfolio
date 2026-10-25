@@ -81,8 +81,8 @@ export type LionsGate = { group: Group; necklace: Vector3[]; centre: Vector3; di
 
 /**
  * The deck along the crossing line (x = X): the towers' and the anchorages' places, the road's height at any z (a
- * gentle crown over the suspended spans, falling at a road's grade along the approaches) and where it meets the
- * ground at each end. The bridge and the traffic on it (bridgeTraffic.ts) both stand on it.
+ * gentle crown over the suspended spans, falling at a road's grade along the approaches) and where it comes down to
+ * the ground at each end. The bridge and the cars on it (roadNetwork.ts) both stand on it.
  */
 export function lionsGateDeck() {
   const nw = narrows();
@@ -103,11 +103,11 @@ export function lionsGateDeck() {
     return D - grade * (z > zA1 ? z - zA1 : zA2 - z);
   };
   const ground = (z: number) => Math.max(SEA, groundAt(X, z));
-  // walk each approach out until the deck meets the ground
+  // walk each approach out until the deck is down on the ground, where the road goes on from it
   let zEndS = zA1;
-  while (zEndS < zA1 + 200 && deckAt(zEndS) > ground(zEndS) + 0.4) zEndS += 2;
+  while (zEndS < zA1 + 200 && deckAt(zEndS) > ground(zEndS) + 0.1) zEndS += 2;
   let zEndN = zA2;
-  while (zEndN > zA2 - 220 && deckAt(zEndN) > ground(zEndN) + 0.4) zEndN -= 2;
+  while (zEndN > zA2 - 220 && deckAt(zEndN) > ground(zEndN) + 0.1) zEndN -= 2;
   return { X, D, zT1, zT2, span, mid, zA1, zA2, deckAt, ground, zEndS, zEndN };
 }
 

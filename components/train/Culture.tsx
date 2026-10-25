@@ -11,6 +11,7 @@ import { artMaterial, MURAL0, PLAQUE_ASPECT, plaqueRect } from "./cultureArt";
 import { PIER_COUNT, PIER_R, pierAt } from "./Guideway";
 import { muralsOf } from "./muralArt";
 import { makeFrame } from "./track";
+import { DEV_PIECES } from "./buildings/developments";
 import { SCULPTURES, towerFace, TOWERS } from "./buildings/senakw";
 import { A, banner, bigHouse, canoeHull, carvedPost, fireCircle, flagPole, moonGate, muralWall, P, plaque, reconciliationMonument, spindleWhorl, taikoStage, towerForm, welcomeFigure } from "./cultureKit";
 import { drapeDisc } from "./drape";
@@ -231,6 +232,14 @@ export function Culture() {
       const y = forecourt ? highest(f.x, f.z, (f.w ?? 2) / 2 + 0.6, (f.d ?? 2) / 2 + 0.6, lowEnd) + 0.05 : surfaceAt(f.x, f.z, stride) + lift;
       const piece = partsOf(f, lowEnd).map((g) => g.rotateY(f.ry ?? 0).translate(f.x, y, f.z));
       light(f.kind, piece, f.x, y, f.z, f.ry ?? 0, lift);
+      parts.push(...piece);
+    }
+    // the art at the developments placed by hand (developments.ts): senákw's welcome figures and spindle whorl, the
+    // basket tower's carved post, Chinatown's moon gate
+    for (const d of DEV_PIECES) {
+      const y = surfaceAt(d.x, d.z, stride) + 0.02;
+      const piece = partsOf({ kind: d.kind, x: d.x, z: d.z, ry: d.ry, quarter: d.quarter, w: d.w }, lowEnd).map((g) => g.rotateY(d.ry).translate(d.x, y, d.z));
+      light(d.kind, piece, d.x, y, d.z, d.ry, 0.02);
       parts.push(...piece);
     }
     // the sculpted forms on the towers after senákw, standing out from their faces, each lit from two fixtures held
