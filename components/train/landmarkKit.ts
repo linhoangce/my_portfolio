@@ -456,8 +456,8 @@ export function buildCanadaPlace(l: PlacedLandmark, world: World): Built {
   }
   // the gangway towers: white lattices only where a ship berths, an arm out over the water to the ship's door
   for (const [sx, berths] of [
-    [1, [-24, -10, 4]],
-    [-1, [-4, 6, 16]],
+    [1, [-32, -18, -4]],
+    [-1, [-4, 6]],
   ] as const) {
     for (const sz of berths) {
       const tx = sx * 16.6;
@@ -587,13 +587,13 @@ export function buildCanadaPlace(l: PlacedLandmark, world: World): Built {
   g.add(new Mesh(ups, new MeshBasicMaterial({ vertexColors: true, toneMapped: false })));
   const solidMesh = new Mesh(merge([...solid, ...mastGeo]), cityToned(world, new MeshStandardMaterial({ vertexColors: true, roughness: 0.7 })));
   solidMesh.receiveShadow = true;
-  // the cruise ship berthed on the east side, on the open inlet, bow to the sea, toward the pier's end so its stern
-  // keeps off the bank at the pier's root; and a second, three quarters its size, on the west side along its straight
-  // part and on past the prow (Coal Harbour's water there now open; nearer the shore it is too shallow), bow to the sea
-  // too; both in the same two meshes
-  const BERTH = -shore * 16;
+  // the cruise ship berthed on the east side, on the open inlet, bow to the sea, out toward the pier's end and on past
+  // its nose so its stern keeps well off the forecourt's canoe landing; and a second, three quarters its size, on the
+  // west side from the end of its straight part on past the prow, its stern well out from Jack Poole Plaza's seawall
+  // (Coal Harbour's water there now open), bow to the sea too; both in the same two meshes
+  const BERTH = -shore * 24;
   const shipX = 15.5 + 4.4 + 0.4;
-  const WEST = { x: -(15.5 + 3.3 + 0.4), z: Z(0), s: 0.75 };
+  const WEST = { x: -(15.5 + 3.3 + 0.4), z: Z(-12), s: 0.75 };
   const ship = cruiseShip(lowEnd);
   const small = cruiseShip(lowEnd);
   const berth = (geo: BufferGeometry) => geo.rotateY(shore > 0 ? Math.PI : 0).translate(shipX, water + 0.05, BERTH);

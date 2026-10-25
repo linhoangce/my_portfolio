@@ -98,7 +98,7 @@ export function hubDrops(): { x: number; y: number; z: number }[] {
  * - the bay off Harbour Green with its floatplane dock (harbourfront.ts).
  */
 export const NO_SAIL: [number, number, number, number][] = [
-  [-66, -6, -129, -30],
+  [-66, -6, -136, -30],
   [-120, -66, -68, -40],
   [-132, -104, -92, -58],
   [HUB_AT.x + HUB_DECK_BOX.x0 - 6, HUB_AT.x + HUB_DECK_BOX.x1 + 6, HUB_AT.z + HUB_DECK_BOX.z0 - 6, HUB_AT.z + HUB_DECK_BOX.z1 + 6],
