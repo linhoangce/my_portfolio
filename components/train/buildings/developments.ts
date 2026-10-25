@@ -210,10 +210,10 @@ export const DEVELOPMENTS: DevBuilding[] = [
   { name: "senákw east podium", ...SENAKW_EAST, w: 8, d: 17.5, build: (k) => cedarPodium(k, 8, 17.5, 3.4, 6) },
   { name: "senákw III", ...SENAKW_EAST, x: inFrame(SENAKW_EAST, 0, -5.4)[0], z: inFrame(SENAKW_EAST, 0, -5.4)[1], w: 6.8, d: 6.6, on: "senákw east podium", build: (k) => senakwTower(k, 6.8, 6.6, 90, SENAKW_GLASS[2], 0.92) },
   { name: "senákw IV", ...SENAKW_EAST, x: inFrame(SENAKW_EAST, 0, 5.6)[0], z: inFrame(SENAKW_EAST, 0, 5.6)[1], w: 6, d: 6, on: "senákw east podium", build: (k) => senakwTower(k, 6, 6, 70, SENAKW_GLASS[3]) },
-  // south of the bridge's foot, stepping down toward First Avenue; west of the bridge, toward Vanier Park, a tower and the hall
-  { name: "senákw V", x: -247.3, z: 184.2, ry: -0.557, w: 5.6, d: 5.6, build: (k) => senakwTerraces(k, 5.6, 5.6, 7, 4.6, SENAKW_GLASS[1]) },
-  { name: "senákw VI", x: -267.3, z: 155.3, ry: -0.557, w: 5.4, d: 5.4, build: (k) => senakwTower(k, 5.4, 5.4, 52, SENAKW_GLASS[2], 0.96) },
-  { name: "senákw hall", x: -289.75, z: 148.25, ry: 0, w: 5, d: 5, build: (k) => cedarHall(k, 5, 5, 2, ART.bighouse) },
+  // east of the bridge by the shore, one stepping down toward the water; west of it, toward Vanier Park, a tower and the hall
+  { name: "senákw V", x: -224.25, z: 164.25, ry: -0.17, w: 5.6, d: 5.6, build: (k) => senakwTerraces(k, 5.6, 5.6, 7, 4.6, SENAKW_GLASS[1]) },
+  { name: "senákw VI", x: -271, z: 155, ry: -0.67, w: 5.4, d: 5.4, build: (k) => senakwTower(k, 5.4, 5.4, 52, SENAKW_GLASS[2], 0.96) },
+  { name: "senákw hall", x: -278, z: 153.25, ry: 0, w: 5, d: 5, build: (k) => cedarHall(k, 5, 5, 2, ART.bighouse) },
   // across the bridge, at its north end
   { name: "Basket Tower", x: -184.8, z: 84.3, ry: 0.7, w: 7.5, d: 7.5, build: (k) => basketTower(k, 7.5, 96) },
   // the longhouse towers at the Granville Bridge's south end: the big house on the shore, the towers on the rise behind
@@ -230,8 +230,8 @@ export type DevPiece = { kind: Kind; x: number; z: number; ry: number; quarter?:
 export const DEV_PIECES: DevPiece[] = [
   // senákw's welcome figures facing the bridge's foot, either side of its tallest tower, and the spindle whorl by its
   // eastern one
-  { kind: "welcome", x: -266, z: 173.25, ry: 3.14, quarter: 0 },
-  { kind: "welcome", x: -254.5, z: 165.5, ry: -1.36, quarter: 1 },
+  { kind: "welcome", x: -266, z: 173.25, ry: -2.3, quarter: 0 },
+  { kind: "welcome", x: -254.5, z: 165.5, ry: -1.43, quarter: 1 },
   { kind: "whorl", x: -236.5, z: 157, ry: 2.6 },
   { kind: "post", x: -186, z: 91.5, ry: 0.7 },
   { kind: "moongate", x: 80, z: 42.5, ry: Math.PI, w: 5 },

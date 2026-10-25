@@ -834,10 +834,32 @@ function layOut(rng: Rng, lowEnd: boolean): CityGeometry {
   mark("murals");
 
   // the developments placed by hand (developments.ts), each a lot of its own, on ground no lot took; a tower on a
-  // podium stands on its roof; their painted panels join the murals
+  // podium stands on its roof; their painted panels join the murals. One whose ground a lot or a street has taken (the
+  // city's lots fall where its draws put them, which any change to it can move) is left out, with what stands on it.
   {
     const tops = new Map<string, number>();
+    const taken = (b: (typeof DEVELOPMENTS)[number]) => {
+      const c = Math.cos(b.ry);
+      const sn = Math.sin(b.ry);
+      const near = lots.filter((L) => Math.abs(L.x - b.x) < 30 && Math.abs(L.z - b.z) < 30);
+      for (let u = -0.5; u <= 0.5; u += 0.125) {
+        for (let v = -0.5; v <= 0.5; v += 0.125) {
+          const x = b.x + u * b.w * c + v * b.d * sn;
+          const z = b.z - u * b.w * sn + v * b.d * c;
+          if (roadDist(x, z) < 0) return true;
+          for (const L of near) {
+            const lc = Math.cos(L.ry ?? 0);
+            const ls = Math.sin(L.ry ?? 0);
+            const dx = x - L.x;
+            const dz = z - L.z;
+            if (Math.abs(dx * lc - dz * ls) < (L.fw ?? L.w) / 2 && Math.abs(dx * ls + dz * lc) < (L.fd ?? L.d) / 2) return true;
+          }
+        }
+      }
+      return false;
+    };
     for (const b of DEVELOPMENTS) {
+      if (b.on ? !tops.has(b.on) : taken(b)) continue;
       const lv = devLevels(b, lowEnd);
       const base = b.on ? tops.get(b.on) : undefined;
       const yb = base !== undefined ? base - 0.3 : lv.yb;
