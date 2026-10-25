@@ -15,10 +15,9 @@ import { Wheel } from "./controls/Wheel";
 import { useTrain } from "./store";
 import { LineMap } from "./ui/LineMap";
 import { LoadBar } from "./ui/LoadBar";
-import { DesignNotes, Help, Menu } from "./ui/Menu";
+import { Help, Menu } from "./ui/Menu";
 import { MonumentBar } from "./ui/MonumentBar";
 import { Readout } from "./ui/Readout";
-import { MapCredit } from "./ui/MapCredit";
 import { SceneCaptions } from "./ui/SceneCaptions";
 import { SceneOverlay } from "./ui/SceneOverlay";
 import { StopNav } from "./ui/StopNav";
@@ -136,7 +135,6 @@ export function TrainGate() {
       <TopBar />
       <LoadBar />
       <Readout />
-      <MapCredit />
       <SceneCaptions />
       <SceneOverlay />
       <StopNav />
@@ -145,7 +143,6 @@ export function TrainGate() {
       <MonumentBar />
       <Menu />
       <Help />
-      <DesignNotes />
       <AskPanel />
     </>
   );

@@ -1,5 +1,5 @@
 import { depart } from "@/data";
-import { DesignNotesLink } from "./PanelActions";
+import { InspirationsLink } from "./PanelActions";
 import { type HeadingTag, kickerFor, Links, PanelShell } from "./PanelShell";
 
 export function DepartPanel({ code, as = "h2" }: { code?: string; as?: HeadingTag }) {
@@ -8,7 +8,7 @@ export function DepartPanel({ code, as = "h2" }: { code?: string; as?: HeadingTa
       <p className="lead">{depart.lead}</p>
       <Links links={[]}>
         <li>
-          <DesignNotesLink />
+          <InspirationsLink />
         </li>
       </Links>
     </PanelShell>
