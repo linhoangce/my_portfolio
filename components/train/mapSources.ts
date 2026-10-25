@@ -1,4 +1,4 @@
-/** Every source of the map, for the menu and the text version. */
+/** Every source of the map, credited in the acknowledgements under the Inspirations (components/panels/InspirationsPanel.tsx). */
 export const MAP_SOURCES: { label: string; href: string; note: string }[] = [
   { label: "OpenStreetMap", href: "https://www.openstreetmap.org/copyright", note: "streets, rail lines, stations and Burnaby's parks and land use, © OpenStreetMap contributors (ODbL)" },
   { label: "City of Vancouver Open Data", href: "https://opendata.vancouver.ca", note: "traffic signals, park outlines and zoning; contains information licensed under the Open Government Licence – Vancouver" },

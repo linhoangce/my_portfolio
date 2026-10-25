@@ -68,7 +68,7 @@ import { EVENT_META } from "./lookTypes";
 import { addReflections } from "./reflectionSources";
 import { merged, type Part } from "./merge";
 import { canvasTexture, cap, merge, type P2, paint, roundRect, walls } from "./shapes";
-import { type Bridge, bridgeDeck, BRIDGES, type PlacedLandmark, SW_ROOF } from "./sites";
+import { type Bridge, bridgeDeck, BRIDGES, PIER_EVERY, type PlacedLandmark, SW_DECK, SW_ROOF, TRUSS_TOWERS } from "./sites";
 import { polySdf, sdfAt, surfaceAt } from "./terrain";
 import { HUB_BLOCKS, HUB_CANOPY, HUB_DECK, HUB_DECK_BOX, HUB_GALLERY } from "./waterfrontHub";
 import { cabinTexture, cruiseShip, floatplane } from "./vessels";
@@ -957,7 +957,7 @@ export function buildScienceWorld(l: PlacedLandmark, world: World): Built {
   const DRUM_TOP = 9.4;
   const cy = DRUM_TOP + Math.sqrt(R * R - DRUM * DRUM);
   const BASE = 14;
-  const DECK = 18.5;
+  const DECK = SW_DECK.r;
   /**
    * The roof garden's arc on the water side, and the fan's arc over the land and its reach (local angles): the fan stops
    * where the ground starts to rise toward the south-east (Creekside Slope, sites.ts), so all of it stands on the pad.
@@ -1207,13 +1207,13 @@ export function buildScienceWorld(l: PlacedLandmark, world: World): Built {
   const deckMat = cityToned(world, new MeshStandardMaterial({ color: 0xd9d6cf, roughness: 0.85 }), 0);
   const d0 = FAN.a1 - 0.04;
   const d1 = FAN.a0 + Math.PI * 2 + 0.04;
-  const pierA = 2.45;
+  const { pierA, pierAt } = SW_DECK;
   const deck = new Mesh(
     merge([
       sector(BASE - 0.1, DECK, d0, d1, deckY, 64),
       sector(BASE - 0.1, DECK, d0, d1, -0.35, 64, false),
       arcWall(DECK, d0, d1, -0.35, deckY, 64),
-      new BoxGeometry(4.2, 0.63, 4.2).translate(Math.cos(pierA) * 20.4, deckY - 0.315, Math.sin(pierA) * 20.4),
+      new BoxGeometry(4.2, 0.63, 4.2).translate(Math.cos(pierA) * pierAt, deckY - 0.315, Math.sin(pierA) * pierAt),
     ]),
     deckMat,
   );
@@ -1250,7 +1250,7 @@ export function buildScienceWorld(l: PlacedLandmark, world: World): Built {
   );
   const orange = new MeshStandardMaterial({ color: 0xf28a1a, roughness: 0.45 });
   const cSculpt = new Mesh(new TorusGeometry(0.95, 0.34, 10, 20, Math.PI * 1.5), orange);
-  cSculpt.position.set(Math.cos(pierA) * 20.4, deckY + 1.32, Math.sin(pierA) * 20.4);
+  cSculpt.position.set(Math.cos(pierA) * pierAt, deckY + 1.32, Math.sin(pierA) * pierAt);
   // the arc opens toward +x before the turn; z first, then the turn to face out over the water
   cSculpt.rotation.set(0, -pierA + Math.PI / 2, Math.PI / 4, "YXZ");
   // the plaza beyond the fan
@@ -1927,7 +1927,7 @@ function buildBridge(br: Bridge, world: World): Group {
   road.receiveShadow = true;
   g.add(shell, road);
   // piers wherever the deck is up in the air, and an abutment at an end that stays above the ground
-  const pierEvery = br.kind === "deckTruss" ? 14 : br.kind === "throughTruss" ? 11 : 9;
+  const pierEvery = PIER_EVERY[br.kind];
   const below = br.kind === "deckTruss" ? depth + 3.4 : depth;
   const piers: Part[] = [];
   for (let i = 0; i < n; i++) {
@@ -1997,8 +1997,8 @@ function buildBridge(br: Bridge, world: World): Group {
     const tex = trussTexture("#6f8174");
     const steel = cityToned(world, new MeshStandardMaterial({ map: tex, alphaTest: 0.5, side: DoubleSide, roughness: 0.6, metalness: 0.3 }), 0);
     // the middle of the water span, between the towers
-    const s0 = i0 + Math.round((i1 - i0) * 0.28);
-    const s1 = i1 - Math.round((i1 - i0) * 0.28);
+    const s0 = i0 + Math.round((i1 - i0) * TRUSS_TOWERS);
+    const s1 = i1 - Math.round((i1 - i0) * TRUSS_TOWERS);
     const idx = Array.from({ length: s1 - s0 + 1 }, (_, k) => s0 + k);
     const walls2 = [-1, 1].map((s) =>
       ribbon(

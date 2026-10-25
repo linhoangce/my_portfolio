@@ -29,18 +29,16 @@ import {
 import { Rng } from "./cityModel";
 import { getLifeData } from "./cityData";
 import { PEOPLE_WIDTH, SEA } from "./constants";
-import { merged, type Part } from "./merge";
+import { merged } from "./merge";
 import { paint } from "./shapes";
-import { sdfAt } from "./terrain";
 import { dotTexture } from "./textures";
 import { standY } from "./harbourfront";
 import { UP } from "./track";
 import { boatLights, BUS_LAMPS, busSection, sailboat, seabus, yacht } from "./vessels";
 import { asVehicle, canoe, carKinds, type Lamps } from "./vehicles";
 import { floatplaneAt } from "./airways";
-import { SEABUS_A, SEABUS_B } from "./SeaBus";
+import { type BoatPose, Harbour } from "./harbourTraffic";
 import { useDispose } from "./useDispose";
-import { inNoSail } from "./waterfrontHub";
 import { skipInMirror } from "./waterMirror";
 import { useWorld } from "./world";
 
@@ -57,139 +55,12 @@ const HEADLAMP = [1.7, 1.5, 1.2];
 const TAIL_LAMP = [1.5, 0.08, 0.05];
 const BRAKE = 1.8;
 
-/**
- * kind: 0 SeaBus (or, smaller, a False Creek ferry), 1 sailboat, 2 motor yacht, 3 journey canoe (drawn with the
- * vehicles). A moored boat keeps its heading (bow along yaw) at scale s; a lane boat runs along False Creek at distance
- * u, `side` units right of the lane.
- */
-type Boat = { x: number; z: number; dir: 1 | -1; speed: number; kind: number; k: number; moored?: { yaw: number; s: number }; lane?: { u: number; s: number; side: number } };
-
-/** kind: 0 ferry or SeaBus, 1 sailboat, 2 motor yacht; yaw (bow direction) and scale. */
-type Mooring = [number, number, number, number, number];
+const bp: BoatPose = { x: 0, z: 0, yaw: 0, v: 0 };
 
 /**
- * False Creek, moored and at anchor: marinas along both shores of the creek and the basin (a main float off the
- * shore, fingers out toward the water, a gangway from the seawall, boats in the slips), the dragon boat club's dock
- * beside Science World (boathouses, three dragon boats alongside, a gangway to the deck's pier), and boats lying at
- * anchor out on the water. Docks as painted parts; nothing is placed on land.
- */
-function creekMoorings(rng: Rng): { docks: Part[]; boats: Mooring[] } {
-  const docks: Part[] = [];
-  const boats: Mooring[] = [];
-  const box = (w: number, h: number, l: number, x: number, y: number, z: number, yaw: number, hex: number) =>
-    docks.push({ geo: paint(new BoxGeometry(w, h, l), hex), position: [x, y, z], rotation: [0, yaw, 0] });
-  // a straight run from a to b, `w` wide, its top `top` above the sea
-  const run = (ax: number, az: number, bx: number, bz: number, w: number, top: number, hex: number) =>
-    box(w, 0.4, Math.hypot(bx - ax, bz - az), (ax + bx) / 2, SEA + top - 0.2, (az + bz) / 2, Math.atan2(bx - ax, bz - az), hex);
-  const FLOAT = 0xd6d2c9;
-  const wet = (x: number, z: number) => sdfAt(x, z) < -0.6;
-  /** A marina along the shore from a to b: the float 4.5 out, fingers every 5.2, a boat in each slip. */
-  const marina = (ax: number, az: number, bx: number, bz: number) => {
-    const L = Math.hypot(bx - ax, bz - az);
-    const sx = (bx - ax) / L;
-    const sz = (bz - az) / L;
-    // out toward the water
-    let nx = -sz;
-    let nz = sx;
-    if (sdfAt((ax + bx) / 2 + nx * 5, (az + bz) / 2 + nz * 5) > sdfAt((ax + bx) / 2 - nx * 5, (az + bz) / 2 - nz * 5)) {
-      nx = -nx;
-      nz = -nz;
-    }
-    const ox = ax + nx * 4.5;
-    const oz = az + nz * 4.5;
-    if (!wet(ox, oz) || !wet(ox + sx * L, oz + sz * L)) return;
-    run(ox, oz, ox + sx * L, oz + sz * L, 1.2, 0.35, FLOAT);
-    for (let t = 1; t < L; t += 5.2) if (wet(ox + sx * t + nx * 5, oz + sz * t + nz * 5)) run(ox + sx * t, oz + sz * t, ox + sx * t + nx * 5, oz + sz * t + nz * 5, 0.7, 0.32, FLOAT);
-    run(ox + sx * L * 0.45 - nx * 4.4, oz + sz * L * 0.45 - nz * 4.4, ox + sx * L * 0.45, oz + sz * L * 0.45, 1, 0.9, 0x9aa3ad);
-    const bowIn = Math.atan2(-nx, -nz);
-    for (let t = 3.6; t < L - 0.5; t += 5.2) {
-      const x = ox + sx * t + nx * 3;
-      const z = oz + sz * t + nz * 3;
-      if (!wet(x, z)) continue;
-      const kind = rng.next() < 0.5 ? 1 : 2;
-      boats.push([x, z, kind, bowIn + (rng.next() - 0.5) * 0.1, kind === 2 ? 0.45 : 0.55]);
-    }
-  };
-  // below BC Place, off Yaletown (Quayside), off the Fairview shore (Spruce Harbour), on Granville Island's north
-  // side, and off the Olympic Village
-  marina(-47.6, 180.3, -27.9, 187);
-  marina(-84, 172.4, -116, 159.6);
-  marina(-96, 219.5, -128, 205.5);
-  marina(-200, 168, -170, 169.5);
-  marina(-14, 250.2, 14, 251.4);
-  // and in Coal Harbour, off Harbour Green's north shore
-  marina(-143, -84.2, -155.5, -87.4);
-  // the dragon boat club: a float with four boathouses, the boats alongside on its open side
-  const [ax, az, bx, bz] = [44, 232.5, 56, 230.5];
-  run(ax, az, bx, bz, 1.8, 0.35, FLOAT);
-  const ux = (bx - ax) / Math.hypot(bx - ax, bz - az);
-  const uz = (bz - az) / Math.hypot(bx - ax, bz - az);
-  const along = Math.atan2(ux, uz);
-  for (const t of [1.6, 4.4, 7.2, 10]) {
-    box(1.5, 1.3, 2.1, ax + ux * t, SEA + 0.35 + 0.65, az + uz * t, along, 0xf2f1ec);
-    box(1.7, 0.18, 2.3, ax + ux * t, SEA + 1.4, az + uz * t, along, 0x2f5f8f);
-  }
-  ([0xc0392b, 0xe0b020, 0x2d6cb0] as const).forEach((hex, k) => box(0.75, 0.35, 5.6, ax + ux * (3 + k * 3.3) - uz * 1.5, SEA + 0.1, az + uz * (3 + k * 3.3) + ux * 1.5, along, hex));
-  run(bx, bz, 60, 231.2, 1, 0.75, FLOAT);
-  // at anchor, swung to the tide
-  for (const [x, z] of [
-    [24, 218],
-    [-4, 230],
-    [-30, 220],
-    [-104, 196],
-    [-150, 168],
-    [-198, 126],
-    [-224, 106],
-  ] as const) {
-    if (sdfAt(x, z) > -6) continue;
-    const kind = rng.next() < 0.6 ? 1 : 2;
-    boats.push([x, z, kind, rng.next() * Math.PI * 2, kind === 2 ? 0.5 : 0.6]);
-  }
-  return { docks, boats };
-}
-
-/**
- * The lane boats keep along False Creek, from the head of the basin past Science World, under the three bridges and
- * out into English Bay; each runs it end to end and back on its own side of the channel.
- */
-const CREEK_LANE: [number, number][] = [
-  [50, 214],
-  [14, 232],
-  [-28, 220],
-  [-62, 208],
-  [-92, 198],
-  [-122, 187],
-  [-148, 171],
-  [-170, 152],
-  [-192, 131],
-  [-213, 111],
-  [-236, 93],
-  [-262, 74],
-  [-290, 56],
-];
-const LANE_AT = CREEK_LANE.reduce<number[]>((acc, p, i) => {
-  acc.push(i ? acc[i - 1] + Math.hypot(p[0] - CREEK_LANE[i - 1][0], p[1] - CREEK_LANE[i - 1][1]) : 0);
-  return acc;
-}, []);
-const LANE_LEN = LANE_AT[LANE_AT.length - 1];
-/** Point and unit tangent on the lane at distance u. */
-function laneAt(u: number, out: { x: number; z: number; tx: number; tz: number }): void {
-  let i = 1;
-  while (i < LANE_AT.length - 1 && LANE_AT[i] < u) i++;
-  const [ax, az] = CREEK_LANE[i - 1];
-  const [bx, bz] = CREEK_LANE[i];
-  const L = LANE_AT[i] - LANE_AT[i - 1];
-  const f = Math.min(1, Math.max(0, (u - LANE_AT[i - 1]) / L));
-  out.x = ax + (bx - ax) * f;
-  out.z = az + (bz - az) * f;
-  out.tx = (bx - ax) / L;
-  out.tz = (bz - az) / L;
-}
-const lane = { x: 0, z: 0, tx: 0, tz: 0 };
-
-/**
- * Traffic on the street grid and over the bridges, people on platforms and sidewalks, boats on the inlet and on False
- * Creek (under way, moored and at anchor), a floatplane over the harbour (the air taxis over it are AirTaxis.tsx's).
+ * Traffic on the street grid and over the bridges, people on platforms and sidewalks, the harbour's boats on the inlet
+ * and on False Creek (under way between their berths, moored and at anchor: harbourTraffic.ts runs them) and their
+ * docks, a floatplane over the harbour (the air taxis over it are AirTaxis.tsx's).
  */
 export function Life() {
   const world = useWorld();
@@ -205,8 +76,9 @@ export function Life() {
     const BUS_R = BUS_F + 1;
     const CANOE = BUS_F + 2;
     const geos = [...kinds, asVehicle(busSection(true)), asVehicle(busSection(false)), canoe()];
-    // the journey canoes on False Creek, paddled from end to end
-    const nCanoe = lowEnd ? 1 : 2;
+    // the harbour's boats and docks; its journey canoes on False Creek are drawn with the vehicles
+    const harbour = new Harbour(lowEnd);
+    const nCanoe = harbour.hulls.filter((h) => h.kind === 3).length;
     const cars = data.traffic.cars;
     const nb = data.traffic.buses.length;
     const vehGlow = { value: 0.6 };
@@ -286,44 +158,19 @@ export function Life() {
     peopleMesh.count = np;
     quad.setAttribute("aCell", new InstancedBufferAttribute(Float32Array.from(data.people.map((h) => h.v)), 1));
 
-    // boats on the inlet: the SeaBus, sailboats and motor yachts, one instanced mesh per kind
-    const KINDS = 3;
+    // boats: the SeaBus's hull (scaled down, False Creek's ferries), sailboats and motor yachts, one instanced mesh per
+    // kind, each boat its instance in its kind's; the docks in one mesh
     const boatMat = new MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.05, side: 2 });
-    const boatMeshes = [seabus(), sailboat(), yacht()].map((g) => {
-      const m = new InstancedMesh(g, boatMat, 40);
+    const perKind = [0, 0, 0, 0];
+    const boatIds = harbour.hulls.map((h) => perKind[h.kind]++);
+    const boatMeshes = [seabus(), sailboat(), yacht()].map((g, kind) => {
+      const m = new InstancedMesh(g, boatMat, Math.max(1, perKind[kind]));
+      m.count = perKind[kind];
       m.frustumCulled = false;
       m.castShadow = !lowEnd;
       return m;
     });
-    const boats: Boat[] = [];
-    const perKind = new Array<number>(KINDS).fill(0);
-    // boat lanes come from the real coastline: only spots well out in Burrard Inlet
-    for (let tries = 0; boats.length < 8 && tries < 600; tries++) {
-      const x = -150 + rng.next() * 700;
-      const z = -60 - rng.next() * 200;
-      // and off the SeaBus's crossing
-      const [ax, az] = SEABUS_A;
-      const [bx, bz] = SEABUS_B;
-      const L2 = (bx - ax) ** 2 + (bz - az) ** 2;
-      const t = Math.max(0, Math.min(1, ((x - ax) * (bx - ax) + (z - az) * (bz - az)) / L2));
-      const onCrossing = Math.hypot(x - ax - (bx - ax) * t, z - az - (bz - az) * t) < 34;
-      if (sdfAt(x, z) < -10 && sdfAt(x + 30, z) < -8 && sdfAt(x - 30, z) < -8 && !inNoSail(x, z) && !onCrossing) {
-        const kind = [1, 2, 1, 2, 2, 1, 1, 2][boats.length];
-        const speed = kind === 0 ? 6 : kind === 1 ? 2 + rng.next() : 4 + rng.next() * 2;
-        boats.push({ x, z, dir: rng.next() < 0.5 ? 1 : -1, speed, kind, k: perKind[kind]++ });
-      }
-    }
-    const moorings = creekMoorings(rng);
-    for (const [x, z, kind, yaw, s] of moorings.boats) boats.push({ x, z, dir: 1, speed: 0, kind, k: perKind[kind]++, moored: { yaw, s } });
-    // under way on False Creek: little ferries, sailboats and yachts, spread along the lane
-    const LANE_KINDS = lowEnd ? [0, 1, 2, 0] : [0, 1, 2, 0, 1, 2, 0];
-    LANE_KINDS.forEach((kind, k) => {
-      const u = ((k + rng.next() * 0.5) / LANE_KINDS.length) * LANE_LEN;
-      const speed = kind === 0 ? 4.5 : kind === 1 ? 2 + rng.next() : 3.5 + rng.next() * 2;
-      boats.push({ x: 0, z: 0, dir: rng.next() < 0.5 ? 1 : -1, speed, kind, k: perKind[kind]++, lane: { u, s: kind === 0 ? 0.32 : kind === 1 ? 0.7 : 0.6, side: 3 + rng.next() * 3 } });
-    });
-    for (let k = 0; k < nCanoe; k++) boats.push({ x: 0, z: 0, dir: k % 2 ? -1 : 1, speed: 2.2, kind: 3, k, lane: { u: ((k + 0.3) / nCanoe) * LANE_LEN, s: 1, side: 2 + k } });
-    const docks = new Mesh(merged(moorings.docks), boatMat);
+    const docks = new Mesh(merged(harbour.boxes.map((d) => ({ geo: paint(new BoxGeometry(d.w, d.h, d.l), d.hex), position: [d.x, d.y, d.z], rotation: [0, d.yaw, 0] }))), boatMat);
     docks.receiveShadow = true;
 
     // a floatplane circling the harbour, clear of the vertiports and under the taxis (airways.ts): fuselage, wing and
@@ -340,15 +187,14 @@ export function Life() {
         new MeshStandardMaterial({ vertexColors: true, roughness: 0.55 }),
       ),
     );
-    boatMeshes.forEach((m, kind) => (m.count = perKind[kind]));
     const boatLamps = boatMeshes.map((b, kind) => {
-      const m = new InstancedMesh(boatLights(kind), lightMat, 40);
+      const m = new InstancedMesh(boatLights(kind), lightMat, Math.max(1, perKind[kind]));
       m.instanceMatrix = b.instanceMatrix;
       m.count = b.count;
       m.frustumCulled = false;
       return m;
     });
-    return { vehicles, vehMat, vehGlow, carIds, busIds, canoeIds, lampSpots, lamps, lampPx, peopleMesh, boats, boatMeshes, boatLamps, boatMat, lightMat, docks, plane };
+    return { vehicles, vehMat, vehGlow, carIds, busIds, canoeIds, lampSpots, lamps, lampPx, peopleMesh, harbour, boatIds, boatMeshes, boatLamps, boatMat, lightMat, docks, plane };
   }, [data, mats, lowEnd, world.envTex]);
 
   // cars and people are too small to show in the water
@@ -410,39 +256,16 @@ export function Life() {
     }
     built.peopleMesh.instanceMatrix.needsUpdate = true;
     const t = state.clock.elapsedTime;
-    built.boats.forEach((b) => {
-      if (b.moored) {
-        p.set(b.x, SEA + 0.05 + Math.sin(t * 0.9 + b.x) * 0.04, b.z);
-        q.setFromAxisAngle(UP, b.moored.yaw);
-        m4.compose(p, q, sc.setScalar(b.moored.s));
-        built.boatMeshes[b.kind].setMatrixAt(b.k, m4);
-        return;
-      }
-      if (b.lane) {
-        // end to end and back, keeping to the right of the lane
-        b.lane.u += b.dir * b.speed * dt;
-        if (b.lane.u < 0 || b.lane.u > LANE_LEN) {
-          b.dir = b.dir > 0 ? -1 : 1;
-          b.lane.u = Math.min(LANE_LEN, Math.max(0, b.lane.u));
-        }
-        laneAt(b.lane.u, lane);
-        const fx = lane.tx * b.dir;
-        const fz = lane.tz * b.dir;
-        p.set(lane.x - fz * b.lane.side, SEA + 0.05 + Math.sin(t * 1.3 + b.lane.u) * 0.06, lane.z + fx * b.lane.side);
-        q.setFromAxisAngle(UP, Math.atan2(fx, fz));
-        m4.compose(p, q, sc.setScalar(b.lane.s));
-        if (b.kind === 3) built.vehicles.setMatrixAt(built.canoeIds[b.k], m4);
-        else built.boatMeshes[b.kind].setMatrixAt(b.k, m4);
-        return;
-      }
-      // turn around before the shore
-      if (sdfAt(b.x + b.dir * 12, b.z) > -6 || inNoSail(b.x + b.dir * 12, b.z)) b.dir = b.dir > 0 ? -1 : 1;
-      b.x += b.dir * b.speed * dt;
-      p.set(b.x, SEA + 0.05 + Math.sin(t * 1.3 + b.z) * 0.08, b.z);
-      // the hulls are built bow along +z; a quarter turn points them along the lane
-      q.setFromAxisAngle(UP, b.dir > 0 ? Math.PI / 2 : -Math.PI / 2);
-      m4.compose(p, q, one);
-      built.boatMeshes[b.kind].setMatrixAt(b.k, m4);
+    // the boats where the harbour has them (its bookings get a few milliseconds a frame, fewer on a phone), rocking a
+    // little more under way than at their berths
+    built.harbour.update(t, lowEnd ? 3 : 5);
+    built.harbour.hulls.forEach((h, i) => {
+      built.harbour.pose(i, t, bp);
+      p.set(bp.x, SEA + 0.05 + Math.sin(t * 1.1 + built.harbour.bob(i)) * (0.04 + 0.02 * Math.min(1, bp.v)), bp.z);
+      q.setFromAxisAngle(UP, bp.yaw);
+      m4.compose(p, q, sc.setScalar(h.s));
+      if (h.kind === 3) built.vehicles.setMatrixAt(built.canoeIds[built.boatIds[i]], m4);
+      else built.boatMeshes[h.kind].setMatrixAt(built.boatIds[i], m4);
     });
     for (const m of built.boatMeshes) m.instanceMatrix.needsUpdate = true;
     // white hulls take the city's night tone rather than glowing in the dark; the lamps come on with the windows
