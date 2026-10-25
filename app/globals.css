@@ -144,6 +144,15 @@
     font-size: inherit;
   }
 
+  /* The site's mark: blossom petals in the accent, the station dot in the text colour, ringed in what it stands on */
+  .mark-petals {
+    fill: rgb(var(--accent));
+  }
+  .mark-dot {
+    fill: rgb(var(--fg));
+    stroke: var(--mark-ring, rgb(var(--bg)));
+  }
+
   /* Content panels, shared by the dock and /text */
   .panel h2,
   .panel h1 {
@@ -297,8 +306,9 @@
 .brand {
   display: inline-flex;
   align-items: center;
+  gap: 8px;
   height: 40px;
-  padding: 0 16px;
+  padding: 0 16px 0 10px;
   border-radius: 999px;
   border: 1px solid rgb(var(--border));
   background: rgb(var(--surface));
@@ -309,6 +319,13 @@
 }
 .brand:hover {
   border-color: rgb(var(--accent));
+}
+/* the blossom stop before the name (components/brand/BlossomMark.tsx), its dot ringed in the pill's colour */
+.brand .mark {
+  width: 24px;
+  height: 24px;
+  flex: none;
+  --mark-ring: rgb(var(--surface));
 }
 .brand .name {
   font-family: var(--font-serif), Georgia, serif;
@@ -1084,7 +1101,8 @@
   }
   .brand {
     height: 38px;
-    padding: 0 14px;
+    padding: 0 14px 0 9px;
+    gap: 7px;
   }
   .brand .name {
     font-size: 20px;
