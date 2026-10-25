@@ -27,9 +27,6 @@ export type StationId =
 
 export type ProjectLink = { label: string; href: string };
 
-/** A card under a project: a real figure, or (where a project has none to show) a feature or result in a few words. */
-export type Metric = { value: string; label: string };
-
 export type Shot = { src: string; width: number; height: number; caption: string };
 
 export type Project = {
@@ -41,8 +38,6 @@ export type Project = {
   problem: string;
   approach: string;
   result: string;
-  /** Real figures, or the project's key features and results; never invented numbers. */
-  metrics: Metric[];
   tags: string[];
   links: ProjectLink[];
   /** Screenshot under /public; M2 adds the full set. */
@@ -112,11 +107,6 @@ export const featured: Project[] = [
     approach:
       "Imports Zoom, Teams and Meet transcripts, fills the team's own .docx or Google Doc templates, and proposes Jira board changes with undo and a decision log.",
     result: "Best Use of CLōD. In early access with real teams.",
-    metrics: [
-      { value: "Calls → tasks", label: "Transcripts update the board" },
-      { value: "Your templates", label: "Fills the team's own docs" },
-      { value: "PM approves", label: "Before anything is sent" },
-    ],
     tags: ["FastAPI", "React", "TypeScript", "SQLite", "LLM agents", "Jira", "Google Docs"],
     links: [
       { label: "Live", href: "https://awdon.app" },
@@ -131,11 +121,6 @@ export const featured: Project[] = [
     problem: "Raw cytometer images are not a number a shellfish grower can act on.",
     approach: "Frozen DINOv2 features with gradient-boosted heads per species. A domain gate refuses water the model has never seen.",
     result: "Held-out AP of 0.99, 0.95, 0.84 and 0.63 across the four species.",
-    metrics: [
-      { value: "0.99", label: "AP, best class" },
-      { value: "4", label: "Harmful algae" },
-      { value: "4 days", label: "Build" },
-    ],
     tags: ["PyTorch", "DINOv2", "scikit-learn", "XGBoost", "Streamlit"],
     links: [{ label: "GitHub", href: "https://github.com/oceanhackweek/ohw26_proj_planktoneer" }],
   },
@@ -147,11 +132,6 @@ export const featured: Project[] = [
     problem: "Vessels are tiny targets inside very large frames, so a single pass misses them.",
     approach: "YOLO with SAHI slicing: detect on overlapping tiles, then merge.",
     result: "A detector anyone can try in the browser.",
-    metrics: [
-      { value: "Tiny boats", label: "Found in full scenes" },
-      { value: "Tiled passes", label: "Overlapping tiles, merged" },
-      { value: "Live demo", label: "Public on Hugging Face" },
-    ],
     tags: ["YOLO", "SAHI", "PyTorch", "Hugging Face"],
     links: [{ label: "Hugging Face Space", href: "https://huggingface.co/spaces/linhoang/yolo_boat_detector" }],
     shot: { src: "/vessel.png", width: 1868, height: 868, caption: "huggingface.co/spaces/linhoang" },
@@ -165,11 +145,6 @@ export const featured: Project[] = [
     approach:
       "Collected and labelled the dataset in Roboflow, then trained and evaluated RF-DETR with runs tracked in Weights & Biases.",
     result: "0.64 mAP@50 and 0.68 F1 on held-out images.",
-    metrics: [
-      { value: "0.64", label: "mAP@50" },
-      { value: "0.68", label: "F1" },
-      { value: "Custom", label: "Dataset" },
-    ],
     tags: ["RF-DETR", "Roboflow", "Weights & Biases", "Colab"],
     links: [
       {
@@ -188,11 +163,6 @@ export const featured: Project[] = [
     approach:
       "Role-based access control, Prisma and Postgres models, an Azure GPT-4o chatbot with prompt caching, and streamed Azure Blob uploads.",
     result: "In production, with uploads up to 100 MB.",
-    metrics: [
-      { value: "100 MB", label: "Streamed uploads" },
-      { value: "RBAC", label: "Access control" },
-      { value: "Live", label: "abckidz.org" },
-    ],
     tags: ["TypeScript", "PostgreSQL", "Prisma", "Azure"],
     links: [{ label: "Live", href: "https://www.abckidz.org/" }],
     shot: { src: "/abckidz.png", width: 1891, height: 919, caption: "abckidz.org" },

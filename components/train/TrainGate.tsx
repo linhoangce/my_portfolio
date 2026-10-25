@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import { AskButton } from "@/components/ask/AskButton";
 import { AskPanel } from "@/components/ask/AskPanel";
 
 import { PHONE_MAX_WIDTH } from "./constants";
@@ -15,7 +16,7 @@ import { useTrain } from "./store";
 import { LineMap } from "./ui/LineMap";
 import { LoadBar } from "./ui/LoadBar";
 import { Help, Menu } from "./ui/Menu";
-import { MonumentCard } from "./ui/MonumentCard";
+import { MonumentBar } from "./ui/MonumentBar";
 import { Readout } from "./ui/Readout";
 import { MapCredit } from "./ui/MapCredit";
 import { SceneCaptions } from "./ui/SceneCaptions";
@@ -46,7 +47,7 @@ function canRide(): boolean {
 /**
  * Client gate for the home page: checks capabilities, redirects to /text when the ride would be a bad experience,
  * otherwise lazy-loads the scene chunk under the DOM shell (top bar, the stop buttons and the line map, the scene's
- * column, attendant).
+ * column, the attendant and its button).
  */
 export function TrainGate() {
   const router = useRouter();
@@ -133,7 +134,8 @@ export function TrainGate() {
       <SceneOverlay />
       <StopNav />
       <LineMap />
-      <MonumentCard />
+      <AskButton />
+      <MonumentBar />
       <Menu />
       <Help />
       <AskPanel />

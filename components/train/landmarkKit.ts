@@ -45,8 +45,8 @@ import { EVENT_META } from "./lookTypes";
 import { addReflections } from "./reflectionSources";
 import { merged, type Part } from "./merge";
 import { canvasTexture, cap, merge, type P2, paint, roundRect, walls } from "./shapes";
-import { type Bridge, BRIDGES, type PlacedLandmark, SW_ROOF } from "./sites";
-import { groundAt, polySdf, sdfAt, surfaceAt } from "./terrain";
+import { type Bridge, bridgeDeck, BRIDGES, type PlacedLandmark, SW_ROOF } from "./sites";
+import { polySdf, sdfAt, surfaceAt } from "./terrain";
 import { HUB_BLOCKS, HUB_CANOPY, HUB_DECK, HUB_DECK_BOX, HUB_GALLERY } from "./waterfrontHub";
 import { cabinTexture, cruiseShip, floatplane } from "./vessels";
 import type { World } from "./world";
@@ -1696,26 +1696,11 @@ function ribbon(rows: Vector3[][], uv?: (i: number, k: number) => [number, numbe
 function buildBridge(br: Bridge, world: World): Group {
   const { lowEnd, mats } = world;
   const g = new Group();
-  const [ax, az] = br.a;
-  const [bx, bz] = br.b;
-  const L = Math.hypot(bx - ax, bz - az);
-  const ux = (bx - ax) / L;
-  const uz = (bz - az) / L;
-  // across the deck, to the right of a → b
-  const rx = -uz;
-  const rz = ux;
+  const { L, ux, uz, T, wet, ground, deck, at } = bridgeDeck(br);
   const h = br.half;
-  const n = Math.ceil(L / 2) + 1;
-  const T = Array.from({ length: n }, (_, i) => (i * L) / (n - 1));
-  const at = (t: number, lat: number): [number, number] => [ax + ux * t + rx * lat, az + uz * t + rz * lat];
-  const wet = T.map((t) => sdfAt(...at(t, 0)) < 0);
+  const n = T.length;
   const i0 = wet.indexOf(true);
   const i1 = wet.lastIndexOf(true);
-  const ground = T.map((t) => Math.max(...[-h, 0, h].map((l) => groundAt(...at(t, l)))));
-  const raw = T.map((_, i) => (wet[i] ? SEA + br.clear * (0.88 + 0.12 * Math.sin((Math.PI * (i - i0)) / Math.max(1, i1 - i0))) : ground[i] + 0.4));
-  // no steeper than the grade from any high point
-  const grade = br.kind === "deckTruss" ? 0.11 : 0.13;
-  const deck = T.map((t) => Math.max(...raw.map((r, j) => r - grade * Math.abs(t - T[j]))));
   const depth = br.kind === "girder" ? 1.5 : br.kind === "deckTruss" ? 0.7 : 1.2;
   const P = (t: number, lat: number, y: number) => {
     const [x, z] = at(t, lat);
