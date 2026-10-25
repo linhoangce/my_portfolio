@@ -550,6 +550,9 @@ const glowing = (g: BufferGeometry, v: number): BufferGeometry => {
   return g;
 };
 
+/** The bus's lamps, as busSection places them: the front section's headlamps, the rear one's tail lamps ([x, y, z]). */
+export const BUS_LAMPS = { head: [1.52, 0.6, 0.42], tail: [-1.52, 0.62, 0.44] } as const;
+
 /**
  * One section of a 2100 articulated electric bus, built nose along +x, wheels on the ground at y 0, 3 long: white
  * with a wraparound tinted window band and the line's violet light line, a battery pod on the roof. The front section
