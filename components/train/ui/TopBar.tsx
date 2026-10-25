@@ -3,6 +3,7 @@
 import { FileText, Menu as MenuIcon } from "lucide-react";
 import Link from "next/link";
 
+import { BlossomMark } from "@/components/brand/BlossomMark";
 import { person } from "@/data";
 
 import { useTrain } from "../store";
@@ -27,6 +28,7 @@ export function TopBar() {
           driveTo(0);
         }}
       >
+        <BlossomMark />
         <span className="name">{person.name}</span>
       </a>
       <div className="right">

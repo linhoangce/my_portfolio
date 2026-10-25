@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- the blossom stop: five notched cherry blossom petals round a station dot, on the night ground -->
+  <rect width="64" height="64" rx="14" fill="#070a12"/>
+  <g fill="#f7a8c4">
+    <path d="M0 -4.86C-11.34 -9.18 -14.04 -24.3 -4.59 -27L0 -21.6L4.59 -27C14.04 -24.3 11.34 -9.18 0 -4.86Z" transform="translate(32 33.5)"/>
+    <path d="M0 -4.86C-11.34 -9.18 -14.04 -24.3 -4.59 -27L0 -21.6L4.59 -27C14.04 -24.3 11.34 -9.18 0 -4.86Z" transform="translate(32 33.5) rotate(72)"/>
+    <path d="M0 -4.86C-11.34 -9.18 -14.04 -24.3 -4.59 -27L0 -21.6L4.59 -27C14.04 -24.3 11.34 -9.18 0 -4.86Z" transform="translate(32 33.5) rotate(144)"/>
+    <path d="M0 -4.86C-11.34 -9.18 -14.04 -24.3 -4.59 -27L0 -21.6L4.59 -27C14.04 -24.3 11.34 -9.18 0 -4.86Z" transform="translate(32 33.5) rotate(216)"/>
+    <path d="M0 -4.86C-11.34 -9.18 -14.04 -24.3 -4.59 -27L0 -21.6L4.59 -27C14.04 -24.3 11.34 -9.18 0 -4.86Z" transform="translate(32 33.5) rotate(288)"/>
+  </g>
+  <circle cx="32" cy="33.5" r="6.4" fill="#eaeff7" stroke="#070a12" stroke-width="2.4"/>
+</svg>
