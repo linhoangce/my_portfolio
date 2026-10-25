@@ -85,10 +85,8 @@ export const landAcknowledgement =
   "This ride's Vancouver stands on the unceded, traditional and ancestral territories of the xʷməθkʷəy̓əm (Musqueam), Sḵwx̱wú7mesh (Squamish) and səlilwətaɬ (Tsleil-Waututh) Nations.";
 
 export const depart = {
-  title: "Linh Hoang",
-  lead: "Honestly? I was bored, and my portfolio was overdue for an update. I didn't want another page of cards, so I built something I'd want to explore myself: a ride on the Expo Line through Vancouver in 2100. I wanted a project that would make me feel inspired and creative again.",
-  how: "Every stop is a section: who I am, where I've worked and what I've built. Ride it with Next stop, drag to look around, and click a landmark to circle it.",
-  meta: ["Software developer · ML systems and LLM agents", "BCIT Computer Systems Technology · 2026", "Now: Co-founder, Awdon · awdon.app"],
+  title: "Foreword",
+  lead: "Honestly? I was bored, and my portfolio was overdue for an update. I didn't want another page of cards, and I'm obsessed with 3D modeling so I built something that feels inspiring and creative to me: a ride on the Expo Line through a reimagined Vancouver in 2100. Thanks for visiting and I hope you feel inspired by the beauty of this city.",
 };
 
 export type DesignNote = { title: string; copy: string };
@@ -292,7 +290,7 @@ export const stations: Station[] = [
     km: [0, 0],
     panel: "depart",
     corpus:
-      "Waterfront station, the start of the line: Linh Hoang. Software developer and co-founder of Awdon (awdon.app). BCIT Computer Systems Technology graduate 2026 (Predictive Analytics), based in Vancouver, BC. Built this ride out of boredom with the old portfolio and a wish to make something inspiring and creative; the Design notes (from this stop or the menu) tell where each design came from and what is new.",
+      "Waterfront station, the start of the line: Linh Hoang. Software developer and co-founder of Awdon (awdon.app). BCIT Computer Systems Technology graduate 2026 (Predictive Analytics), based in Vancouver, BC. Built this ride out of boredom with the old portfolio and an obsession with 3D modeling, to make something inspiring and creative; the Design notes (from this stop or the menu) tell where each design came from and what is new.",
   },
   {
     id: "burrard",
