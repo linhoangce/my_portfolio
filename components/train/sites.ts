@@ -115,6 +115,25 @@ const HINGE = shaped(
   [],
   0.45,
 );
+/**
+ * David Lam Park, from Pacific Boulevard down to the seawall: the city's outline, but for the notch it leaves in its
+ * south side between the two arms that reach the water, which the lawn fills (else the city builds there, on the walk).
+ */
+const DAVID_LAM = shaped("David Lam Park", [
+  [-91, 158],
+  [-82.2, 166.7],
+  [-88.1, 172.7],
+  [-79.4, 181.3],
+  [-81.3, 183.2],
+  [-95.6, 183.8],
+  [-109.9, 184.5],
+  [-115.8, 178.7],
+  [-111.4, 174.1],
+  [-109.5, 171.3],
+  [-108.5, 167.6],
+  [-108.4, 162.9],
+  [-101.1, 162],
+]);
 
 /**
  * The four parks round False Creek's east basin keep the shapes the ride drew for them (mapped, then fitted round the
@@ -145,7 +164,7 @@ const SLOPE = shaped(
   0.6,
   false,
 );
-const DRAWN = [CREEKSIDE, NEFC, HINGE, THORNTON, HARBOUR];
+const DRAWN = [CREEKSIDE, NEFC, HINGE, THORNTON, HARBOUR, DAVID_LAM];
 const MAPPED: Park[] = PARK_DATA.flatMap(({ name, poly: enc }) => {
   const bin = atob(enc);
   const u8 = new Uint8Array(bin.length);

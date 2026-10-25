@@ -373,12 +373,13 @@ export class Harbour {
       return b;
     };
 
-    // ---- False Creek: its marinas below BC Place, off Yaletown (Quayside), off the Fairview shore (Spruce Harbour), on
-    // Granville Island's north side and off the Olympic Village; their boats in most slips, some of them coming and going
+    // ---- False Creek: its marinas below BC Place, off Yaletown below David Lam Park (Quayside), off the Fairview shore
+    // (Spruce Harbour, on the shore itself, so a channel runs between the two), on Granville Island's north side and off
+    // the Olympic Village; their boats in most slips, some of them coming and going
     const creekMarinas = [
       marina(L, "BC Place", 1, "creek", -47.6, 180.3, -27.9, 187, 1),
-      marina(L, "Quayside", 1, "creek", -84, 172.4, -116, 159.6, 1),
-      marina(L, "Spruce Harbour", 1, "creek", -96, 219.5, -128, 205.5, 1),
+      marina(L, "Quayside", 1, "creek", -86, 187.2, -112, 186.6, 1),
+      marina(L, "Spruce Harbour", 1, "creek", -96, 223.9, -128, 218.9, 1),
       marina(L, "Granville Island", 1, "creek", -200, 168, -170, 169.5, 1),
       marina(L, "Olympic Village", 1, "creek", -14, 250.2, 14, 251.4, 1),
     ].filter((d) => d >= 0);
@@ -418,8 +419,8 @@ export class Harbour {
     const club = L.dock("canoe club", 1, "canoe");
     for (const t of [3, 9]) L.slot(club, cax + ux * t + uz * 0.9, caz + uz * t - ux * 0.9, uz, -ux, 0);
     L.keepOff(1, cax, caz, ux, uz, cL + 4, uz, -ux, -2.6, 1.2);
-    // the canoes' landing on Granville Island's north-east shore
-    const isle = landing(L, "Granville Island landing", "canoe", -153, 185, -146, 195.5);
+    // the canoes' landing on Granville Island's east shore, clear of the way round the island's corner to the west
+    const isle = landing(L, "Granville Island landing", "canoe", -147, 203, -147, 209);
     // the ferries' floats, east to west: the Village by Science World, Yaletown, Stamps Landing, Granville Island and
     // Hornby Street
     const calls = [

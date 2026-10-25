@@ -219,13 +219,16 @@ export function roads(): Roads {
     return false;
   };
   const underHero = (x: number, z: number, half: number) => HEROES.some((h) => Math.abs(h.x - x) < h.r - 1 + half - 0.4 && Math.abs(h.z - z) < h.r - 1 + half - 0.4);
+  // the map's own Granville Bridge where it comes down north of the creek: the bridge stands west of it (sites.ts), so
+  // its ramps there, ashore behind George Wainborn Park, would run to the water's edge and stop
+  const mapGranville = (e: REdge, z: number) => e.name === "Granville Bridge" && z < 160;
   edges.forEach((e) => {
     const n = e.pts.length / 2;
     for (let i = 0; i < n; i++) e.y[i] = groundAt(e.pts[i * 2], e.pts[i * 2 + 1]);
     for (let i = 0; i + 1 < n; i++) {
       const mx = (e.pts[i * 2] + e.pts[i * 2 + 2]) / 2;
       const mz = (e.pts[i * 2 + 1] + e.pts[i * 2 + 3]) / 2;
-      if (hidden(mx, mz, e.lay) || hidden(e.pts[i * 2], e.pts[i * 2 + 1], e.lay) || hidden(e.pts[i * 2 + 2], e.pts[i * 2 + 3], e.lay) || underHero(mx, mz, e.lay) || overWater(e.pts[i * 2], e.pts[i * 2 + 1], e.pts[i * 2 + 2], e.pts[i * 2 + 3])) e.shown[i] = 0;
+      if (hidden(mx, mz, e.lay) || hidden(e.pts[i * 2], e.pts[i * 2 + 1], e.lay) || hidden(e.pts[i * 2 + 2], e.pts[i * 2 + 3], e.lay) || underHero(mx, mz, e.lay) || mapGranville(e, mz) || overWater(e.pts[i * 2], e.pts[i * 2 + 1], e.pts[i * 2 + 2], e.pts[i * 2 + 3])) e.shown[i] = 0;
     }
   });
   // over the Millennium's trench a road crosses on a bridge from one bank's lip to the other's, or ends at its rim
