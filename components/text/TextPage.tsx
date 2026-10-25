@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { Fragment } from "react";
 
 import { PanelFor } from "@/components/panels";
+import { DesignPanel } from "@/components/panels/DesignPanel";
 import { contact, landAcknowledgement, person, stations } from "@/data";
 
 import { Reveal } from "./Reveal";
@@ -26,15 +28,25 @@ export function TextPage() {
       <main id="main" className="mx-auto flex max-w-[720px] flex-col gap-12 px-4 pb-24 pt-10 sm:px-6">
         <p className="kicker">{person.name} · the whole line as text</p>
         {stations.map((station, index) => (
-          <Reveal key={station.id}>
-            <section
-              aria-labelledby={station.panel}
-              className={index === 0 ? undefined : "border-t border-border pt-10"}
-              id={index === 0 ? undefined : `stop-${station.code}`}
-            >
-              <PanelFor id={station.panel} code={station.code} as={index === 0 ? "h1" : "h2"} />
-            </section>
-          </Reveal>
+          <Fragment key={station.id}>
+            <Reveal>
+              <section
+                aria-labelledby={station.panel}
+                className={index === 0 ? undefined : "border-t border-border pt-10"}
+                id={index === 0 ? undefined : `stop-${station.code}`}
+              >
+                <PanelFor id={station.panel} code={station.code} as={index === 0 ? "h1" : "h2"} />
+              </section>
+            </Reveal>
+            {/* not a stop: the design notes follow Explore, whose link points here */}
+            {index === 0 ? (
+              <Reveal>
+                <section aria-labelledby="design-notes" className="border-t border-border pt-10">
+                  <DesignPanel />
+                </section>
+              </Reveal>
+            ) : null}
+          </Fragment>
         ))}
         <p className="text-sm text-muted">
           This is the text version of the site. The same content is a ride on the Expo Line at{" "}
