@@ -493,11 +493,11 @@ export function Guideway() {
     const panes = mergeAll(paneParts);
     const plats = mergeAll(platParts);
     const lamps = mergeAll(lampParts);
-    // the parked train in one painted mesh: the body in its own colours, dark glass, the cyan line
+    // the parked train in one painted mesh: the body in its own colours, smoked glass, the cyan line
     const parked = layover.body.length
       ? merged([
           ...layover.body.map((geo) => ({ geo })),
-          ...layover.glass.map((g) => ({ geo: paint(g, 0x2a3039) })),
+          ...layover.glass.map((g) => ({ geo: paint(g, 0x0d1218) })),
           ...layover.line.map((g) => ({ geo: paint(g, 0x3ddcf5) })),
         ])
       : null;

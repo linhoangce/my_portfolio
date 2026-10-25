@@ -10,8 +10,9 @@
  *
  * The Millennium's, after Anna's hummingbird: a slim, taut section whose sides lean in above the waist, and a sharp,
  * raked needle nose with a short windscreen over it; deep jade metallic over graphite with a strong colour shift
- * (mats.millBody), a garnet flash low on the nose where the bird's throat would be; and one fine gold blade (the line's
- * yellow) rising from the car's far end to the tip.
+ * toward rose (mats.millBody); the whole nose in deep metallic rose, as the bird's head and throat, flowing back into a
+ * rose band along each side; and one fine gold blade (the line's yellow) rising from the car's far end to the tip, the
+ * band's upper edge.
  */
 import { Color } from "three";
 
@@ -68,7 +69,16 @@ const MILL_SECTION: Section = { a: 1.45, b: 1.62, cy: 2.25, np: 3.8, tumble: 0.1
 const CROWN = 0x082a21;
 const JADE = 0x0d5a43;
 const GRAPHITE = 0x161c1b;
-const GARNET = 0x5e1631;
+const ROSE = 0xc8306e;
+
+/** The gold blade's middle at a, rising from low at the car's far end to the nose's root (t its progress there). */
+const bladeOf = ({ len, nose, front }: CarSpec) => {
+  const z1 = front ? len / 2 - nose : len / 2;
+  return (a: At) => {
+    const t = Math.min(1, (a.z + len / 2) / (z1 + len / 2));
+    return { t, c: -0.6 + 0.45 * t };
+  };
+};
 
 export const MILLENNIUM: CarStyle = {
   section: MILL_SECTION,
@@ -80,15 +90,16 @@ export const MILLENNIUM: CarStyle = {
   },
   glass: { lo: 0.14, hi: 0.84 },
   canopy: [0.06, 0.66],
-  tint: (f, a) => {
-    const body = f > 0.5 ? CROWN : mix(JADE, GRAPHITE, smooth(-0.2, -0.85, f));
-    // the throat's flash: low on the nose toward its tip
-    return mix(body, GARNET, smooth(0.3, 0.75, a.front) * smooth(0.25, -0.4, f));
-  },
+  // the rose head: the whole nose, crown to chin, easing back into the jade over its first third
+  tint: (f, a) => mix(f > 0.5 ? CROWN : mix(JADE, GRAPHITE, smooth(-0.2, -0.85, f)), ROSE, smooth(0.05, 0.4, a.front)),
   // the gold blade: one straight rise from low at the car's far end to the nose's root, then on to the tip
-  glow: ({ len, nose, front }: CarSpec): Strip[] => {
-    const z1 = front ? len / 2 - nose : len / 2;
-    const c = (a: At) => -0.6 + 0.45 * Math.min(1, (a.z + len / 2) / (z1 + len / 2));
-    return [{ z0: -len / 2, z1: len / 2, lo: (a) => c(a) - 0.03, hi: (a) => c(a) + 0.03 }];
+  glow: (car: CarSpec): Strip[] => {
+    const blade = bladeOf(car);
+    return [{ z0: -car.len / 2, z1: car.len / 2, lo: (a) => blade(a).c - 0.03, hi: (a) => blade(a).c + 0.03 }];
+  },
+  // the rose band under the blade, broad at the nose's root and tapering to a point at the car's far end
+  decals: (car: CarSpec): Strip[] => {
+    const blade = bladeOf(car);
+    return [{ z0: -car.len / 2, z1: car.len / 2, lo: (a) => blade(a).c - 0.02 - 0.2 * Math.pow(blade(a).t, 1.2), hi: (a) => blade(a).c, hex: ROSE }];
   },
 };

@@ -377,40 +377,51 @@ function paintPerson(g: CanvasRenderingContext2D, k: number): void {
 }
 
 /**
- * The panoramic glass: by day a dark cabin with a pale sky reflection along the top, at night warm light with rows of
- * seat backs and the odd passenger's head and shoulders against it.
+ * The panoramic glass, smoked: by day near-black with a faint sky sheen along the top and slim pillars between the
+ * panes (the material's reflections do the rest); at night, through the tint, a bright ceiling light line over a dim
+ * warm cabin, passengers' heads and shoulders in shadow against it. The top rows stay dark, day and night: a nose's
+ * canopy (trainGeometry.ts) takes its colour from there.
  */
 export function interiorTextures(): { map: CanvasTexture; emissiveMap: CanvasTexture } {
   const W = 512;
   const H = 64;
   const [c, g] = canvas(W, H);
   const [e, h] = canvas(W, H);
-  g.fillStyle = "#16202c";
+  g.fillStyle = "#0a0f15";
   g.fillRect(0, 0, W, H);
+  g.fillStyle = "rgba(150,175,200,0.1)";
+  g.fillRect(0, 0, W, 10);
   h.fillStyle = "#000000";
   h.fillRect(0, 0, W, H);
-  const lg = h.createLinearGradient(0, 0, 0, H);
-  lg.addColorStop(0, "#fff1d6");
-  lg.addColorStop(1, "#ffd49a");
+  // the ceiling's light line, and the cabin's dim warm light under it
+  h.fillStyle = "#fff3df";
+  h.fillRect(0, 9, W, 3);
+  const lg = h.createLinearGradient(0, 12, 0, H);
+  lg.addColorStop(0, "rgba(255,214,160,0.42)");
+  lg.addColorStop(1, "rgba(255,196,140,0.2)");
   h.fillStyle = lg;
-  h.fillRect(0, 6, W, 52);
+  h.fillRect(0, 12, W, H - 16);
   let seed = 7;
   const rnd = () => ((seed = (seed * 9301 + 49297) % 233280) / 233280);
+  // the seat backs, faint, and the odd passenger in shadow
   for (let x = 10; x < W; x += 46) {
-    h.fillStyle = "#3a2a1a";
-    h.fillRect(x, 34, 26, 26);
-    g.fillStyle = "#0d141d";
-    g.fillRect(x, 34, 26, 26);
+    h.fillStyle = "rgba(0,0,0,0.3)";
+    h.fillRect(x, 44, 26, 16);
     if (rnd() < 0.45) {
-      h.fillStyle = "#2a1c12";
+      h.fillStyle = "rgba(0,0,0,0.6)";
       h.beginPath();
-      h.arc(x + 13, 24, 7, 0, Math.PI * 2);
+      h.arc(x + 13, 28, 6, 0, Math.PI * 2);
       h.fill();
-      h.fillRect(x + 6, 30, 14, 14);
+      h.fillRect(x + 6, 34, 14, 14);
     }
   }
-  g.fillStyle = "rgba(160,190,215,0.18)";
-  g.fillRect(0, 0, W, 22);
+  // the pillars between the panes
+  for (let x = 0; x < W; x += 128) {
+    g.fillStyle = "#04070a";
+    g.fillRect(x, 0, 4, H);
+    h.fillStyle = "#000000";
+    h.fillRect(x, 0, 4, H);
+  }
   return { map: texture(c, true), emissiveMap: texture(e, true) };
 }
 
