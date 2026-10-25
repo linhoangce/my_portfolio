@@ -1101,21 +1101,18 @@
     height: min(78dvh, 640px);
     border-radius: 18px 18px 0 0;
   }
-  /* the chat button stands above the stop buttons, and above the scene's sheet or Contact's links when they are up;
-     it steps aside for an expanded sheet and a landmark's card */
+  /* the chat button stands above the stop buttons, and above Contact's links when they are up; it steps aside while a
+     scene's sheet or a landmark's card is up */
   .ask-fab {
     right: 12px;
     bottom: calc(max(env(safe-area-inset-bottom), 8px) + 70px);
     width: 44px;
     height: 44px;
   }
-  html:has(.scene-ov.open) .ask-fab {
-    bottom: calc(40dvh + 12px);
-  }
   html:has(.caps.docked .cap.on) .ask-fab {
     bottom: calc(max(env(safe-area-inset-bottom), 8px) + 252px);
   }
-  html:has(.scene-ov.open.expanded) .ask-fab,
+  html:has(.scene-ov.open) .ask-fab,
   html:has(.mon-card) .ask-fab {
     display: none;
   }
