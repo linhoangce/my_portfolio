@@ -68,11 +68,15 @@ const trussTexture = () =>
 
 export type LionsGate = { group: Group; necklace: Vector3[]; centre: Vector3; dispose: () => void };
 
-export function buildLionsGate(lowEnd: boolean, mast: MeshStandardMaterial): LionsGate {
+/**
+ * The deck along the crossing line (x = X): the towers' and the anchorages' places, the road's height at any z (a
+ * gentle crown over the suspended spans, falling at a road's grade along the approaches) and where it meets the
+ * ground at each end. The bridge and the traffic on it (bridgeTraffic.ts) both stand on it.
+ */
+export function lionsGateDeck() {
   const nw = narrows();
   const X = nw.x;
   const D = 19;
-  const T = 41;
   // the towers stand in the water a little out from each shore
   const zT1 = nw.zS - 9;
   const zT2 = nw.zN + 9;
@@ -93,6 +97,12 @@ export function buildLionsGate(lowEnd: boolean, mast: MeshStandardMaterial): Lio
   while (zEndS < zA1 + 200 && deckAt(zEndS) > ground(zEndS) + 0.4) zEndS += 2;
   let zEndN = zA2;
   while (zEndN > zA2 - 220 && deckAt(zEndN) > ground(zEndN) + 0.4) zEndN -= 2;
+  return { X, D, zT1, zT2, span, mid, zA1, zA2, deckAt, ground, zEndS, zEndN };
+}
+
+export function buildLionsGate(lowEnd: boolean, mast: MeshStandardMaterial): LionsGate {
+  const { X, D, zT1, zT2, span, mid, zA1, zA2, deckAt, ground, zEndS, zEndN } = lionsGateDeck();
+  const T = 41;
   const zs: number[] = [];
   for (let z = zEndS; z >= zEndN; z -= 2) zs.push(z);
 
