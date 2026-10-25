@@ -17,6 +17,8 @@
     --border: 36 48 71; /* #243047 */
     --accent: 247 168 196; /* #f7a8c4, cherry blossom */
     --accent-ink: 11 7 22; /* #0b0716 */
+    /* the accent as text and icons: blossom itself reads on the night ground */
+    --accent-text: 247 168 196;
     --glass-a: 0.94;
     --shadow: 0 30px 80px -30px rgba(0, 0, 0, 0.9);
     --scrim: rgba(7, 10, 18, 0.3);
@@ -32,8 +34,10 @@
     --fg-3: 59 69 86; /* #3b4556 */
     --muted: 91 102 120; /* #5b6678 */
     --border: 207 214 226; /* #cfd6e2 */
-    --accent: 194 53 107; /* #c2356b, a deeper cherry blossom for white text and text on light */
-    --accent-ink: 255 255 255;
+    --accent: 247 168 196; /* #f7a8c4, cherry blossom, with dark text on it */
+    --accent-ink: 11 7 22;
+    /* blossom is too pale to read as text on the light ground: a dusty rose for text and icons */
+    --accent-text: 158 90 112; /* #9e5a70 */
     --glass-a: 0.93;
     --shadow: 0 30px 80px -40px rgba(20, 30, 60, 0.35);
     --scrim: rgba(243, 245, 249, 0.25);
@@ -50,8 +54,9 @@
       --fg-3: 59 69 86;
       --muted: 91 102 120;
       --border: 207 214 226;
-      --accent: 194 53 107;
-      --accent-ink: 255 255 255;
+      --accent: 247 168 196;
+      --accent-ink: 11 7 22;
+      --accent-text: 158 90 112;
       --glass-a: 0.93;
         --shadow: 0 30px 80px -40px rgba(20, 30, 60, 0.35);
       --scrim: rgba(243, 245, 249, 0.25);
@@ -76,7 +81,7 @@
   }
 
   :focus-visible {
-    outline: 2px solid rgb(var(--accent));
+    outline: 2px solid rgb(var(--accent-text));
     outline-offset: 2px;
     border-radius: 6px;
   }
@@ -161,7 +166,7 @@
     grid-template-columns: 84px minmax(0, 1fr);
   }
   .par dt {
-    @apply pt-[3px] font-mono text-[11px] uppercase tracking-[0.12em] text-accent;
+    @apply pt-[3px] font-mono text-[11px] uppercase tracking-[0.12em] text-accentText;
   }
   .par dd {
     @apply m-0 text-sm text-fg2;
@@ -224,8 +229,8 @@
     @apply mt-0.5 block text-[13px] text-muted;
   }
   .email {
-    @apply mt-2.5 inline-block font-serif text-[28px] text-accent underline underline-offset-[7px];
-    text-decoration-color: rgb(var(--accent) / 0.45);
+    @apply mt-2.5 inline-block font-serif text-[28px] text-accentText underline underline-offset-[7px];
+    text-decoration-color: rgb(var(--accent-text) / 0.45);
   }
   @media (max-width: 860px) {
     .panel h2,
@@ -803,8 +808,8 @@
   border-color: rgb(var(--accent));
 }
 .chip-btn[aria-pressed="true"] {
-  border-color: rgb(var(--accent));
-  background: rgb(var(--accent) / 0.16);
+  border-color: rgb(var(--accent-text) / 0.6);
+  background: rgb(var(--accent) / 0.3);
   color: rgb(var(--fg));
 }
 .chip-btn i {

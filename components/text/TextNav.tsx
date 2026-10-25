@@ -22,7 +22,7 @@ export function TextNav() {
           ))}
         </ul>
         <Link href="/" className="btn">
-          <TrainFront className="h-4 w-4 text-accent" aria-hidden="true" />
+          <TrainFront className="h-4 w-4 text-accentText" aria-hidden="true" />
           Back to the train
         </Link>
       </nav>

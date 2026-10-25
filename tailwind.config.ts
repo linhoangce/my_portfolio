@@ -16,6 +16,7 @@ const config: Config = {
         border: "rgb(var(--border) / <alpha-value>)",
         accent: "rgb(var(--accent) / <alpha-value>)",
         accentInk: "rgb(var(--accent-ink) / <alpha-value>)",
+        accentText: "rgb(var(--accent-text) / <alpha-value>)",
       },
       fontFamily: {
         sans: ["var(--font-sans)", "system-ui", "sans-serif"],

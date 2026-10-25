@@ -82,7 +82,7 @@ export function AskPanel() {
   return (
     <section className={`ask glass${open ? " open" : ""}`} role="dialog" aria-labelledby="ask-h" aria-hidden={!open} data-panel>
       <div className="ask-head">
-        <Sparkles className="h-5 w-5 text-accent" aria-hidden="true" />
+        <Sparkles className="h-5 w-5 text-accentText" aria-hidden="true" />
         <div className="t">
           <b id="ask-h">Ask the attendant</b>
           <small>Preview mode · scripted answers</small>
