@@ -58,6 +58,7 @@ import { useTrain } from "../store";
 import { groundAt, sdfAt, surfaceAt } from "../terrain";
 import { dotTexture } from "../textures";
 import { frameAt, makeFrame, PATH_SAMPLES, stationS, UP } from "../track";
+import { type CarGeometry, carGeometry, PEARL } from "../trainGeometry";
 import { glassBox, nets, pad as taxiPad, windsock } from "../vertiports";
 import { barkTexture, type Conifer, coniferSkeleton, crownFromOf, DETAIL_FULL, DETAIL_LOW, frondTexture, limbGeometry, sprayCard, sprayMatrix, trunkGeometry } from "../trees/conifer";
 import type { World } from "../world";
@@ -399,7 +400,7 @@ const HALL = { a0: -21, a1: -5, l0: 17, l1: 27, deep: 6.2 };
  * The Canada Line at Waterfront: it runs underground, so its platform is seen from the plaza through a sunken hall, a
  * pit cut into the paving (the ground leaves it open) with a glass balustrade round its rim and a glass canopy over
  * half of it. Below, a platform along one side and the track along the other, a tunnel mouth in each end wall, and a
- * two-car train that comes in, waits and goes on; escalators run down from the rim, and a glass entrance pavilion
+ * two-car pearl train that comes in, waits and goes on; escalators run down from the rim, and a glass entrance pavilion
  * with the line's roundel stands at the end. Returns the per-frame update.
  */
 function canadaLineHall(c: Ctx, vc: Material, lit: Material): (t: number) => void {
@@ -454,21 +455,21 @@ function canadaLineHall(c: Ctx, vc: Material, lit: Material): (t: number) => voi
   c.add(mats.plat, new BoxGeometry(l1 - l0 + 1.4, 0.3, 5), c.L(a1 + 2.6, lm, rim + 3.75));
   c.add(mats.post, new CylinderGeometry(0.1, 0.1, 6, 8), c.L(a1 + 5.4, l0 - 0.6, rim + 3));
   c.add(lit, paint(new CylinderGeometry(1.1, 1.1, 0.12, 24).rotateX(Math.PI / 2), 0x1fb5c9), c.L(a1 + 5.4, l0 - 0.6, rim + 6.3));
-  // the train: two short cars, white with a teal window band, in and out of the tunnels
-  const train = new Mesh(
-    merged(
-      [-3.4, 3.4].flatMap((dz) => [
-        { geo: paint(new BoxGeometry(2.3, 2.3, 6.4).translate(0, 1.45, dz), 0xf1f3f4) },
-        { geo: paint(new BoxGeometry(2.32, 0.7, 5.6).translate(0, 1.9, dz), 0x1d6f7d) },
-        { geo: paint(new BoxGeometry(2.0, 0.2, 6.2).translate(0, 2.7, dz), 0xb5babf) },
-        { geo: paint(new BoxGeometry(2.34, 0.18, 6.42).translate(0, 1.0, dz), 0x1fb5c9) },
-      ]),
-    ),
-    vc,
+  // the train: two short pearl cars (trainGeometry.ts), the second turned round so both ends wear a nose, the line's
+  // teal along them and a dark skirt under them, in and out of the tunnels
+  const CL = 7.6;
+  const cars = [1, -1].map((k) => ({ geo: carGeometry(CL, true, false, c.lowEnd ? 14 : 22, { ...PEARL, nose: 3 }), z: (k * (CL + 0.5)) / 2, ry: k > 0 ? 0 : Math.PI }));
+  const both = (pick: (g: CarGeometry) => BufferGeometry) => merged(cars.map((car): Part => ({ geo: pick(car.geo), position: [0, 0, car.z], rotation: [0, car.ry, 0] })));
+  const train = new Group();
+  train.add(
+    new Mesh(both((g) => g.body), mats.body),
+    new Mesh(both((g) => g.glass), mats.window),
+    new Mesh(both((g) => paint(g.line, 0x1fb5c9)), lit),
+    new Mesh(merged(cars.map((car): Part => ({ geo: paint(new BoxGeometry(2.3, 0.62, CL - 1.2), 0x2a3039), position: [0, 0.42, car.z] }))), vc),
   );
   c.group.add(train);
   const place = (a: number) => {
-    const [x, y, z] = c.L(a, l1 - 3, floor + 0.25);
+    const [x, y, z] = c.L(a, l1 - 3, floor + 0.29);
     train.position.set(x, y, z);
     train.visible = a > a0 - 9 && a < a1 + 9;
   };

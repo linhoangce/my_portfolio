@@ -5,27 +5,33 @@ import { useEffect, useMemo } from "react";
 import { BoxGeometry, BufferAttribute, BufferGeometry, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, PlaneGeometry, SpotLight, Vector3 } from "three";
 
 import { CAR, CROSS_LEN, GAP, HEAD, TRAIN_CARS, TRAIN_LEN, VMAX } from "./constants";
+import { EXPO } from "./liveries";
 import { type Sim, useTrain } from "./store";
 import { makeFrame, trainFrameAt, UP } from "./track";
-import { carGeometry, SECTION_CY, sectionRing } from "./trainGeometry";
+import { carGeometry, noseSection, sectionRing } from "./trainGeometry";
 import { type World, useWorld } from "./world";
 
 type CarObj = { off: number; obj: Group };
 
+/** The nose's tip, where the head and tail lamps sit; the section's middle, where the gangways meet the cars. */
+const TIP = noseSection(EXPO, 1);
+const CY = EXPO.section.cy;
+
 /**
- * One 2100 car: the pearl superellipse body, panoramic glass with the cabin behind it, a light line along each side,
- * a dark skirt hiding the running gear, a light bar on each end car and a soft under-glow. The gangways between cars
- * are drawn separately (see Bellows), so they follow the cars round curves.
+ * One 2100 car in the Expo's own design (liveries.ts): the painted body under its glass canopy at each cab end, the
+ * panoramic glass with the cabin behind it, the cyan light seam along each side, a dark skirt hiding the running gear,
+ * a slim lamp on each end car's snout, and a soft under-glow, light as if through water, after dark. The gangways
+ * between cars are drawn separately (see Bellows), so they follow the cars round curves.
  */
-function buildCar(world: World, isFront: boolean, isTail: boolean, spots: SpotLight[]): Group {
+function buildCar(world: World, isFront: boolean, isTail: boolean, spots: SpotLight[], skirtMat: MeshStandardMaterial): Group {
   const { mats, lowEnd } = world;
   const g = new Group();
-  const geo = carGeometry(CAR, isFront, isTail, lowEnd ? 18 : 30);
-  const body = new Mesh(geo.body, mats.body);
+  const geo = carGeometry(CAR, isFront, isTail, lowEnd ? 18 : 30, EXPO);
+  const body = new Mesh(geo.body, mats.expoBody);
   body.castShadow = !lowEnd;
   const glass = new Mesh(geo.glass, mats.window);
   const line = new Mesh(geo.line, mats.trainLine);
-  const skirt = new Mesh(new BoxGeometry(2.3, 0.62, CAR - 1.2), mats.trim);
+  const skirt = new Mesh(new BoxGeometry(2.3, 0.62, CAR - 1.2), skirtMat);
   skirt.position.y = 0.42;
   const glow = new Mesh(new PlaneGeometry(3.2, CAR), mats.underGlow);
   glow.rotation.x = -Math.PI / 2;
@@ -33,8 +39,8 @@ function buildCar(world: World, isFront: boolean, isTail: boolean, spots: SpotLi
   g.add(body, glass, line, skirt, glow);
   if (isFront || isTail) {
     const zf = isFront ? 1 : -1;
-    const bar = new Mesh(new BoxGeometry(1.2, 0.12, 0.2), isFront ? mats.head : mats.tail);
-    bar.position.set(0, 1.75, zf * (CAR / 2 - 0.05));
+    const bar = new Mesh(new BoxGeometry(0.5, 0.05, 0.12), isFront ? mats.head : mats.tail);
+    bar.position.set(0, TIP.cy - 0.06, zf * (CAR / 2 - 0.12));
     g.add(bar);
     if (isFront) {
       const spot = new SpotLight(0xfff1d6, 900, 120, 0.42, 0.55, 1.6);
@@ -56,7 +62,7 @@ class Bellows {
   static readonly N = 28;
   static readonly RINGS = 9;
   readonly mesh: Mesh;
-  private readonly ring = sectionRing(Bellows.N, 0.9);
+  private readonly ring = sectionRing(Bellows.N, 0.9, EXPO.section);
   private readonly pos: Float32Array;
   private readonly a = new Vector3();
   private readonly b = new Vector3();
@@ -100,8 +106,8 @@ class Bellows {
       const A = cars[g].obj.matrixWorld;
       const B = cars[g + 1].obj.matrixWorld;
       // the back of the car ahead and the front of the car behind, a hair inside each end cap
-      ca.set(0, SECTION_CY, -CAR / 2 + 0.05).applyMatrix4(A);
-      cb.set(0, SECTION_CY, CAR / 2 - 0.05).applyMatrix4(B);
+      ca.set(0, CY, -CAR / 2 + 0.05).applyMatrix4(A);
+      cb.set(0, CY, CAR / 2 - 0.05).applyMatrix4(B);
       const len = Math.max(0.3, ca.distanceTo(cb));
       ta.set(0, 0, -1).transformDirection(A).multiplyScalar(len);
       tb.set(0, 0, -1).transformDirection(B).multiplyScalar(len);
@@ -116,8 +122,8 @@ class Bellows {
         c.copy(ca).multiplyScalar(h00).addScaledVector(ta, h10).addScaledVector(cb, h01).addScaledVector(tb, h11);
         for (let i = 0; i < N; i++) {
           const [x, y] = ring[i];
-          a.set(x, SECTION_CY + y, -CAR / 2 + 0.05).applyMatrix4(A);
-          b.set(x, SECTION_CY + y, CAR / 2 - 0.05).applyMatrix4(B);
+          a.set(x, CY + y, -CAR / 2 + 0.05).applyMatrix4(A);
+          b.set(x, CY + y, CAR / 2 - 0.05).applyMatrix4(B);
           p.copy(a).multiplyScalar(h00).addScaledVector(ta, h10).addScaledVector(b, h01).addScaledVector(tb, h11);
           p.sub(c).multiplyScalar(fold).add(c);
           const k = ((g * RINGS + r) * N + i) * 3;
@@ -167,16 +173,18 @@ export function Train() {
   const built = useMemo(() => {
     const spots: SpotLight[] = [];
     // laid out about the train's middle (sim.s), the lead car HEAD ahead of it
-    const mk = () => Array.from({ length: TRAIN_CARS }, (_, i) => ({ off: HEAD - i * (CAR + GAP), obj: buildCar(world, i === 0, i === TRAIN_CARS - 1, spots) }));
+    // the skirts and the gangways in the deep navy under the blue
+    const skirtMat = new MeshStandardMaterial({ color: 0x12233a, roughness: 0.6, metalness: 0.4, envMap: world.mats.trim.envMap, envMapIntensity: 0.25 });
+    const mk = () => Array.from({ length: TRAIN_CARS }, (_, i) => ({ off: HEAD - i * (CAR + GAP), obj: buildCar(world, i === 0, i === TRAIN_CARS - 1, spots, skirtMat) }));
     const cars = mk();
     const cars2 = mk();
-    const bellowsMat = new MeshStandardMaterial({ color: 0x2f343c, roughness: 0.85, metalness: 0.1, side: 2 });
+    const bellowsMat = new MeshStandardMaterial({ color: 0x1a2b42, roughness: 0.85, metalness: 0.1, side: 2 });
     const bellows = new Bellows(TRAIN_CARS - 1, bellowsMat);
     const bellows2 = new Bellows(TRAIN_CARS - 1, bellowsMat);
     const blob = new Mesh(new PlaneGeometry(4, TRAIN_LEN + 2), new MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.3, depthWrite: false }));
     blob.rotation.x = -Math.PI / 2;
     blob.visible = world.lowEnd;
-    return { cars, cars2, bellows, bellows2, spots, blob };
+    return { cars, cars2, bellows, bellows2, spots, blob, mats: [skirtMat, bellowsMat, blob.material] };
   }, [world]);
 
   useEffect(() => {
@@ -191,10 +199,11 @@ export function Train() {
       built.bellows.mesh.geometry.dispose();
       built.bellows2.mesh.geometry.dispose();
       built.blob.geometry.dispose();
+      for (const m of built.mats) m.dispose();
     };
   }, [world, built]);
 
-  useFrame(() => {
+  useFrame(({ clock }) => {
     const { sim } = useTrain.getState();
     if (!sim.stationS.length) return;
     placeTrain(built.cars, sim.s, (sc) => laneAt(sim, sc), sim.travelDir);
@@ -206,6 +215,9 @@ export function Train() {
     const speed = Math.min(1, Math.abs(sim.v) / VMAX);
     world.mats.trainLine.emissiveIntensity = (0.5 + edge * 2.5) * (0.45 + 0.55 * speed);
     world.mats.underGlow.opacity = Math.max(0, edge - 0.15) * 0.5;
+    // the caustics drift, as light under moving water
+    const map = world.mats.underGlow.map;
+    if (map) map.offset.set(Math.sin(clock.elapsedTime * 0.21) * 0.3, clock.elapsedTime * 0.06);
     if (built.blob.visible) {
       trainFrameAt(sim.s, sim.travelDir, laneAt(sim, sim.s), fA);
       built.blob.position.copy(fA.p).addScaledVector(UP, 1.02);

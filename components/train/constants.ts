@@ -13,8 +13,8 @@ export const SEA = -0.6;
 /** Deck grade limits: everywhere, and on the Grandview Cut ramps. */
 export const GRADE_CAP = 0.09;
 export const GRADE_CAP_RAMP = 0.12;
-/** The deck stays level this far either side of a station. */
-export const PLATFORM_FLAT = 18;
+/** The deck stays level this far either side of a station (past its platform's ends). */
+export const PLATFORM_FLAT = 22;
 /** Minimum deck height above the ground beside the track. */
 export const CLEAR_DECK = 7.5;
 /**
@@ -43,7 +43,8 @@ export const LANE = 2.6;
 /** Length of a scissors crossover diagonal along the track. */
 export const CROSS_LEN = 44;
 
-export const CAR = 9.2;
+/** An Expo car's length (liveries.ts EXPO), long enough for its long nose to sit in proportion; and between two cars. */
+export const CAR = 12;
 export const GAP = 0.7;
 /** Cars in a train: three, so a train stands whole at a platform (PLATFORM_LEN) with the stations at their real spacing. */
 export const TRAIN_CARS = 3;
@@ -54,7 +55,7 @@ export const TRAIN_LEN = (TRAIN_CARS - 1) * (CAR + GAP) + CAR;
  */
 export const HEAD = (TRAIN_LEN - CAR) / 2;
 /** A platform's length: the train and a little to spare. */
-export const PLATFORM_LEN = 31;
+export const PLATFORM_LEN = 40;
 
 // Driving model
 export const VMAX = 46;
@@ -88,7 +89,8 @@ export const CAM = {
   chase: { right: 11, up: 44, back: 120, ahead: 40 },
   chaseLite: { right: 11, up: 35, back: 96, ahead: 32 },
   chasePhone: { right: 13, up: 40, back: 112, ahead: 34 },
-  cab: { up: 3.1, ahead: 4.4, look: 30 },
+  /** The cab: in the lead car, behind its long nose. */
+  cab: { up: 3.1, ahead: 3.2, look: 30 },
   /** How fast the chase view swings back behind the train after 3 s without input, once it is moving. */
   yawDecay: 0.6,
   fov: 40,

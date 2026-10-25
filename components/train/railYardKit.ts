@@ -48,10 +48,10 @@ function box(out: BufferGeometry[], w: number, h: number, along: number, s: numb
   out.push(glow ? lit(g, glow) : g);
 }
 
-/** One car of a line's train, centred at s on track l: white, its line's stripe, a band of dark windows, a grey roof. */
-function railCar(out: BufferGeometry[], s: number, l: number, len: number, stripe: number, cab: number): void {
+/** One car of a line's train, centred at s on track l: its body colour, its line's stripe, a band of dark windows, a grey roof. */
+function railCar(out: BufferGeometry[], s: number, l: number, len: number, stripe: number, cab: number, body: number): void {
   const y = 0.36;
-  box(out, 2.5, 2.2, len, s, l, y + 0.45, WHITE);
+  box(out, 2.5, 2.2, len, s, l, y + 0.45, body);
   box(out, 2.52, 0.28, len + 0.02, s, l, y + 0.95, stripe);
   box(out, 2.54, 0.6, len - 0.9, s, l, y + 1.55, DARK);
   box(out, 2.2, 0.22, len - 0.4, s, l, y + 2.65, ROOF);
@@ -60,9 +60,9 @@ function railCar(out: BufferGeometry[], s: number, l: number, len: number, strip
   if (cab) box(out, 2.2, 0.8, 0.12, s + (cab * len) / 2, l, y + 1.4, DARK);
 }
 
-/** A train of n cars along track l from its head at s (cars running back toward smaller s). */
-function train(out: BufferGeometry[], head: number, l: number, n: number, len: number, stripe: number): void {
-  for (let k = 0; k < n; k++) railCar(out, head - len / 2 - k * (len + 0.3), l, len, stripe, k === 0 ? 1 : k === n - 1 ? -1 : 0);
+/** A train of n cars along track l from its head at s (cars running back toward smaller s), white unless `body` says. */
+function train(out: BufferGeometry[], head: number, l: number, n: number, len: number, stripe: number, body = WHITE): void {
+  for (let k = 0; k < n; k++) railCar(out, head - len / 2 - k * (len + 0.3), l, len, stripe, k === 0 ? 1 : k === n - 1 ? -1 : 0, body);
 }
 
 /** Freight: a locomotive in red, then box cars, tank cars and flats with containers. */
@@ -166,22 +166,25 @@ export function buildYard(lowEnd: boolean): YardParts {
     const n = Math.max(2, Math.ceil(a.p.distanceTo(b.p) / step));
     lay(Array.from({ length: n + 1 }, (_, i) => ({ p: a.p.clone().lerp(b.p, i / n), t: dir.clone(), r: r.clone() })));
   }
-  // the trains laid up: the West Coast Express's (instanced, outside this), the Expo's, the Millennium's, the Canada
-  // Line's and freight; under the shed, cars in for maintenance
+  // the trains laid up: the West Coast Express's (instanced, outside this), the Expo's (ocean blue, its cyan line), the
+  // Millennium's (deep jade, the line's yellow), the Canada Line's (pearl and teal) and freight; under the shed, cars in
+  // for maintenance
   const span = (k: number) => yardTrackSpan(k);
-  const EXPO = 0xa78bfa;
+  const EXPO = 0x3ddcf5;
+  const EXPO_BODY = 0x1556a0;
   const MILL = 0xfacc15;
+  const MILL_BODY = 0x0d5a43;
   const CANADA = 0x1fb5c9;
-  train(painted, span(1)[0] + 42, YARD_TRACKS[1], 4, 9.2, EXPO);
-  train(painted, span(1)[0] + 84, YARD_TRACKS[1], 4, 9.2, EXPO);
-  train(painted, span(2)[0] + 40, YARD_TRACKS[2], 4, 9.0, MILL);
-  train(painted, span(2)[0] + 86, YARD_TRACKS[2], 4, 9.0, MILL);
+  train(painted, span(1)[0] + 42, YARD_TRACKS[1], 3, 12, EXPO, EXPO_BODY);
+  train(painted, span(1)[0] + 84, YARD_TRACKS[1], 3, 12, EXPO, EXPO_BODY);
+  train(painted, span(2)[0] + 40, YARD_TRACKS[2], 2, 11.4, MILL, MILL_BODY);
+  train(painted, span(2)[0] + 86, YARD_TRACKS[2], 2, 11.4, MILL, MILL_BODY);
   train(painted, span(3)[0] + 24, YARD_TRACKS[3], 2, 10, CANADA);
   train(painted, span(3)[0] + 52, YARD_TRACKS[3], 2, 10, CANADA);
   train(painted, span(3)[0] + 80, YARD_TRACKS[3], 2, 10, CANADA);
   freight(painted, span(4)[0] + 62, YARD_TRACKS[4]);
-  train(painted, 158, YARD_TRACKS[5], 2, 9.2, EXPO);
-  train(painted, 135, YARD_TRACKS[5], 1, 9.0, MILL);
+  train(painted, 158, YARD_TRACKS[5], 2, 12, EXPO, EXPO_BODY);
+  train(painted, 135, YARD_TRACKS[5], 1, 11.4, MILL, MILL_BODY);
   // the shed over the two outer tracks: a wall on the seaward side, columns on the inner, a roof with a glazed
   // lantern along it, its ends open
   const SH = YARD_SHED;

@@ -6,6 +6,7 @@ import { BoxGeometry, BufferGeometry, CatmullRomCurve3, CylinderGeometry, Float3
 
 import { CAR, GAP, LANE } from "./constants";
 import { HEDGE, LED_STRIP, mirror, PARAPET, ribbon, SOFFIT, TROUGH } from "./Guideway";
+import { EXPO } from "./liveries";
 import { merged, type Part } from "./merge";
 import { isRoad } from "./roadNetwork";
 import { groundAt, RASTER } from "./terrain";
@@ -154,10 +155,10 @@ export function Extension({ heightAt }: { heightAt: (x: number, z: number) => nu
     girder.push(merged(piers));
     // the ribbons carry no texture coordinates: neither may anything merged with them
     for (const g of girder) g.deleteAttribute("uv");
-    // a two-car train: the second car is the first turned round, so both ends wear a nose
-    const geo = carGeometry(CAR, true, false, lowEnd ? 14 : 22);
+    // a two-car train in the Expo's own design: the second car is the first turned round, so both ends wear a nose
+    const geo = carGeometry(CAR, true, false, lowEnd ? 14 : 22, EXPO);
     const train = [
-      new InstancedMesh(geo.body, mats.body, 2),
+      new InstancedMesh(geo.body, mats.expoBody, 2),
       new InstancedMesh(geo.glass, mats.window, 2),
       new InstancedMesh(geo.line, mats.trainLine, 2),
     ];
