@@ -156,8 +156,9 @@ function canDrive(k: number): boolean {
 const allowed = (e: REdge, dir: 1 | -1) => e.oneway === 0 || e.oneway === dir;
 
 /**
- * How far each node is from a bridge's ends along the drivable streets, out to REACH (Infinity beyond): the way home
- * for the cars that cross it (Traffic's commuters), which take the ways that bring it nearer the more readily.
+ * How far each node is from a bridge's ends along the drivable streets and the other bridges, out to REACH (Infinity
+ * beyond): the way home for the cars that cross it (Traffic's commuters), which take the ways that bring it nearer the
+ * more readily (one carried over another bridge comes back over one).
  */
 const REACH = 400;
 /** How much more readily a commuter takes a way toward its bridge. */
@@ -179,7 +180,7 @@ function bridgeDist(span: number, node: number): number {
       const n = open.splice(bi, 1)[0];
       for (const k of nodes[n].edges) {
         const e = edges[k];
-        if (e.span || !canDrive(k)) continue;
+        if (!canDrive(k)) continue;
         const o = e.a === n ? e.b : e.a;
         const v = dist[n] + e.len;
         if (v < dist[o] && v < REACH) {
@@ -275,11 +276,11 @@ export class Traffic {
       this.pool.push(k);
       this.weight.push(w);
     });
-    // the last of them are the commuters over the bridges within the map, a share for each, spread over it to start
-    // with (the Lions Gate's traffic comes and goes by the North Shore: respawn)
+    // the last of them are the commuters over the bridges within the map, a share for each by its length, spread over
+    // it to start with (the Lions Gate's traffic comes and goes by the North Shore: respawn)
     const homes: number[] = [];
     edges.forEach((e, k) => {
-      if (e.span && !this.portal(k)) for (let j = Math.round(n / 90); j > 0; j--) homes.push(k);
+      if (e.span && !this.portal(k)) for (let j = Math.round(((n / 90) * e.len) / 110); j > 0; j--) homes.push(k);
     });
     const commuters = n - homes.length;
     for (let i = 0; i < n && this.pool.length; i++) {
@@ -433,11 +434,13 @@ export class Traffic {
   }
   /**
    * Back in on one of the line's streets, on a clear spot, standing; a commuter on its bridge; and now and then over a
-   * bridge from off the map (the Lions Gate from the North Shore), from its far end, out of sight.
+   * bridge from off the map (the Lions Gate from the North Shore), from its far end, out of sight, while its way in has
+   * room (a car to each 30 units of it: the causeway's merge onto Georgia Street lets only so many through).
    */
   private respawn(c: Car): void {
     const { edges } = roads();
-    const gate = c.home < 0 && c.rng.next() < GATEWAY ? this.portals[Math.floor(c.rng.next() * this.portals.length)] : undefined;
+    let gate = c.home < 0 && c.rng.next() < GATEWAY ? this.portals[Math.floor(c.rng.next() * this.portals.length)] : undefined;
+    if (gate != null && (this.byLane.get(gate * 2 + (this.portal(gate) > 0 ? 0 : 1))?.length ?? 0) >= edges[gate].len / 30) gate = undefined;
     for (let tries = 0; tries < 8; tries++) {
       c.e = c.home >= 0 ? c.home : (gate ?? this.pick(c.rng));
       const o = edges[c.e];
@@ -509,8 +512,7 @@ export class Traffic {
     let total = 0;
     const opts: [number, 1 | -1, number, number][] = [];
     for (const k of nodes[node].edges) {
-      // (a commuter keeps to its own bridge: another's is as good as closed to it)
-      if (k === c.e || !canDrive(k) || (c.home >= 0 && edges[k].span && k !== c.home)) continue;
+      if (k === c.e || !canDrive(k)) continue;
       const o = edges[k];
       const dir: 1 | -1 = o.a === node ? 1 : -1;
       if (!allowed(o, dir)) continue;

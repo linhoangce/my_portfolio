@@ -575,6 +575,17 @@ function tidyFragments(nodes: RNode[], edges: REdge[]): void {
 
 /** How far under a deck's road the cars' deck height is given (traffic.ts lifts a car on a deck by 0.12). */
 const RIDE = 0.1;
+/** The causeway's missing links, one way each, from the map's node at the first point to the one at the second. */
+const CAUSEWAY_MENDS: [[number, number], [number, number]][] = [
+  [
+    [-190.2, -136.8],
+    [-200.2, -141.2],
+  ],
+  [
+    [-195.3, -107.5],
+    [-195.7, -101.7],
+  ],
+];
 /**
  * The bridges, carried into the network:
  * - over False Creek, each from the end of the street it carries on at one end (sites.ts BRIDGES) to the other's, along
@@ -598,7 +609,7 @@ function addBridges(nodes: RNode[], edges: REdge[], hidden: (x: number, z: numbe
     });
     return best;
   };
-  const add = (a: number, b: number, xs: number[], ys: number[], cls: RoadClass, half: number, lanes: number, name: string, span: boolean) => {
+  const add = (a: number, b: number, xs: number[], ys: number[], cls: RoadClass, half: number, lanes: number, name: string, span: boolean, oneway: -1 | 0 | 1 = 0) => {
     const pts = new Float32Array(xs);
     const n = pts.length / 2;
     const cum = new Float32Array(n);
@@ -606,7 +617,7 @@ function addBridges(nodes: RNode[], edges: REdge[], hidden: (x: number, z: numbe
     const shown = new Uint8Array(n - 1);
     if (!span) for (let i = 0; i + 1 < n; i++) shown[i] = hidden((pts[i * 2] + pts[i * 2 + 2]) / 2, (pts[i * 2 + 1] + pts[i * 2 + 3]) / 2, half) ? 0 : 1;
     const k = edges.length;
-    edges.push({ a, b, cls, half, oneway: 0, median: false, bridge: true, lanes, name, pts, cum, y: Float32Array.from(ys), len: cum[n - 1], shown, deck: new Uint8Array(n - 1).fill(span ? 1 : 0), subway: 0, span });
+    edges.push({ a, b, cls, half, oneway, median: false, bridge: !oneway, lanes, name, pts, cum, y: Float32Array.from(ys), len: cum[n - 1], shown, deck: new Uint8Array(n - 1).fill(span ? 1 : 0), subway: 0, span });
     for (const nd of [a, b]) {
       nodes[nd].edges.push(k);
       nodes[nd].deg++;
@@ -626,7 +637,26 @@ function addBridges(nodes: RNode[], edges: REdge[], hidden: (x: number, z: numbe
     // its ends on the streets' ends exactly
     xs.splice(0, 2, nodes[a].x, nodes[a].z);
     xs.splice(xs.length - 2, 2, nodes[b].x, nodes[b].z);
-    add(a, b, xs, ys, 0, 0.93 * br.half, 2, br.name, true);
+    // an arterial, its lanes centred where the deck's markings put them (the lane offsets come in from the kerb's walk)
+    add(a, b, xs, ys, 1, 0.93 * br.half + WALK[1], 2, br.name, true);
+  }
+  // the causeway's carriageways where the map lost their ends: the northbound one on into the junction the bridge's road
+  // leaves from, the southbound one out onto Georgia Street (without them the causeway's south end is a pocket the cars
+  // could drive into and never leave, and the park and the bridge beyond it are cut off from the city)
+  for (const [[ax, az], [bx, bz]] of CAUSEWAY_MENDS) {
+    const a = nodeAt(ax, az);
+    const b = nodeAt(bx, bz);
+    if (a < 0 || b < 0) continue;
+    const m = Math.max(1, Math.ceil(Math.hypot(nodes[b].x - nodes[a].x, nodes[b].z - nodes[a].z) / 2));
+    const xs: number[] = [];
+    const ys: number[] = [];
+    for (let k = 0; k <= m; k++) {
+      const x = nodes[a].x + ((nodes[b].x - nodes[a].x) * k) / m;
+      const z = nodes[a].z + ((nodes[b].z - nodes[a].z) * k) / m;
+      xs.push(x, z);
+      ys.push(groundAt(x, z));
+    }
+    add(a, b, xs, ys, 0, HALF[2], 1, "Stanley Park Causeway", false, 1);
   }
   const lg = lionsGateDeck();
   let join = -1;
