@@ -116,24 +116,98 @@ const HINGE = shaped(
   0.45,
 );
 /**
- * David Lam Park, from Pacific Boulevard down to the seawall: the city's outline, but for the notch it leaves in its
- * south side between the two arms that reach the water, which the lawn fills (else the city builds there, on the walk).
+ * The creek's north shore as one waterfront of lawns from the bay below Beach Avenue to BC Place's, the seawall walk
+ * along their foot: George Wainborn Park, David Lam Park and Coopers' Park, each down to a unit short of the water and
+ * its ground left as the bank has it, planted thickly with a row of trees along the streets it meets. George Wainborn
+ * keeps the city's outline toward the streets and reaches west to the bay; David Lam runs from Pacific Street and
+ * Pacific Boulevard to the seawall, west to George Wainborn and east under the Cambie Bridge; Coopers' Park lies where
+ * it is, along the seawall east of the bridge, between the Roundhouse's blocks and the water (the city's outline of it
+ * lies under BC Place here, which is larger than life).
  */
-const DAVID_LAM = shaped("David Lam Park", [
-  [-91, 158],
-  [-82.2, 166.7],
-  [-88.1, 172.7],
-  [-79.4, 181.3],
-  [-81.3, 183.2],
-  [-95.6, 183.8],
-  [-109.9, 184.5],
-  [-115.8, 178.7],
-  [-111.4, 174.1],
-  [-109.5, 171.3],
-  [-108.5, 167.6],
-  [-108.4, 162.9],
-  [-101.1, 162],
-]);
+const GEORGE_WAINBORN: Park = {
+  ...shaped(
+    "George Wainborn Park",
+    [
+      [-128.6, 161.6],
+      [-129.7, 160],
+      [-131.4, 158.9],
+      [-137.1, 159.4],
+      [-140.3, 157.7],
+      [-148, 157.5],
+      [-150.7, 158],
+      [-150.2, 164],
+      [-149.4, 170],
+      [-146, 173.1],
+      [-142, 176.2],
+      [-138, 177.4],
+      [-134, 178.9],
+      [-130, 181.3],
+      [-127, 181.7],
+      [-126.5, 171.1],
+      [-128.7, 167.8],
+    ],
+    [],
+    0.7,
+    false,
+  ),
+  rows: 5,
+};
+const DAVID_LAM: Park = {
+  ...shaped(
+    "David Lam Park",
+    [
+      [-128.6, 161.6],
+      [-124, 161.5],
+      [-120, 162.5],
+      [-114, 164.5],
+      [-108.4, 163.5],
+      [-101.1, 162],
+      [-91, 158],
+      [-82.2, 166.7],
+      [-78.5, 170],
+      [-78, 185],
+      [-82, 185.7],
+      [-90, 186.3],
+      [-98, 186.4],
+      [-106, 186.3],
+      [-110, 186],
+      [-114, 185.2],
+      [-118, 183.7],
+      [-122, 182.4],
+      [-127, 181.7],
+      [-126.5, 171.1],
+      [-128.7, 167.8],
+    ],
+    [],
+    0.7,
+    false,
+  ),
+  rows: 5,
+};
+const COOPERS: Park = {
+  ...shaped(
+    "Coopers' Park",
+    [
+      [-75, 170],
+      [-73, 174],
+      [-48, 174],
+      [-43.4, 173.5],
+      [-45, 176.8],
+      [-50, 176.8],
+      [-54, 176.9],
+      [-58, 177.6],
+      [-62, 178.6],
+      [-66, 179.8],
+      [-70, 181.6],
+      [-74, 183.4],
+      [-76, 184.3],
+    ],
+    [],
+    0.7,
+    false,
+  ),
+  rows: 5,
+};
 
 /**
  * The four parks round False Creek's east basin keep the shapes the ride drew for them (mapped, then fitted round the
@@ -164,7 +238,7 @@ const SLOPE = shaped(
   0.6,
   false,
 );
-const DRAWN = [CREEKSIDE, NEFC, HINGE, THORNTON, HARBOUR, DAVID_LAM];
+const DRAWN = [CREEKSIDE, NEFC, HINGE, THORNTON, HARBOUR, GEORGE_WAINBORN, DAVID_LAM, COOPERS];
 const MAPPED: Park[] = PARK_DATA.flatMap(({ name, poly: enc }) => {
   const bin = atob(enc);
   const u8 = new Uint8Array(bin.length);
