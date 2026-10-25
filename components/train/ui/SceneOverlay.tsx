@@ -1,16 +1,18 @@
 "use client";
 
 import { ChevronUp } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { PanelFor } from "@/components/panels";
+import { PanelActions } from "@/components/panels/PanelActions";
 import { stations } from "@/data";
 
 import { useTrain } from "../store";
 
 /**
- * The station's section as an overlay: a left column on a gradient scrim on desktop, a bottom sheet on phones
- * (collapsed to the kicker, title and two lines of lead until expanded). The panel is the same one /text renders; its
+ * The station's section as an overlay: on desktop a column at the foot on the left, on a scrim behind its words only;
+ * on phones a bottom sheet (collapsed to the kicker, title and two lines of lead until expanded). The panel is the same
+ * one /text renders; its
  * parts appear in stages as the train arrives. Hide with E or Esc (remembered for this stay). The stop
  * buttons are StopNav's, at the column's foot whether it is open or not. A visually hidden status line announces each
  * scene once.
@@ -22,6 +24,8 @@ export function SceneOverlay() {
   const phase = useTrain((s) => s.scenePhase);
   const filmOn = useTrain((s) => s.filmOn);
   const monument = useTrain((s) => s.monument);
+  const setUi = useTrain((s) => s.setUi);
+  const actions = useMemo(() => ({ openDesign: () => setUi("design") }), [setUi]);
   const [expanded, setExpanded] = useState(false);
   const [status, setStatus] = useState("");
   const body = useRef<HTMLDivElement>(null);
@@ -69,7 +73,9 @@ export function SceneOverlay() {
       >
         <div className="col" data-panel>
           <div ref={body} className="col-body">
-            <PanelFor id={st.panel} code={st.code} />
+            <PanelActions value={actions}>
+              <PanelFor id={st.panel} code={st.code} />
+            </PanelActions>
           </div>
           <div className="col-foot">
             <button type="button" className="btn expand" aria-expanded={expanded} onClick={() => setExpanded(!expanded)} tabIndex={tab}>

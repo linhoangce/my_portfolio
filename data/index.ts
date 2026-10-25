@@ -86,8 +86,67 @@ export const landAcknowledgement =
 
 export const depart = {
   title: "Linh Hoang",
-  lead: "Software developer building ML systems and LLM agents that are honest about their limits: deterministic cores, models at the edges, and a human approving what goes out.",
-  meta: ["BCIT Computer Systems Technology · 2026", "Now: Co-founder, Awdon · awdon.app"],
+  lead: "Honestly? I was bored, and my portfolio was overdue for an update. I didn't want another page of cards, so I built something I'd want to explore myself: a ride on the Expo Line through Vancouver in 2100. I wanted a project that would make me feel inspired and creative again.",
+  how: "Every stop is a section: who I am, where I've worked and what I've built. Ride it with Next stop, drag to look around, and click a landmark to circle it.",
+  meta: ["Software developer · ML systems and LLM agents", "BCIT Computer Systems Technology · 2026", "Now: Co-founder, Awdon · awdon.app"],
+};
+
+export type DesignNote = { title: string; copy: string };
+export type WhatsNew = { date: string; copy: string };
+
+/** Where each of the ride's designs came from, and what changed lately (newest first). Opened from Explore and the menu. */
+export const designNotes: { title: string; intro: string; notes: DesignNote[]; whatsNew: WhatsNew[] } = {
+  title: "Design notes",
+  intro:
+    "Every piece of this city started with one question: what would Vancouver look like if it kept its best ideas and kept building on them until 2100? Here's where each design came from, and what's new on the line.",
+  notes: [
+    {
+      title: "The line",
+      copy: "The real Expo Line, Waterfront to Patterson, laid on Vancouver's real terrain, the Grandview Cut included. I rebuilt the guideway as a slim white girder with hedges planted along both edges and a violet light running underneath.",
+    },
+    {
+      title: "Trains",
+      copy: "Every line gets its own train, each after an animal of the coast. The Expo's is the ocean and the blue whale: a long rounded nose, shaded from deep ocean on the roof to silver-blue underneath, with one cyan light line. The Millennium's is Anna's hummingbird: a needle nose in metallic rose on a jade body, with a gold blade for the line's yellow. The Canada Line and the West Coast Express run in pearl, and every train wears smoked glass.",
+    },
+    {
+      title: "Roofs",
+      copy: "No two stations share a roof, and each one pairs a way of making or saving energy with planting: harbour sails after Canada Place at Waterfront, a timber grove at Burrard, a sawtooth of solar glass at Granville, upswept eaves in the Millennium Gate's green at Stadium–Chinatown, rain funnels at Main Street, a berry pergola at Nanaimo, a meadow wave at 29th Avenue, solar fins that follow the sun at Joyce–Collingwood and butterfly roofs at Patterson.",
+    },
+    {
+      title: "Stops",
+      copy: "Each stop is built around its section. About is a cedar growing through a timber atrium. Experience is a portal over the line for every role, stone to light. Awdon is a meeting room over Chinatown's night market, its transcripts flowing as ribbons into a sprint board. Planktoneer is a glass water column of drifting plankton; Vessel Vision is Coast Watch, a control room where the detector finds every boat tile by tile; the Weed Detector is a berry greenhouse in a community garden. ABCKidz gets a family park, More projects is the Project Gallery, and Contact is a forest lookout.",
+    },
+    {
+      title: "City",
+      copy: "Vancouver in 2100 keeps its heritage (Gastown, Chinatown, Strathcona's old streets) beside today's glass towers and new ones: terraced mass timber, vertical forests, a pixel twist after Vancouver House, towers after senákw. The landmarks stand on their real outlines: Canada Place's five sails, Science World's sphere, the Lookout's saucer, the Lions Gate in its green steel, and BC Place, raised for 2100 with a sky garden and a wind turbine on every mast. The Waterfront hub is after a Perkins&Will concept for the rail lands.",
+    },
+    {
+      title: "Art",
+      copy: "The art leans on the city's own: Coast Salish–inspired formline drawn from the tradition's general forms (no family's or Nation's crest is copied), murals after the Vancouver Mural Festival, a reconciliation monument at the canoe landing after Lloyd Pinay's Veterans Monument, Progress Pride crosswalks, and the Project Gallery's banners from ten traditions, from a Chinese paper-cut to papel picado.",
+    },
+    {
+      title: "Air & sea",
+      copy: "I wanted flying cars that look like cars, not drones: five air taxis from one maker's line, no wings and no open rotors, landing at vertiports beside the transit hubs. Delivery drones keep to their own lanes over the rail lands and the arterials. On the water: the SeaBus, cruise ships at Canada Place, freighters at anchor in English Bay, and the whole city mirrored in the harbour.",
+    },
+    {
+      title: "Seasons",
+      copy: "Sixteen real tree species turn and drop their leaves with the seasons, with rain and snow when the weather calls for it. The city lights up for Diwali, Lunar New Year, the Cherry Blossom Festival, Vaisakhi, Pride, the Celebration of Light, Halloween and Bright Nights; pick one from the menu.",
+    },
+    {
+      title: "Colour",
+      copy: "Cherry blossom pink for the accent, after Vancouver's spring, on a night-blue ground.",
+    },
+  ],
+  whatsNew: [
+    { date: "Oct 25", copy: "These design notes, and a lighter overlay that only covers the scene behind the words." },
+    { date: "Oct 25", copy: "A roof of its own at every stop, and BC Place raised for 2100." },
+    { date: "Oct 25", copy: "Each line its own train: the Expo after the ocean, the Millennium after Anna's hummingbird, smoked glass on all of them." },
+    { date: "Oct 25", copy: "Traffic over the bridges, freighters at anchor in English Bay, and ships coming and going." },
+    { date: "Oct 25", copy: "Cherry blossom for the accent, and the attendant as a chat button, bottom right." },
+    { date: "Oct 24", copy: "Coast Watch's inside at Commercial–Broadway, and the Clark Park Vertiport across the square." },
+    { date: "Oct 23", copy: "Air taxis between the vertiports, and delivery drones between the ports and the rooftops." },
+    { date: "Oct 23", copy: "A reconciliation monument at the canoe landing, Joyce's Project Gallery, and Canada Place on its real outline." },
+  ],
 };
 
 export const about = {
@@ -233,7 +292,7 @@ export const stations: Station[] = [
     km: [0, 0],
     panel: "depart",
     corpus:
-      "Waterfront station, the start of the line: Linh Hoang. Software developer and co-founder of Awdon (awdon.app). BCIT Computer Systems Technology graduate 2026 (Predictive Analytics), based in Vancouver, BC.",
+      "Waterfront station, the start of the line: Linh Hoang. Software developer and co-founder of Awdon (awdon.app). BCIT Computer Systems Technology graduate 2026 (Predictive Analytics), based in Vancouver, BC. Built this ride out of boredom with the old portfolio and a wish to make something inspiring and creative; the Design notes (from this stop or the menu) tell where each design came from and what is new.",
   },
   {
     id: "burrard",

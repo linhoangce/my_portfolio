@@ -15,7 +15,7 @@ import { Wheel } from "./controls/Wheel";
 import { useTrain } from "./store";
 import { LineMap } from "./ui/LineMap";
 import { LoadBar } from "./ui/LoadBar";
-import { Help, Menu } from "./ui/Menu";
+import { DesignNotes, Help, Menu } from "./ui/Menu";
 import { MonumentBar } from "./ui/MonumentBar";
 import { Readout } from "./ui/Readout";
 import { MapCredit } from "./ui/MapCredit";
@@ -138,6 +138,7 @@ export function TrainGate() {
       <MonumentBar />
       <Menu />
       <Help />
+      <DesignNotes />
       <AskPanel />
     </>
   );

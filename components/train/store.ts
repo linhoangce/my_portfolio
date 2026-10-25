@@ -10,7 +10,7 @@ import type { MonumentKey } from "./monumentData";
 /** idle → cut (a beat) → establish (the section's copy comes in by stages) → hold (all of it shown) → exit (it goes). */
 export type ScenePhase = "idle" | "cut" | "establish" | "hold" | "exit";
 export type Orbit = { yaw: number; pitch: number; zoom: number };
-export type UiPanel = null | "menu" | "help";
+export type UiPanel = null | "menu" | "help" | "design";
 
 /**
  * Hot-path numbers, mutated in place by Drive, the camera rig and the controls every frame.
