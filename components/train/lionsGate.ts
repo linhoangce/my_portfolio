@@ -66,6 +66,17 @@ const trussTexture = () =>
     g.stroke();
   });
 
+/** Three lanes (the middle one reversible, as the real bridge's is): edge lines and dashed lines between the lanes. */
+const roadTexture = () =>
+  canvasTexture(48, 128, (g) => {
+    g.fillStyle = "#4a4d52";
+    g.fillRect(0, 0, 48, 128);
+    g.fillStyle = "#e9e9e4";
+    g.fillRect(1.5, 0, 1.5, 128);
+    g.fillRect(45, 0, 1.5, 128);
+    for (const x of [15.5, 31.5]) for (let y = 0; y < 128; y += 32) g.fillRect(x, y, 1.2, 16);
+  });
+
 export type LionsGate = { group: Group; necklace: Vector3[]; centre: Vector3; dispose: () => void };
 
 /**
@@ -108,20 +119,26 @@ export function buildLionsGate(lowEnd: boolean, mast: MeshStandardMaterial): Lio
 
   const steel = new MeshStandardMaterial({ color: 0x4d6f58, roughness: 0.55, metalness: 0.3 });
   const concrete = new MeshStandardMaterial({ color: 0xbab6ad, roughness: 0.85 });
-  const road = new MeshStandardMaterial({ color: 0x4a4d52, roughness: 0.9 });
+  const roadTex = roadTexture();
+  const road = new MeshStandardMaterial({ map: roadTex, roughness: 0.9 });
   const group = new Group();
   const HW = 3.6;
 
-  // the roadway and its kerbs, following the deck's line
+  // the roadway, following the deck's line, wound to face up (its rows run north, each from west to east)
   const pos: number[] = [];
+  const uvs: number[] = [];
   const idx: number[] = [];
+  let along = 0;
   zs.forEach((z, i) => {
     const y = deckAt(z);
+    if (i) along += Math.hypot(zs[i - 1] - z, y - deckAt(zs[i - 1]));
     pos.push(X - HW, y, z, X + HW, y, z);
-    if (i < zs.length - 1) idx.push(i * 2, i * 2 + 2, i * 2 + 1, i * 2 + 1, i * 2 + 2, i * 2 + 3);
+    uvs.push(0, along / 8, 1, along / 8);
+    if (i < zs.length - 1) idx.push(i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 1, i * 2 + 3, i * 2 + 2);
   });
   const roadGeo = new BufferGeometry();
   roadGeo.setAttribute("position", new Float32BufferAttribute(pos, 3));
+  roadGeo.setAttribute("uv", new Float32BufferAttribute(uvs, 2));
   roadGeo.setIndex(idx);
   roadGeo.computeVertexNormals();
   group.add(new Mesh(roadGeo, road));
@@ -149,6 +166,11 @@ export function buildLionsGate(lowEnd: boolean, mast: MeshStandardMaterial): Lio
       // the parapet rail all along
       const L = Math.hypot(zb - za, yb - ya);
       steelParts.push({ geo: new BoxGeometry(0.14, 0.8, L), position: [x, (ya + yb) / 2 + 0.4, (za + zb) / 2], rotation: [Math.atan2(yb - ya, za - zb), 0, 0] });
+    }
+    // the suspended spans: the steel deck plate the road is laid on, across the top of the trusses
+    if (suspended) {
+      const L = Math.hypot(zb - za, yb - ya);
+      steelParts.push({ geo: new BoxGeometry(HW * 2 + 0.2, 0.55, L), position: [X, (ya + yb) / 2 - 0.31, (za + zb) / 2], rotation: [Math.atan2(yb - ya, za - zb), 0, 0] });
     }
     // the approaches: a solid concrete girder under the road
     if (!suspended) {
