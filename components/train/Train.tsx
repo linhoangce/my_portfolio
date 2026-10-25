@@ -8,7 +8,7 @@ import { CAR, CROSS_LEN, GAP, HEAD, TRAIN_CARS, TRAIN_LEN, VMAX } from "./consta
 import { EXPO } from "./liveries";
 import { type Sim, useTrain } from "./store";
 import { makeFrame, trainFrameAt, UP } from "./track";
-import { carGeometry, noseSection, sectionRing } from "./trainGeometry";
+import { bogieSpacing, carGeometry, noseSection, sectionRing } from "./trainGeometry";
 import { type World, useWorld } from "./world";
 
 type CarObj = { off: number; obj: Group };
@@ -152,15 +152,21 @@ export function laneAt(sim: Sim, sc: number): number {
   return sim.laneFrom + (sim.laneTo - sim.laneFrom) * (u * u * (3 - 2 * u));
 }
 
-/** Each car is oriented on a ±4.5-unit chord, so the set sits steady on curves: no bank, no bob. Past either end of the line the cars follow the turning loop. */
+/** Half the distance between a car's bogies (trainGeometry.ts bogieSpacing). */
+const BOGIE = bogieSpacing(CAR);
+
+/**
+ * Each car rides on its two bogies, both on the track: the body midway between them, along the chord they make, so the
+ * set sits steady on curves (no bank, no bob) and hangs over the rails no further than a real car would, even round the
+ * turning loops past either end of the line.
+ */
 function placeTrain(list: CarObj[], sPos: number, lane: number | ((sc: number) => number), dir: number) {
   for (const c of list) {
     const sc = sPos + dir * c.off;
     const at = (x: number) => (typeof lane === "function" ? lane(x) : lane);
-    trainFrameAt(sc, dir, at(sc), fA);
-    trainFrameAt(sc + 4.5 * dir, dir, at(sc + 4.5 * dir), fB);
-    trainFrameAt(sc - 4.5 * dir, dir, at(sc - 4.5 * dir), fC);
-    c.obj.position.copy(fA.p).addScaledVector(UP, 0.98);
+    trainFrameAt(sc + BOGIE * dir, dir, at(sc + BOGIE * dir), fB);
+    trainFrameAt(sc - BOGIE * dir, dir, at(sc - BOGIE * dir), fC);
+    c.obj.position.copy(fB.p).add(fC.p).multiplyScalar(0.5).addScaledVector(UP, 0.98);
     tmp.copy(fB.p).sub(fC.p).normalize();
     c.obj.lookAt(tmp2.copy(c.obj.position).add(tmp));
     c.obj.updateMatrixWorld();
