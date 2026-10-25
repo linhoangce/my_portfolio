@@ -1,7 +1,6 @@
 "use client";
 
 import { ArrowLeft } from "lucide-react";
-import { useTheme } from "next-themes";
 
 import { EVENT_IDS, EVENT_META, type EventId } from "../lookTypes";
 import { MONUMENT_BY_KEY } from "../monumentData";
@@ -11,28 +10,18 @@ const hex = (c: number) => `#${c.toString(16).padStart(6, "0")}`;
 /** A swatch for each event; Pride gets the full rainbow. */
 export const eventSwatch = (k: EventId) => (k === "pride" ? `conic-gradient(${EVENT_META.pride.colours.map(hex).join(",")},${hex(EVENT_META.pride.colours[0])})` : hex(EVENT_META[k].colours[0]));
 
-/**
- * The monument view's card: what it is, the era line, which event it is lit for (and a nudge to switch to night to
- * see it glow), chips to preview each event's lighting, and the way back to the train.
- */
+/** The monument view's card: what it is, the era line, chips to preview each event's lighting, and the way back to the train. */
 export function MonumentCard() {
   const key = useTrain((s) => s.monument);
   const event = useTrain((s) => s.event);
   const setLook = useTrain((s) => s.setLook);
   const closeMonument = useTrain((s) => s.closeMonument);
-  const { resolvedTheme } = useTheme();
   const m = key ? MONUMENT_BY_KEY[key] : undefined;
   if (!m) return null;
-  const ev = event ? EVENT_META[event] : null;
-  const day = resolvedTheme === "light";
   return (
     <section className="mon-card glass" aria-live="polite" aria-label={m.name}>
       <p className="kicker m-0">{m.era}</p>
       <h2 className="font-serif">{m.name}</h2>
-      <p className="lit">
-        {ev ? `Lit for ${ev.label}: ${ev.note}.` : "Not lit for an event right now."}
-        {ev && day ? " Switch to night (L) to see it glow." : null}
-      </p>
       <div className="chips" role="group" aria-label="Preview the lighting for an event">
         {EVENT_IDS.map((k) => (
           <button

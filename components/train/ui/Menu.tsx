@@ -1,7 +1,6 @@
 "use client";
 
-import { AlignLeft, Keyboard, X } from "lucide-react";
-import Link from "next/link";
+import { Keyboard, X } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useEffect, useRef } from "react";
 
@@ -16,8 +15,8 @@ import { MAP_SOURCES } from "../mapSources";
 const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
 
 /**
- * The menu popover: the text version, the scene (automatic cycle, season, weather, the Vancouver event the city is
- * lit for), the landmarks to circle, and the controls. Picking an event shows it in its season; a night event also
+ * The menu popover: the scene (automatic cycle, season, weather, the Vancouver event the city is lit for), the
+ * landmarks to circle, and the controls. Picking an event shows it in its season; a night event also
  * switches to night (L switches back).
  */
 export function Menu() {
@@ -64,10 +63,6 @@ export function Menu() {
           <X className="h-4 w-4" aria-hidden="true" />
         </button>
       </div>
-      <Link href="/text" className="btn menu-text">
-        <AlignLeft className="h-4 w-4" aria-hidden="true" />
-        Text version
-      </Link>
       <section>
         <h3>Scene</h3>
         <label className="toggle">

@@ -456,9 +456,6 @@
   flex-direction: column;
   gap: 8px;
 }
-.menu .menu-text {
-  justify-content: flex-start;
-}
 .toggle {
   display: flex;
   align-items: center;
@@ -775,11 +772,6 @@ html:has(.scene-ov.open) .ask {
   margin: 0;
   font-size: 30px;
   line-height: 1.1;
-}
-.mon-card .lit {
-  margin: 0;
-  color: rgb(var(--fg-2));
-  font-size: 14px;
 }
 .mon-card .row {
   display: flex;
