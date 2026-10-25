@@ -307,14 +307,15 @@
 
 /* the line map, bottom centre, as tall as the stop buttons beside it and straight on the scene: ten stops on a rail,
    the train's position, the current stop ringed, the next one pulsing. Centred on the screen where there is room, else moved right (and
-   narrowed) to stay clear of the stop buttons and the scene's column at its left and the map credit at its right */
+   narrowed) to stay clear of the stop buttons and the scene's column at its left and the map credit and the
+   attendant's button at its right */
 .linemap {
   --linemap-clear: max(417px, calc(min(440px, 38vw) + 16px));
   position: fixed;
   bottom: 16px;
   left: max(calc(50% - 280px), var(--linemap-clear));
   z-index: 12;
-  width: min(560px, calc(100% - var(--linemap-clear) - 200px));
+  width: min(560px, calc(100% - var(--linemap-clear) - 270px));
   padding: 4px 10px;
 }
 .linemap ol {
@@ -607,11 +608,6 @@
   opacity: 1;
   transform: none;
 }
-/* the attendant moves to the right while a scene's column is on the left */
-html:has(.scene-ov.open) .ask {
-  left: auto;
-  right: 16px;
-}
 /* below 1200 px there is no room for both: with Ask open the column folds to its kicker and title */
 @media (max-width: 1200px) {
   html:has(.ask.open) .scene-ov .panel > :nth-child(n + 3),
@@ -759,7 +755,7 @@ html:has(.scene-ov.open) .ask {
 .mon-card {
   position: fixed;
   right: 16px;
-  bottom: 16px;
+  bottom: 72px;
   z-index: 11;
   width: min(400px, calc(100% - 32px));
   padding: 20px;
@@ -818,13 +814,35 @@ html:has(.scene-ov.open) .ask {
   flex: none;
 }
 
+/* the attendant's chat button, bottom right in the row of the stop buttons and the line map */
+.ask-fab {
+  position: fixed;
+  right: 16px;
+  bottom: 12px;
+  z-index: 12;
+  width: 48px;
+  height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(var(--accent));
+  color: rgb(var(--accent-ink));
+  box-shadow: 0 8px 22px -8px rgb(0 0 0 / 0.55);
+  transition: transform 0.15s;
+}
+.ask-fab:hover {
+  transform: scale(1.06);
+}
+/* the attendant's panel opens above its button */
 .ask {
   position: fixed;
-  left: 16px;
-  bottom: 16px;
+  right: 16px;
+  bottom: 72px;
   z-index: 13;
   width: min(410px, calc(100% - 32px));
-  height: min(600px, calc(100dvh - 96px));
+  height: min(600px, calc(100dvh - 144px));
   display: flex;
   flex-direction: column;
   border-radius: 18px;
@@ -973,7 +991,7 @@ html:has(.scene-ov.open) .ask {
   .brand .name {
     font-size: 20px;
   }
-  /* three round icon buttons on the right: Ask, the resume, day and night */
+  /* two round icon buttons on the right: Resume (the text version), day and night */
   .top .right {
     gap: 8px;
   }
@@ -1083,6 +1101,27 @@ html:has(.scene-ov.open) .ask {
     height: min(78dvh, 640px);
     border-radius: 18px 18px 0 0;
   }
+  /* the chat button stands above the stop buttons, and above the scene's sheet or Contact's links when they are up;
+     it steps aside for an expanded sheet and a landmark's card */
+  .ask-fab {
+    right: 12px;
+    bottom: calc(max(env(safe-area-inset-bottom), 8px) + 70px);
+    width: 44px;
+    height: 44px;
+  }
+  html:has(.scene-ov.open) .ask-fab {
+    bottom: calc(40dvh + 12px);
+  }
+  html:has(.caps.docked .cap.on) .ask-fab {
+    bottom: calc(max(env(safe-area-inset-bottom), 8px) + 252px);
+  }
+  html:has(.scene-ov.open.expanded) .ask-fab,
+  html:has(.mon-card) .ask-fab {
+    display: none;
+  }
+  .map-credit {
+    right: 10px;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .scene-ov,
@@ -1126,7 +1165,7 @@ html:has(.scene-ov.open) .ask {
 /* the map data's credit, bottom-right, as small as it may be and still be read */
 .map-credit {
   position: fixed;
-  right: 10px;
+  right: 76px;
   bottom: 6px;
   z-index: 8;
   font-family: var(--font-mono), ui-monospace, monospace;
