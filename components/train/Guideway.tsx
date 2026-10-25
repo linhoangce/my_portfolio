@@ -15,11 +15,14 @@ import { useWorld } from "./world";
 import { nearWce } from "./wce";
 
 /**
- * Extrude a closed 2D profile (lateral, vertical; counter-clockwise) along a run of track frames. With `vLen`, UVs
- * too: u round the profile (0 to 1), v along the track, one unit per `vLen`.
+ * Extrude a closed 2D profile (lateral, vertical; counter-clockwise) along a run of track frames; or a profile per
+ * frame (as many points each), for a section that changes along the run. With `vLen`, UVs too: u round the profile
+ * (0 to 1), v along the track, one unit per `vLen`.
  */
-export function ribbon(profile: [number, number][], list: Frame[], closed = true, vLen = 0): BufferGeometry {
+export function ribbon(shape: [number, number][] | ((i: number) => [number, number][]), list: Frame[], closed = true, vLen = 0): BufferGeometry {
   const n = list.length;
+  const profileAt = typeof shape === "function" ? shape : () => shape;
+  const profile = profileAt(0);
   const m = profile.length;
   const pos = new Float32Array(n * m * 3);
   const uv = vLen ? new Float32Array(n * m * 2) : null;
@@ -30,7 +33,7 @@ export function ribbon(profile: [number, number][], list: Frame[], closed = true
   let along = 0;
   list.forEach((f, i) => {
     if (i > 0) along += f.p.distanceTo(list[i - 1].p);
-    profile.forEach(([lat, vert], j) => {
+    profileAt(i).forEach(([lat, vert], j) => {
       v.copy(f.p).addScaledVector(f.r, lat).addScaledVector(UP, vert);
       pos.set([v.x, v.y, v.z], (i * m + j) * 3);
       if (uv) uv.set([round[j] / (round[m - 1] || 1), along / vLen], (i * m + j) * 2);
@@ -229,6 +232,25 @@ export function Guideway() {
     const platParts: BufferGeometry[] = [];
     const lampParts: BufferGeometry[] = [];
     const layover: { body: BufferGeometry[]; glass: BufferGeometry[]; line: BufferGeometry[] } = { body: [], glass: [], line: [] };
+    const cars: { geo: ReturnType<typeof carGeometry> | null } = { geo: null };
+    // a train of three standing out of service on a track (its frames), at its middle by length, a nose at each end
+    const park = (path: Frame[]) => {
+      const geo = (cars.geo ??= carGeometry(CAR, true, false, lowEnd ? 14 : 22));
+      const cum = [0];
+      for (let k = 1; k < path.length; k++) cum.push(cum[k - 1] + path[k].p.distanceTo(path[k - 1].p));
+      const dummy = new Object3D();
+      for (let k = -1; k <= 1; k++) {
+        const j = cum.findIndex((c) => c >= cum[cum.length - 1] / 2 + k * (CAR + GAP));
+        const f = path[j < 0 ? path.length - 1 : j];
+        dummy.position.copy(f.p).addScaledVector(UP, 0.98);
+        dummy.lookAt(dummy.position.clone().add(f.t));
+        if (k === 1) dummy.rotateY(Math.PI);
+        dummy.updateMatrix();
+        layover.body.push(geo.body.clone().applyMatrix4(dummy.matrix));
+        layover.glass.push(geo.glass.clone().applyMatrix4(dummy.matrix));
+        layover.line.push(geo.line.clone().applyMatrix4(dummy.matrix));
+      }
+    };
     for (const loop of [LOOPS.near, LOOPS.far]) {
       const fr = loop.samples;
       const n = fr.length;
@@ -244,6 +266,22 @@ export function Guideway() {
       const a1 = onArc.lastIndexOf(true);
       const arc = a0 >= 0 && a1 - a0 > 20 ? fr.slice(a0, a1 + 1) : [];
       const innerRuns = arc.length ? [between(24, tOf(a0)), between(tOf(a1), loop.L - 24)] : [between(24, loop.L - 24)];
+      // and round its stop a turnback yard on the circle's outer side: a passing track off the running one by a switch
+      // before the stop and back on after it, so a second train turns past one standing there (the stop's platform an
+      // island between the two), and beyond it a storage track off the passing track; with the layover, four tracks
+      // abreast, a spare train on the layover and another on the storage track. The deck widens outward to carry them
+      // (from tp[0] to tp[3]), on columns of its own; the running track's outer parapet, planter and hedge give way
+      const yard = loop.end === "near" && arc.length > 0;
+      const PASS = 12;
+      const STORE = 17.6;
+      // where each leaves, is out, comes back in, and is back on
+      const tp = [stop0 - 22, stop0 - 2, stop1 + 2, stop1 + 18];
+      const ts = [stop0 - 2, stop0 + 4, stop1 - 4, stop1 + 2];
+      const away = (t: number, [a, b, c, d]: number[]) => smoothstep01(Math.max(0, Math.min(1, (t - a) / (b - a), (d - t) / (d - c))));
+      const passLat = (t: number) => PASS * away(t, tp);
+      const storeLat = (t: number) => PASS + (STORE - PASS) * away(t, ts);
+      const edge = (t: number) => 3.6 + Math.max(passLat(t), t > ts[0] && t < ts[3] ? storeLat(t) : 0);
+      const outerRuns = yard ? [between(0, tp[0]), between(tp[3], loop.L)] : [fr];
       loopDeck.push(
         ribbon(
           [
@@ -260,14 +298,16 @@ export function Guideway() {
           ],
           fr,
         ),
-        ribbon(
-          [
-            [3.32, 0.95],
-            [3.6, 0.95],
-            [3.6, 1.75],
-            [3.32, 1.75],
-          ],
-          fr,
+        ...outerRuns.map((r) =>
+          ribbon(
+            [
+              [3.32, 0.95],
+              [3.6, 0.95],
+              [3.6, 1.75],
+              [3.32, 1.75],
+            ],
+            r,
+          ),
         ),
         ...innerRuns
           .filter((r) => r.length > 1)
@@ -322,24 +362,119 @@ export function Guideway() {
           tubes.push(new TubeGeometry(new CatmullRomCurve3(pts, false, "catmullrom", 0), Math.ceil(pts.length * (lowEnd ? 0.7 : 1.4)), 0.07, 4, false));
         }
         // the train standing on it, at the middle of the circle
-        const mid = Math.round(lay.length / 2);
-        const step = Math.max(1, Math.round(((CAR + GAP) / (t1 - t0)) * lay.length));
-        const geo = carGeometry(CAR, true, false, lowEnd ? 14 : 22);
-        const dummy = new Object3D();
-        for (let k = -1; k <= 1; k++) {
-          const f = lay[Math.min(lay.length - 1, Math.max(0, mid + k * step))];
-          dummy.position.copy(f.p).addScaledVector(UP, 0.98);
-          dummy.lookAt(dummy.position.clone().add(f.t));
-          // the end cars face outward, so the set wears a nose at each end
-          if (k === 1) dummy.rotateY(Math.PI);
-          dummy.updateMatrix();
-          layover.body.push(geo.body.clone().applyMatrix4(dummy.matrix));
-          layover.glass.push(geo.glass.clone().applyMatrix4(dummy.matrix));
-          layover.line.push(geo.line.clone().applyMatrix4(dummy.matrix));
+        park(lay);
+      }
+      if (yard) {
+        const idx = fr.map((_, i) => i).filter((i) => tOf(i) >= tp[0] && tOf(i) <= tp[3]);
+        const wide = idx.map((i) => fr[i]);
+        const E = idx.map((i) => edge(tOf(i)));
+        // the widened deck: its slab, the parapet, planter, hedge and lit strip along its outer edge, its track bed
+        loopDeck.push(
+          ribbon(
+            (k) => [
+              [3.4, -1.0],
+              [E[k], -1.0],
+              [E[k], 0.94],
+              [3.4, 0.94],
+            ],
+            wide,
+          ),
+          ribbon(
+            (k) => [
+              [E[k] - 0.28, 0.95],
+              [E[k], 0.95],
+              [E[k], 1.75],
+              [E[k] - 0.28, 1.75],
+            ],
+            wide,
+          ),
+        );
+        loopPlanters.push(
+          ribbon(
+            (k) => [
+              [E[k], 0.7],
+              [E[k] + 1.1, 0.7],
+              [E[k] + 1.1, 1.55],
+              [E[k], 1.55],
+            ],
+            wide,
+          ),
+        );
+        loopHedges.push(
+          ribbon(
+            (k) => [
+              [E[k] + 1.0, 1.5],
+              [E[k] + 1.04, 1.85],
+              [E[k] + 0.55, 2.12],
+              [E[k] + 0.06, 1.85],
+              [E[k] + 0.1, 1.5],
+            ],
+            wide,
+            false,
+            1.6,
+          ),
+        );
+        loopLeds.push(
+          ribbon(
+            (k) => [
+              [E[k], -0.62],
+              [E[k] + 0.08, -0.62],
+              [E[k] + 0.08, -0.48],
+              [E[k], -0.48],
+            ],
+            wide,
+          ),
+        );
+        loopBed.push(
+          ribbon(
+            (k) => [
+              [E[k] - 0.28, 0.955],
+              [3.32, 0.955],
+            ],
+            wide,
+            false,
+          ),
+        );
+        // the passing and storage tracks: sleepers, reaction plate, rails; the spare train on the storage track
+        const along = (lat: (t: number) => number, a: number, b: number): Frame[] =>
+          fr.flatMap((f, i) => (tOf(i) >= a && tOf(i) <= b ? [{ p: f.p.clone().addScaledVector(f.r, lat(tOf(i))), t: f.t, r: f.r }] : []));
+        const yardTracks = [along(passLat, tp[0], tp[3]), along(storeLat, ts[0], ts[3])];
+        for (const path of yardTracks) {
+          loopSleepers.push(ribbon([[1.3, 0.96], [-1.3, 0.96]], path, false, 0.65));
+          loopPlates.push(
+            ribbon(
+              [
+                [-0.3, 0.96],
+                [0.3, 0.96],
+                [0.3, 1.02],
+                [-0.3, 1.02],
+              ],
+              path,
+            ),
+          );
+          for (const side of [-1, 1]) {
+            const pts = path.map((f) => f.p.clone().addScaledVector(f.r, side * 0.72).addScaledVector(UP, 0.98));
+            tubes.push(new TubeGeometry(new CatmullRomCurve3(pts, false, "catmullrom", 0), Math.ceil(pts.length * (lowEnd ? 0.7 : 1.4)), 0.07, 4, false));
+          }
         }
-        geo.body.dispose();
-        geo.glass.dispose();
-        geo.line.dispose();
+        park(yardTracks[1]);
+        // round columns under the slab: along its outer side, and between the running and passing tracks where it
+        // is widest
+        for (let k = 0; k < idx.length; k += 5) {
+          for (const lat of [E[k] - 2.4, ...(E[k] > 14 && k % 10 === 0 ? [8.6] : [])]) {
+            if (lat < 7) continue;
+            const f = wide[k];
+            const x = f.p.x + f.r.x * lat;
+            const z = f.p.z + f.r.z * lat;
+            const gy = groundAt(x, z);
+            const h = f.p.y - 1.0 - gy;
+            if (h < 0.5) continue;
+            const c = new CylinderGeometry(0.6, 0.9, h + 0.3, lowEnd ? 8 : 12);
+            c.deleteAttribute("uv");
+            c.translate(x, gy - 0.3 + (h + 0.3) / 2, z);
+            loopDeck.push(c);
+          }
+        }
       }
       const trough: [number, number][] = [
         [3.6, 0.7],
@@ -347,7 +482,8 @@ export function Guideway() {
         [4.7, 1.55],
         [3.6, 1.55],
       ];
-      loopPlanters.push(ribbon(trough, between(0, stop0)), ribbon(trough, between(stop1, loop.L)));
+      const planted = yard ? outerRuns : [between(0, stop0), between(stop1, loop.L)];
+      loopPlanters.push(...planted.map((r) => ribbon(trough, r)));
       const loopHedge: [number, number][] = [
         [4.6, 1.5],
         [4.64, 1.85],
@@ -355,18 +491,20 @@ export function Guideway() {
         [3.66, 1.85],
         [3.7, 1.5],
       ];
-      loopHedges.push(ribbon(loopHedge, between(0, stop0), false, 1.6), ribbon(loopHedge, between(stop1, loop.L), false, 1.6));
+      loopHedges.push(...planted.map((r) => ribbon(loopHedge, r, false, 1.6)));
       loopBed.push(ribbon([[3.32, 0.955], [-3.32, 0.955]], fr, false));
       loopSleepers.push(ribbon([[1.3, 0.96], [-1.3, 0.96]], fr, false, 0.65));
       loopLeds.push(
-        ribbon(
-          [
-            [3.28, -0.62],
-            [3.36, -0.62],
-            [3.36, -0.48],
-            [3.28, -0.48],
-          ],
-          fr,
+        ...outerRuns.map((r) =>
+          ribbon(
+            [
+              [3.28, -0.62],
+              [3.36, -0.62],
+              [3.36, -0.48],
+              [3.28, -0.48],
+            ],
+            r,
+          ),
         ),
       );
       loopPlates.push(
@@ -395,8 +533,10 @@ export function Guideway() {
         c.translate(f.p.x, gy - 0.3 + (h + 0.3) / 2, f.p.z);
         loopDeck.push(c);
       }
-      // the turnback stop: a platform on the outer side under white ribs and a glass spine
+      // the turnback stop: a platform on the outer side under white ribs and a glass spine (at Waterfront an island
+      // platform, the ribs reaching on over the passing track)
       const run = between(stop0, stop1);
+      const reach = yard ? 15.4 : 8.2;
       platParts.push(
         ribbon(
           [
@@ -412,8 +552,8 @@ export function Guideway() {
         ribbon(
           [
             [-1.4, 7.05],
-            [7.4, 7.05],
-            [7.4, 7.12],
+            [reach - 0.8, 7.05],
+            [reach - 0.8, 7.12],
             [-1.4, 7.12],
           ],
           run,
@@ -436,8 +576,8 @@ export function Guideway() {
         const pts: Vector3[] = [];
         for (let j = 0; j <= 12; j++) {
           const u = j / 12;
-          // an arch from the inner parapet over the track to the platform's outer edge
-          const lat = -3.4 + u * 11.6;
+          // an arch from the inner parapet over the track to the platform's outer edge (or past the passing track)
+          const lat = -3.4 + u * (reach + 3.4);
           pts.push(at(lat, 1.4 + 5.7 * Math.sin(u * Math.PI) ** 0.7));
         }
         const rib = new TubeGeometry(new CatmullRomCurve3(pts), 16, 0.12, 5, false);
@@ -445,6 +585,7 @@ export function Guideway() {
         canopyParts.push(rib);
       }
     }
+    if (cars.geo) for (const g of [cars.geo.body, cars.geo.glass, cars.geo.line]) g.dispose();
     const rails = mergeAll(tubes);
 
     const m4 = new Matrix4();
