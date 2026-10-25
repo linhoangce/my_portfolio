@@ -21,7 +21,7 @@ import { railNear } from "../rail";
 import { landClass, layDist, nearestRoadDir, pointAt, roadDist, roads } from "../roadNetwork";
 import { onFeature, placeAt } from "../commonsLayout";
 import { inSetZone } from "../sets/zones";
-import { inLandmark, inPark, LANDMARKS, nearBridge, seawallDist, streamDist } from "../sites";
+import { inLandmark, inPark, inSenakwGround, LANDMARKS, nearBridge, seawallDist, streamDist } from "../sites";
 import { asBaked, groundAt, inIslet, inWater, RASTER, sdfAt, surfaceAt } from "../terrain";
 import { PATH_SAMPLES, STATION_XZ, trackDist, trackNearest } from "../track";
 import type { SpeciesId } from "../trees/species";
@@ -374,7 +374,7 @@ function layOut(rng: Rng, lowEnd: boolean): CityGeometry {
     const yb = Math.min(...pts.map(([px, pz]) => footAt(px, pz))) - 0.6;
     const yt = Math.max(...pts.map(([px, pz]) => floorAt(px, pz)));
     const dist = Math.min(...pts.map(([px, pz]) => cor.dist(px, pz)));
-    const onSite = pts.some(([px, pz]) => inSenakw(px, pz) || inYard(px, pz) || inIslet(px, pz));
+    const onSite = pts.some(([px, pz]) => inSenakw(px, pz) || inSenakwGround(px, pz) || inYard(px, pz) || inIslet(px, pz));
     // the turned footprint's extent on the axes, for the city's box tests
     const aw = Math.abs(w * Math.cos(ry)) + Math.abs(d * Math.sin(ry));
     const ad = Math.abs(w * Math.sin(ry)) + Math.abs(d * Math.cos(ry));
@@ -394,7 +394,7 @@ function layOut(rng: Rng, lowEnd: boolean): CityGeometry {
       const palette = kind === "modern" ? [0x3a3d42, 0xf2f0ea, 0x6b7a6f, 0x2e3034, 0xb8bcc2, 0x9a5634] : kind === "duplex" ? [0x2f3b4c, 0x4a4d52, 0xe9e4da, 0x7f9a6a, 0x8f3b3b, 0xd9c08a] : PAL.wood;
       const wall = palette[Math.floor(rng.next() * palette.length)];
       const roof = [0x4a4f58, 0x5a4a42, 0x3e4651, 0x6b5a4a, 0x7a3b32, 0x445a4a][Math.floor(rng.next() * 6)];
-      // on the towers' podiums (senakw.ts): its numbers drawn, nothing built
+      // on the towers' podiums (senakw.ts) or senákw's ground (sites.ts): its numbers drawn, nothing built
       if (onSite) return;
       houses.push({ kind, x, y: yt, z, ry, sx: Math.min(1.1, Math.max(0.7, w / 7)), sz: Math.min(1.1, Math.max(0.7, d / 9)), wall: toT(wall), roof: toT(roof) });
       lots.push({ x, z, w: aw, d: ad, h: 6, top: yt + 7, ry, fw: w, fd: d });
@@ -835,7 +835,8 @@ function layOut(rng: Rng, lowEnd: boolean): CityGeometry {
 
   // the developments placed by hand (developments.ts), each a lot of its own, on ground no lot took; a tower on a
   // podium stands on its roof; their painted panels join the murals. One whose ground a lot or a street has taken (the
-  // city's lots fall where its draws put them, which any change to it can move) is left out, with what stands on it.
+  // city's lots fall where its draws put them, which any change to it can move) is left out, with what stands on it;
+  // senákw's ground has no streets of its own (sites.ts).
   {
     const tops = new Map<string, number>();
     const taken = (b: (typeof DEVELOPMENTS)[number]) => {
@@ -846,7 +847,7 @@ function layOut(rng: Rng, lowEnd: boolean): CityGeometry {
         for (let v = -0.5; v <= 0.5; v += 0.125) {
           const x = b.x + u * b.w * c + v * b.d * sn;
           const z = b.z - u * b.w * sn + v * b.d * c;
-          if (roadDist(x, z) < 0) return true;
+          if (roadDist(x, z) < 0 && !inSenakwGround(x, z, true)) return true;
           for (const L of near) {
             const lc = Math.cos(L.ry ?? 0);
             const ls = Math.sin(L.ry ?? 0);

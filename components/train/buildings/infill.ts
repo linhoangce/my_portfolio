@@ -7,7 +7,7 @@
  *   Broadway. Granville Island stays low; the parks and Olympic Village are as they were.
  * Pure.
  */
-import { BRIDGES } from "../sites";
+import { BRIDGES, inSenakwGround } from "../sites";
 import { hood, type Hood, onPeninsula, type Zone, ZONES } from "./eras";
 
 /** The south bridgeheads (each bridge's south end) the towers gather round. */
@@ -27,6 +27,8 @@ export const INFILL_BOXES: [number, number, number, number][] = [
 ];
 
 export function infillAt(x: number, z: number): Infill | null {
+  // senákw's ground is the development's (developments.ts), and no infill tower crowds it
+  if (inSenakwGround(x, z, false, 14)) return null;
   if (onPeninsula(x, z)) {
     const name = hood(x, z);
     const zone = ZONES[name];

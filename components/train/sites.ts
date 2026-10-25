@@ -467,6 +467,27 @@ export function nearBridge(x: number, z: number, pad: number): boolean {
   return false;
 }
 
+/**
+ * senákw's ground at the Burrard Bridge's south end, as boxes in the bridge's frame (t along it from its north end, lat
+ * to the right of that): east of the ramp down to the water, where the development's own ground takes the place of
+ * Pennyfarthing Drive's streets, and west of it, between the ramp and Whyte Avenue, which stays. The city builds none
+ * of its own lots on it and the infill none (developments.ts builds the towers); `streets`: only where its streets go;
+ * `pad`: that far round it too.
+ */
+const SENAKW_GROUND: { t: [number, number]; lat: [number, number]; streets: boolean }[] = [
+  { t: [60, 109], lat: [-48, -7], streets: false },
+  { t: [74, 108], lat: [7, 24], streets: true },
+];
+export function inSenakwGround(x: number, z: number, streets = false, pad = 0): boolean {
+  const { a, b } = BRIDGES.find((br) => br.name === "Burrard Bridge")!;
+  const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  const ux = (b[0] - a[0]) / L;
+  const uz = (b[1] - a[1]) / L;
+  const t = (x - a[0]) * ux + (z - a[1]) * uz;
+  const lat = -(x - a[0]) * uz + (z - a[1]) * ux;
+  return SENAKW_GROUND.some((g) => (!streets || !g.streets) && t > g.t[0] - pad && t < g.t[1] + pad && lat > g.lat[0] - pad && lat < g.lat[1] + pad);
+}
+
 /** Science World's base roof height, and the trees in the garden on its water side (world positions). */
 export const SW_ROOF = 7.4;
 export function scienceWorldTrees(): { x: number; y: number; z: number; sp: "cherry" | "smaple" | "dogwood"; s: number }[] {

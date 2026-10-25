@@ -15,7 +15,7 @@ import { LANDUSE } from "./landuseData";
 import { inSetZone } from "./sets/zones";
 import { inHarbourfront, inHarbourGreen } from "./harbourfront";
 import { lionsGateDeck } from "./lionsGate";
-import { BRIDGES, deckOf, inLandmark, underLowDeck } from "./sites";
+import { BRIDGES, deckOf, inLandmark, inSenakwGround, underLowDeck } from "./sites";
 import { STREETS } from "./streetData";
 import { WCE_HALF, wceDist } from "./wce";
 import { demAt, groundAt, sdfAt } from "./terrain";
@@ -248,6 +248,12 @@ export function roads(): Roads {
   });
   tidyFragments(nodes, edges);
   addBridges(nodes, edges, hidden);
+  // senákw's own ground (sites.ts) has no streets of its own drawn, and no traffic on them; after the network is laid,
+  // so every edge keeps its place and the city its distances
+  for (const e of edges) {
+    if (e.span) continue;
+    for (let i = 0; i + 1 < e.pts.length / 2; i++) if (inSenakwGround((e.pts[i * 2] + e.pts[i * 2 + 2]) / 2, (e.pts[i * 2 + 1] + e.pts[i * 2 + 3]) / 2, true)) e.shown[i] = 0;
+  }
   // the segment hash, every segment in every cell its swept width (as laid out, the wider) touches
   edges.forEach((e, k) => {
     const n = e.pts.length / 2;

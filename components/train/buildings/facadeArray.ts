@@ -46,7 +46,7 @@ export type FamilyId =
   | "salish"
   | "senakw"
   | "jali"
-  | "weave"
+  | "wave"
   | "basket"
   | "roof"
   | "copper"
@@ -107,11 +107,10 @@ export const FAMILY: Record<FamilyId, { layer: number; bay: number; floor: numbe
    */
   jali: { layer: 25, bay: 2.4, floor: 1.9, glass: false },
   /**
-   * After senákw's towers at the Burrard Bridge: pale glass (the tower's tint is the glass's) behind copper strands
-   * that sway down the façade in pairs and cross, over and under, as the strands of a Coast Salish weaving do, a white
-   * slab edge at every floor.
+   * senákw's towers at the Burrard Bridge: pale glass behind a cream balcony band at every floor, its edges in a long
+   * wave, and gold ribbons meandering up over the bands, planting here and there on them.
    */
-  weave: { layer: 26, bay: 2.4, floor: 1.9, glass: true },
+  wave: { layer: 26, bay: 2.4, floor: 1.9, glass: true },
   /**
    * After Coast Salish cedar-bark basketry: strips plaited on the diagonal in a twill, over two and under two, in two
    * shades of the tower's cedar (its tint), the glass of its rooms showing dark through the gaps.
@@ -243,52 +242,68 @@ function paintLayer(kind: FamilyId, P: Painter, R: Rng): void {
         }
       }
     }
-  } else if (kind === "weave") {
-    // the glass, lighter up each pane, a slab edge at every floor
-    both("#a9bccb", wall, 0, 0, 512, 512);
+  } else if (kind === "wave") {
+    // the glass, warm and dark behind the bands, lighter up each pane, its mullions
+    both("#837d70", wall, 0, 0, 512, 512);
     for (let x = 0; x < 512; x += 64) {
-      rect(g, "rgba(255,255,255,0.08)", x, 0, 30, 512);
-      rect(g, "#3d4d5c", x + 62, 0, 2, 512);
+      rect(g, "rgba(255,240,210,0.10)", x, 0, 28, 512);
+      rect(g, "#4c504c", x + 62, 0, 2, 512);
     }
-    for (let y = 0; y < 512; y += 256) both("#f2f0ea", keep, 0, y + 246, 512, 10);
-    // two pairs of strands to a tile, each pair crossing at every slab: one strand over between crossings, the other
-    // under, then the other way round
-    const strand = (cx: number, sgn: number, y0: number, y1: number) => {
+    // a band at every floor, its top and bottom edges in a wave across the tile (whole waves, so tiles meet), its
+    // underside in shade
+    const band = (ctx: CanvasRenderingContext2D, y0: number, col: string, shade: string) => {
+      const edge = (x: number, off: number) => y0 + off + 13 * Math.sin((x / 512) * Math.PI * 2 * 2 + y0 * 0.02);
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      for (let x = 0; x <= 512; x += 8) ctx.lineTo(x * k, edge(x, -8) * k);
+      for (let x = 512; x >= 0; x -= 8) ctx.lineTo(x * k, edge(x, 34) * k);
+      ctx.fill();
+      ctx.fillStyle = shade;
+      ctx.beginPath();
+      for (let x = 0; x <= 512; x += 8) ctx.lineTo(x * k, edge(x, 34) * k);
+      for (let x = 512; x >= 0; x -= 8) ctx.lineTo(x * k, edge(x, 44) * k);
+      ctx.fill();
+    };
+    for (const y of [190, 446]) {
+      band(g, y, "#f8f1df", "#a8916a");
+      band(m, y, keep, keep);
+    }
+    // planting on some of the bands
+    for (const [px, py] of [
+      [90, 186],
+      [300, 442],
+      [440, 186],
+    ]) {
+      g.fillStyle = "#4f7f3c";
+      g.beginPath();
+      g.arc(px * k, py * k, 13 * k, 0, Math.PI * 2);
+      g.arc((px + 16) * k, (py + 3) * k, 10 * k, 0, Math.PI * 2);
+      g.fill();
+    }
+    // a broad gold ribbon to a bay, meandering up it (one whole sway a tile, so tiles meet), a dark edge, the gold, a
+    // highlight
+    for (const [cx, ph] of [
+      [128, 0],
+      [384, Math.PI],
+    ] as const) {
       for (const [ctx, cols] of [
-        [g, ["#7a3f1c", "#c8743a", "#e8a066"]],
+        [g, ["#6e4d18", "#c8962f", "#f0d27a"]],
         [m, [keep, keep, keep]],
       ] as const) {
-        const path = (off: number) => {
-          ctx.beginPath();
-          for (let y = y0; y <= y1; y += 8) {
-            const x = cx + sgn * 58 * Math.sin((y / 256) * Math.PI) + off;
-            if (y === y0) ctx.moveTo(x * k, y * k);
-            else ctx.lineTo(x * k, y * k);
-          }
-        };
-        // a dark edge, the copper, a highlight down its middle
         for (const [w, col] of [
-          [32, cols[0]],
-          [25, cols[1]],
-          [7, cols[2]],
+          [100, cols[0]],
+          [88, cols[1]],
+          [22, cols[2]],
         ] as const) {
           ctx.strokeStyle = col;
           ctx.lineWidth = w * k;
-          path(0);
+          ctx.beginPath();
+          for (let y = -8; y <= 520; y += 8) ctx.lineTo((cx + 30 * Math.sin((y / 512) * Math.PI * 2 + ph)) * k, y * k);
           ctx.stroke();
         }
       }
-    };
-    for (const cx of [128, 384]) {
-      for (const [y0, y1, over] of [
-        [0, 256, 1],
-        [256, 512, -1],
-      ] as const) {
-        strand(cx, -over, y0, y1);
-        strand(cx, over, y0, y1);
-      }
     }
-    P.wins.push([14, 30, 228, 200]);
+    P.wins.push([10, 26, 236, 150]);
   } else if (kind === "basket") {
     // the rooms' glass, dark, behind the plaits
     both("#26303a", keep, 0, 0, 512, 512);

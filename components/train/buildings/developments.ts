@@ -2,12 +2,13 @@
  * Developments placed by hand, each with a culture of the city's in it, built after the city's lots and its murals
  * (city.ts) on ground none of them took (each footprint checked clear of every lot, street, bridge, park and the
  * water):
- * - senákw on its own ground, the Sḵwx̱wú7mesh (Squamish) Nation's towers at the south end of the Burrard Bridge:
- *   slender towers in pale glass hung with copper strands woven over and under (the façade family `weave`), set back
- *   to planted crowns, two of them on a podium of cedar boards banded in formline and the rest in the gaps between
- *   the blocks either side of the bridge's foot, one stepping down in planted terraces, and a cedar hall west of the
- *   bridge; welcome figures at its way in, a spindle whorl by its eastern tower. (Towers in its manner also stand
- *   behind Science World, senakw.ts.)
+ * - senákw on its own ground (sites.ts), the Sḵwx̱wú7mesh (Squamish) Nation's towers either side of the Burrard Bridge's
+ *   ramp at its south end, as the Nation's renderings show them: big rounded towers whose sides swell and draw in as
+ *   they rise, in cream balcony bands over gold ribbons (the façade family `wave`), each crowned with a garden of trees;
+ *   the tallest beside the ramp, stepping down to the water east of it, and west of it a row of lower ones like river
+ *   stones stacked, green between each; a round glass pavilion with a planted roof among the east ones; welcome
+ *   figures either side of the ramp, a spindle whorl on the plaza. (Towers after its first renderings stand behind
+ *   Science World, senakw.ts.)
  * - at the north end of the bridge, across False Creek from it, a tower plaited like a cedar-bark basket (`basket`),
  *   its crown flaring like a basket's rim, a carved post at its door;
  * - at the south end of the Granville Bridge, Coast Salish longhouse towers: a big house of cedar planks facing the
@@ -52,53 +53,53 @@ const scaled = (p: Poly, k: number): Poly => p.map(([a, b]) => [a * k, b * k]);
 /** A ring's points lifted to y. */
 const at = (ring: V3[], y: number): V3[] => ring.map(([a, , b]) => [a, y, b]);
 
-/** senákw's glass, each tower a shade of its own: pale blue, grey, a little green. */
-const SENAKW_GLASS: Tint[] = [
-  [0.86, 0.93, 0.99],
-  [0.8, 0.88, 0.95],
-  [0.88, 0.95, 0.93],
-  [0.92, 0.94, 0.97],
-];
 /** Cedar, as the boards and plaits are tinted. */
 const CEDAR: Tint = [0.84, 0.58, 0.38];
 const CEDAR_DARK: Tint = [0.7, 0.46, 0.3];
 
 /**
- * A senákw tower: a dark glass lobby, the woven shaft (tapering a little), then two floors set back to a planted
- * terrace round a glass lantern with a garden on top, trees on both.
+ * A senákw tower: a rounded plan on a glass lobby, its sides swelling and drawing in as it rises, `waves` times over by
+ * `swell` of its width (as stacked river stones, `stones`: pinched in between each, a ledge of planting at each pinch;
+ * else in one long sway), turning a little, in the `wave` family; its crown a garden of trees.
  */
-function senakwTower(k: DevCtx, w: number, d: number, h: number, tint: Tint, taper = 0.94): number {
+function senakwTower(k: DevCtx, w: number, d: number, h: number, swell: number, waves: number, stones = false): number {
   const { sink, x, z, yb, yt } = k;
-  const plan = fp.rounded(w, d, Math.min(w, d) * 0.2, 3);
-  walls(sink, "dark", scaled(plan, 0.97), x, z, yb, yt + 2.2, { yRef: yt });
-  const crown = h - 3.8;
-  const ring = walls(sink, "weave", plan, x, z, yt + 2.2, yt + crown, { tint, yRef: yt, segs: 3, s1: taper });
-  cap(sink, "garden", at(ring, yt + crown));
-  const lantern = walls(sink, "glass", scaled(plan, 0.7 * taper), x, z, yt + crown, yt + h, { tint: [0.82, 0.92, 0.88], yRef: yt });
-  cap(sink, "garden", at(lantern, yt + h));
-  for (let q = 0; q < 4; q++) {
-    const a = (q / 4) * Math.PI * 2 + 0.6;
-    k.terrace(x + Math.cos(a) * w * 0.4 * taper, yt + crown, z + Math.sin(a) * d * 0.4 * taper, 0.55, q % 2 ? "cedar" : "smaple");
+  const plan = fp.rounded(w, d, Math.min(w, d) * 0.42, 4);
+  walls(sink, "dark", scaled(plan, 0.94), x, z, yb, yt + 3, { yRef: yt });
+  const crown = h - 1.4;
+  const curve = stones ? (t: number) => Math.sin(Math.PI * ((t * waves) % 1)) : (t: number) => Math.sin(t * waves * Math.PI * 2);
+  const ring = walls(sink, "wave", plan, x, z, yt + 3, yt + crown, { yRef: yt, segs: Math.ceil((crown - 3) / 2.2), s1: 1 + swell, curve, r1: 0.14 });
+  // a low glass rail round the garden, trees in it
+  const rail = walls(sink, "glass", ring.map(([a, , b]) => [a - x, b - z] as [number, number]), x, z, yt + crown, yt + h, { tint: [0.85, 0.93, 0.9], yRef: yt });
+  cap(sink, "garden", at(rail, yt + crown + 0.3));
+  const top = 1 + swell * curve(1);
+  for (let q = 0; q < 6; q++) {
+    const a = (q / 6) * Math.PI * 2 + 0.3;
+    k.terrace(x + Math.cos(a) * w * 0.3 * top, yt + crown + 0.3, z + Math.sin(a) * d * 0.3 * top, 0.75 + (q % 3) * 0.12, (["cedar", "arbutus", "hemlock"] as const)[q % 3]);
   }
-  k.terrace(x, yt + h, z, 0.6, "cedar");
+  k.terrace(x, yt + crown + 0.3, z, 0.95, "cedar");
+  // the stones' ledges: planting spilling over each pinch
+  if (stones) {
+    for (let i = 1; i < waves; i++) {
+      const y = yt + 3 + ((crown - 3) * i) / waves;
+      for (let q = 0; q < 4; q++) {
+        const a = (q / 4) * Math.PI * 2 + i * 0.9;
+        k.terrace(x + Math.cos(a) * w * 0.47, y, z + Math.sin(a) * d * 0.47, 0.42, q % 2 ? "arbutus" : "cedar");
+      }
+    }
+  }
   return h;
 }
 
-/** senákw's terraced building: woven tiers stepping back on one side, each step a planted terrace. */
-function senakwTerraces(k: DevCtx, w: number, d: number, tiers: number, tierH: number, tint: Tint): number {
+/** senákw's pavilion: a round glass hall, a white slab over it, a garden on its roof. */
+function senakwPavilion(k: DevCtx, w: number, h: number): number {
   const { sink, x, z, yb, yt } = k;
-  walls(sink, "dark", fp.rect(w * 0.97, d * 0.97), x, z, yb, yt + 2.2, { yRef: yt });
-  let y = yt + 2.2;
-  for (let t = 0; t < tiers; t++) {
-    const dd = d * (1 - (t / tiers) * 0.62);
-    const cz = z - (d - dd) / 2;
-    const ring = walls(sink, "weave", fp.rect(w, dd), x, cz, y, y + tierH, { tint, yRef: yt });
-    y += tierH;
-    cap(sink, "garden", at(ring, y));
-    k.terrace(x - w * 0.3, y, cz + dd / 2 - 0.7, 0.5, t % 2 ? "cedar" : "smaple");
-    k.terrace(x + w * 0.3, y, cz + dd / 2 - 0.7, 0.45, t % 2 ? "smaple" : "cherry");
-  }
-  return y - yt;
+  walls(sink, "dark", fp.ellipse(w * 0.98, w * 0.98, 24), x, z, yb, yt + 0.3, { yRef: yt });
+  walls(sink, "glass", fp.ellipse(w * 0.9, w * 0.9, 24), x, z, yt + 0.3, yt + h, { tint: [0.82, 0.9, 0.95], yRef: yt });
+  const slab = walls(sink, "concrete", fp.ellipse(w, w, 24), x, z, yt + h, yt + h + 0.45, { tint: [0.96, 0.95, 0.92] });
+  cap(sink, "garden", at(slab, yt + h + 0.4));
+  for (let q = 0; q < 4; q++) k.terrace(x + Math.cos(q * 1.7) * w * 0.25, yt + h + 0.4, z + Math.sin(q * 1.7) * w * 0.25, 0.5, q % 2 ? "arbutus" : "cedar");
+  return h + 0.45;
 }
 
 /** A podium of cedar boards banded in formline (the `salish` family), a planted roof with trees along its edges. */
@@ -193,27 +194,19 @@ function lanternPavilion(k: DevCtx, w: number, d: number): number {
   return 7.5;
 }
 
-/** senákw's podium: along the line through its pair of towers. */
-const SENAKW_EAST = { x: -224.9, z: 177.15, ry: 0.492 };
-/** Where a point in a frame (x, z, ry) is: local x along it, local z across. */
-const inFrame = (f: { x: number; z: number; ry: number }, lx: number, lz: number): [number, number] => {
-  const c = Math.cos(f.ry);
-  const s = Math.sin(f.ry);
-  return [f.x + lx * c + lz * s, f.z - lx * s + lz * c];
-};
-
 export const DEVELOPMENTS: DevBuilding[] = [
-  // senákw: the tallest by the bridge's foot, in the gap between the blocks there, and one across the street east
-  { name: "senákw I", x: -257.75, z: 172.25, ry: 0.3, w: 5.2, d: 5.2, build: (k) => senakwTower(k, 5.2, 5.2, 80, SENAKW_GLASS[0]) },
-  { name: "senákw II", x: -231.75, z: 156.75, ry: -0.27, w: 4.8, d: 4.8, build: (k) => senakwTower(k, 4.8, 4.8, 64, SENAKW_GLASS[1], 0.97) },
-  // the east podium on the shore, its towers over the water
-  { name: "senákw east podium", ...SENAKW_EAST, w: 8, d: 17.5, build: (k) => cedarPodium(k, 8, 17.5, 3.4, 6) },
-  { name: "senákw III", ...SENAKW_EAST, x: inFrame(SENAKW_EAST, 0, -5.4)[0], z: inFrame(SENAKW_EAST, 0, -5.4)[1], w: 6.8, d: 6.6, on: "senákw east podium", build: (k) => senakwTower(k, 6.8, 6.6, 90, SENAKW_GLASS[2], 0.92) },
-  { name: "senákw IV", ...SENAKW_EAST, x: inFrame(SENAKW_EAST, 0, 5.6)[0], z: inFrame(SENAKW_EAST, 0, 5.6)[1], w: 6, d: 6, on: "senákw east podium", build: (k) => senakwTower(k, 6, 6, 70, SENAKW_GLASS[3]) },
-  // east of the bridge by the shore, one stepping down toward the water; west of it, toward Vanier Park, a tower and the hall
-  { name: "senákw V", x: -224.25, z: 164.25, ry: -0.17, w: 5.6, d: 5.6, build: (k) => senakwTerraces(k, 5.6, 5.6, 7, 4.6, SENAKW_GLASS[1]) },
-  { name: "senákw VI", x: -271, z: 155, ry: -0.67, w: 5.4, d: 5.4, build: (k) => senakwTower(k, 5.4, 5.4, 52, SENAKW_GLASS[2], 0.96) },
-  { name: "senákw hall", x: -278, z: 153.25, ry: 0, w: 5, d: 5, build: (k) => cedarHall(k, 5, 5, 2, ART.bighouse) },
+  // senákw, turned square to the bridge's ramp: east of it the tallest beside the ramp and the others stepping down
+  // to the water, the pavilion among them; west of it the river stones, lower toward the ramp's foot
+  { name: "senákw I", x: -247.31, z: 164.04, ry: -0.713, w: 11, d: 9.5, build: (k) => senakwTower(k, 11, 9.5, 92, 0.08, 1.6) },
+  { name: "senákw II", x: -249.64, z: 175.9, ry: -0.713, w: 9.5, d: 9, build: (k) => senakwTower(k, 9.5, 9, 82, 0.09, 2.1) },
+  { name: "senákw III", x: -236.43, z: 157.58, ry: -0.713, w: 9, d: 9, build: (k) => senakwTower(k, 9, 9, 74, 0.09, 1.8) },
+  { name: "senákw IV", x: -225.82, z: 162.13, ry: -0.713, w: 8.5, d: 8.5, build: (k) => senakwTower(k, 8.5, 8.5, 66, 0.1, 2.4) },
+  { name: "senákw V", x: -229.67, z: 172.69, ry: -0.713, w: 9, d: 8.5, build: (k) => senakwTower(k, 9, 8.5, 56, 0.09, 1.5) },
+  { name: "senákw VI", x: -235.91, z: 184.48, ry: -0.713, w: 9, d: 8.5, build: (k) => senakwTower(k, 9, 8.5, 62, 0.1, 2) },
+  { name: "senákw pavilion", x: -239.06, z: 175.14, ry: -0.713, w: 5.5, d: 5.5, build: (k) => senakwPavilion(k, 5.5, 4.2) },
+  { name: "senákw VII", x: -256.68, z: 127.49, ry: -0.713, w: 8, d: 8, build: (k) => senakwTower(k, 8, 8, 58, 0.16, 5, true) },
+  { name: "senákw VIII", x: -266.19, z: 143.06, ry: -0.713, w: 8, d: 8, build: (k) => senakwTower(k, 8, 8, 52, 0.16, 4, true) },
+  { name: "senákw IX", x: -274.2, z: 150.02, ry: -0.713, w: 8, d: 8, build: (k) => senakwTower(k, 8, 8, 46, 0.16, 4, true) },
   // across the bridge, at its north end
   { name: "Basket Tower", x: -184.8, z: 84.3, ry: 0.7, w: 7.5, d: 7.5, build: (k) => basketTower(k, 7.5, 96) },
   // the longhouse towers at the Granville Bridge's south end: the big house on the shore, the towers on the rise behind
@@ -228,11 +221,10 @@ export const DEVELOPMENTS: DevBuilding[] = [
 /** A piece of public art at a development (cultureKit.ts builds it, Culture.tsx draws and lights it), on the ground. */
 export type DevPiece = { kind: Kind; x: number; z: number; ry: number; quarter?: number; w?: number };
 export const DEV_PIECES: DevPiece[] = [
-  // senákw's welcome figures facing the bridge's foot, either side of its tallest tower, and the spindle whorl by its
-  // eastern one
-  { kind: "welcome", x: -266, z: 173.25, ry: -2.3, quarter: 0 },
-  { kind: "welcome", x: -254.5, z: 165.5, ry: -1.43, quarter: 1 },
-  { kind: "whorl", x: -236.5, z: 157, ry: 2.6 },
+  // senákw's welcome figures either side of the ramp, facing its foot, and the spindle whorl on the plaza east of it
+  { kind: "welcome", x: -261.76, z: 170.04, ry: -1.77, quarter: 0 },
+  { kind: "welcome", x: -275.37, z: 158.26, ry: 0.34, quarter: 1 },
+  { kind: "whorl", x: -234.08, z: 165.56, ry: 2.6 },
   { kind: "post", x: -186, z: 91.5, ry: 0.7 },
   { kind: "moongate", x: 80, z: 42.5, ry: Math.PI, w: 5 },
 ];
