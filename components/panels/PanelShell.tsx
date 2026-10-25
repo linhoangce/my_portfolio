@@ -8,7 +8,7 @@ export type HeadingTag = "h1" | "h2" | "h3";
 
 type PanelShellProps = {
   title: string;
-  /** Kicker: "03 · Awdon" style line above the heading. */
+  /** Context above the heading where it says something the title does not (a project's event); never a station label. */
   kicker?: string;
   as?: HeadingTag;
   id?: string;
@@ -18,21 +18,20 @@ type PanelShellProps = {
 
 /**
  * Shared frame for every content panel. The same markup renders on /text and
- * inside the station dock, so it carries no layout assumptions of its own.
+ * inside the station dock, so it carries no layout assumptions of its own. The
+ * head (any context line and the title) is always the first child, so the
+ * dock's staged reveal counts the same with or without a context line.
  */
 export function PanelShell({ title, kicker, as: Heading = "h2", id, className, children }: PanelShellProps) {
   return (
     <article id={id} className={cn("panel", className)}>
-      {kicker ? <p className="kicker mb-1.5 mt-0">{kicker}</p> : null}
-      <Heading className="font-serif text-fg">{title}</Heading>
+      <header>
+        {kicker ? <p className="kicker mb-1.5 mt-0">{kicker}</p> : null}
+        <Heading className="font-serif text-fg">{title}</Heading>
+      </header>
       {children}
     </article>
   );
-}
-
-/** "03 · Cursor Hackathon…" when a station code is given, the context alone otherwise. */
-export function kickerFor(code: string | undefined, context: string): string {
-  return code ? `${code} · ${context}` : context;
 }
 
 export function Tags({ tags, label }: { tags: string[]; label?: string }) {

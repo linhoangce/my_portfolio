@@ -19,6 +19,9 @@
     --accent-ink: 11 7 22; /* #0b0716 */
     /* the accent as text and icons: blossom itself reads on the night ground */
     --accent-text: 247 168 196;
+    /* the Next stop button: white at night, blossom by day */
+    --cta: 255 255 255;
+    --cta-ink: 7 10 18;
     --glass-a: 0.94;
     --shadow: 0 30px 80px -30px rgba(0, 0, 0, 0.9);
     --scrim: rgba(7, 10, 18, 0.3);
@@ -38,6 +41,8 @@
     --accent-ink: 11 7 22;
     /* blossom is too pale to read as text on the light ground: a dusty rose for text and icons */
     --accent-text: 158 90 112; /* #9e5a70 */
+    --cta: 247 168 196;
+    --cta-ink: 11 7 22;
     --glass-a: 0.93;
     --shadow: 0 30px 80px -40px rgba(20, 30, 60, 0.35);
     --scrim: rgba(243, 245, 249, 0.25);
@@ -57,6 +62,8 @@
       --accent: 247 168 196;
       --accent-ink: 11 7 22;
       --accent-text: 158 90 112;
+      --cta: 247 168 196;
+      --cta-ink: 11 7 22;
       --glass-a: 0.93;
         --shadow: 0 30px 80px -40px rgba(20, 30, 60, 0.35);
       --scrim: rgba(243, 245, 249, 0.25);
@@ -588,19 +595,32 @@
   outline: none;
 }
 .scene-ov .col {
+  position: relative;
   display: flex;
   flex-direction: column;
-  /* the text keeps min(440px, 38vw) less its insets; the extra 60px is the scrim's fade to the right */
+  /* the text keeps min(440px, 38vw) less its insets; the extra 60px is room for the scrim to fade out on the right */
   width: calc(min(440px, 38vw) + 60px);
   max-height: 100%;
   padding: 0 0 16px;
   pointer-events: none;
 }
+/* the scrim: a patch of the night behind the words, blurred so it has no edge and never reads as a card. It reaches
+   past the screen's left edge so it stays dark there, and stops above the stop buttons */
+.scene-ov .col::before {
+  content: "";
+  position: absolute;
+  inset: -16px 0 40px -56px;
+  z-index: -1;
+  border-radius: 64px;
+  background: rgb(var(--bg) / 0.86);
+  filter: blur(32px);
+  pointer-events: none;
+}
 .scene-ov.open .col {
   pointer-events: auto;
 }
-/* scrolls when the section is longer than the column, without a scrollbar. The scrim sits behind the words only: it
-   fades out to the right, and its mask fades the top and bottom padding (the words scroll out through it) */
+/* scrolls when the section is longer than the column, without a scrollbar; its mask fades the top and bottom padding,
+   so the words scroll out softly */
 .scene-ov .col-body {
   flex: 0 1 auto;
   min-height: 0;
@@ -608,7 +628,6 @@
   padding: 24px 72px 32px 32px;
   overscroll-behavior: contain;
   scrollbar-width: none;
-  background: linear-gradient(90deg, rgb(var(--bg) / 0.92) 0%, rgb(var(--bg) / 0.84) calc(100% - 72px), rgb(var(--bg) / 0) 100%);
   -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 24px, #000 calc(100% - 32px), transparent 100%);
   mask-image: linear-gradient(180deg, transparent 0, #000 24px, #000 calc(100% - 32px), transparent 100%);
 }
@@ -640,6 +659,16 @@
   font-size: 11px;
   padding: 0 5px;
 }
+.stop-nav .btn-primary {
+  border-color: rgb(var(--cta));
+  background: rgb(var(--cta));
+  color: rgb(var(--cta-ink));
+}
+.stop-nav .btn-primary:hover {
+  filter: none;
+  border-color: rgb(var(--cta) / 0.85);
+  background: rgb(var(--cta) / 0.85);
+}
 .scene-ov .col-foot .expand {
   display: none;
 }
@@ -647,7 +676,7 @@
   font-size: 11px;
   padding: 0 5px;
 }
-/* staged reveal: kicker and title, then the lead, then the beats, then the rest */
+/* staged reveal: the head (the title, and a project's context over it), then the lead, then the beats, then the rest */
 .scene-ov .panel > * {
   opacity: 0;
   transform: translateY(10px);
@@ -655,16 +684,16 @@
     opacity 0.6s,
     transform 0.6s;
 }
-.scene-ov[data-stage="1"] .panel > :nth-child(-n + 2),
-.scene-ov[data-stage="2"] .panel > :nth-child(-n + 3),
-.scene-ov[data-stage="3"] .panel > :nth-child(-n + 4),
+.scene-ov[data-stage="1"] .panel > :nth-child(-n + 1),
+.scene-ov[data-stage="2"] .panel > :nth-child(-n + 2),
+.scene-ov[data-stage="3"] .panel > :nth-child(-n + 3),
 .scene-ov[data-stage="4"] .panel > * {
   opacity: 1;
   transform: none;
 }
-/* below 1200 px there is no room for both: with Ask open the column folds to its kicker and title */
+/* below 1200 px there is no room for both: with Ask open the column folds to its head */
 @media (max-width: 1200px) {
-  html:has(.ask.open) .scene-ov .panel > :nth-child(n + 3),
+  html:has(.ask.open) .scene-ov .panel > :nth-child(n + 2),
   html:has(.ask.open) .scene-ov .col-foot {
     display: none;
   }
@@ -1129,7 +1158,7 @@
   .top .btn-primary {
     padding: 0 12px;
   }
-  /* the overlay becomes a bottom sheet: collapsed to the kicker, title, two lines of lead and the stop buttons */
+  /* the overlay becomes a bottom sheet: collapsed to the head, two lines of lead and the stop buttons */
   .scene-ov {
     top: auto;
     width: 100%;
@@ -1156,17 +1185,19 @@
     max-height: 72dvh;
   }
   /* the sheet is its own ground: no scrim, no fade */
+  .scene-ov .col::before {
+    display: none;
+  }
   .scene-ov .col-body {
     flex: 1;
     padding: 0 12px 0 0;
-    background: none;
     -webkit-mask-image: none;
     mask-image: none;
   }
   .scene-ov:not(.expanded) .col-body {
     overflow: hidden;
   }
-  .scene-ov:not(.expanded) .panel > :nth-child(n + 4) {
+  .scene-ov:not(.expanded) .panel > :nth-child(n + 3) {
     display: none;
   }
   .scene-ov:not(.expanded) .panel .lead {

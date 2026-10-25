@@ -12,7 +12,7 @@ import { useTrain } from "../store";
 
 /**
  * The station's section as an overlay: on desktop a column at the foot on the left, on a scrim behind its words only;
- * on phones a bottom sheet (collapsed to the kicker, title and two lines of lead until expanded). The panel is the same
+ * on phones a bottom sheet (collapsed to the head and two lines of lead until expanded). The panel is the same
  * one /text renders; its parts appear in stages as the train arrives. The Foreword's button swaps in the Inspirations
  * in its place, until the visitor goes back, hides the column or leaves the stop. Hide with E or Esc (remembered for
  * this stay). The stop buttons are StopNav's, at the column's foot whether it is open or not. A visually hidden status
@@ -78,7 +78,7 @@ export function SceneOverlay() {
         <div className="col" data-panel>
           <div ref={body} className="col-body">
             <PanelActions value={actions}>
-              {inspo ? <InspirationsPanel /> : <PanelFor id={st.panel} code={st.code} />}
+              {inspo ? <InspirationsPanel /> : <PanelFor id={st.panel} />}
             </PanelActions>
           </div>
           <div className="col-foot">

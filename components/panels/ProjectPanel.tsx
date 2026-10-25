@@ -1,12 +1,12 @@
 import Image from "next/image";
 
 import type { Project } from "@/data";
-import { type HeadingTag, kickerFor, Links, PanelShell, Tags } from "./PanelShell";
+import { type HeadingTag, Links, PanelShell, Tags } from "./PanelShell";
 
-export function ProjectPanel({ project, code, as = "h2" }: { project: Project; code?: string; as?: HeadingTag }) {
+export function ProjectPanel({ project, as = "h2" }: { project: Project; as?: HeadingTag }) {
   const tall = project.shot ? project.shot.height > project.shot.width : false;
   return (
-    <PanelShell id={project.id} title={project.title} kicker={kickerFor(code, project.context)} as={as}>
+    <PanelShell id={project.id} title={project.title} kicker={project.context} as={as}>
       <p className="lead">{project.lead}</p>
       <dl className="par">
         <dt>Problem</dt>
