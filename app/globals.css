@@ -15,7 +15,7 @@
     --fg-3: 195 204 219; /* #c3ccdb */
     --muted: 154 167 187; /* #9aa7bb */
     --border: 36 48 71; /* #243047 */
-    --accent: 167 139 250; /* #a78bfa */
+    --accent: 247 168 196; /* #f7a8c4, cherry blossom */
     --accent-ink: 11 7 22; /* #0b0716 */
     --glass-a: 0.94;
     --shadow: 0 30px 80px -30px rgba(0, 0, 0, 0.9);
@@ -32,7 +32,7 @@
     --fg-3: 59 69 86; /* #3b4556 */
     --muted: 91 102 120; /* #5b6678 */
     --border: 207 214 226; /* #cfd6e2 */
-    --accent: 91 63 209; /* #5b3fd1 */
+    --accent: 194 53 107; /* #c2356b, a deeper cherry blossom for white text and text on light */
     --accent-ink: 255 255 255;
     --glass-a: 0.93;
     --shadow: 0 30px 80px -40px rgba(20, 30, 60, 0.35);
@@ -50,7 +50,7 @@
       --fg-3: 59 69 86;
       --muted: 91 102 120;
       --border: 207 214 226;
-      --accent: 91 63 209;
+      --accent: 194 53 107;
       --accent-ink: 255 255 255;
       --glass-a: 0.93;
         --shadow: 0 30px 80px -40px rgba(20, 30, 60, 0.35);
@@ -648,7 +648,7 @@
   height: 8px;
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 0 0 3px rgb(167 139 250 / 0.45);
+  box-shadow: 0 0 0 3px rgb(247 168 196 / 0.5);
 }
 .cap .stem {
   position: absolute;
@@ -678,7 +678,7 @@
 /* Contact's captions are its content: bigger chips that read as links */
 .caps.content .chip-c {
   padding: 10px 14px;
-  border-color: rgb(167 139 250 / 0.55);
+  border-color: rgb(247 168 196 / 0.6);
 }
 .caps.content .chip-c b {
   font-size: 24px;
@@ -689,8 +689,8 @@
 }
 .caps.content a.chip-c:hover,
 .caps.content a.chip-c:focus-visible {
-  background: rgb(91 63 209 / 0.85);
-  border-color: rgb(196 181 253);
+  background: rgb(194 53 107 / 0.85);
+  border-color: rgb(251 207 222);
 }
 /* on a phone, Contact's links sit in a grid along the bottom, above the stop buttons, instead of on the signposts */
 .caps.docked {
@@ -733,7 +733,7 @@
   pointer-events: auto;
 }
 .cap a.chip-c:hover {
-  border-color: rgb(167 139 250);
+  border-color: rgb(247 168 196);
 }
 .cap .chip-c b {
   font-family: var(--font-serif), Georgia, serif;
