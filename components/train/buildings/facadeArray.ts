@@ -1,5 +1,5 @@
 /**
- * Façades as one texture array: twenty-six families and six roofs, each a layer of a DataArrayTexture. RGB is the
+ * Façades as one texture array: twenty-eight families and six roofs, each a layer of a DataArrayTexture. RGB is the
  * painted colour and alpha a tint mask (walls take the building's tint, glass and window frames keep their own
  * colour); a second array holds the lit windows for the night, eight floors by eight bays per layer. Two materials
  * (solid and glass) read both arrays through a small shader patch, so every building in a chunk is one draw call.
@@ -46,6 +46,8 @@ export type FamilyId =
   | "salish"
   | "senakw"
   | "jali"
+  | "weave"
+  | "basket"
   | "roof"
   | "copper"
   | "garden"
@@ -104,15 +106,26 @@ export const FAMILY: Record<FamilyId, { layer: number; bay: number; floor: numbe
    * stars, the rooms behind showing through it, lit through it after dark.
    */
   jali: { layer: 25, bay: 2.4, floor: 1.9, glass: false },
-  roof: { layer: 26, bay: 3, floor: 3, glass: false },
-  copper: { layer: 27, bay: 3, floor: 3, glass: false },
-  garden: { layer: 28, bay: 3, floor: 3, glass: false },
-  shingle: { layer: 29, bay: 3, floor: 3, glass: false },
-  tile: { layer: 30, bay: 3, floor: 3, glass: false },
-  pad: { layer: 31, bay: 3, floor: 3, glass: false },
+  /**
+   * After senákw's towers at the Burrard Bridge: pale glass (the tower's tint is the glass's) behind copper strands
+   * that sway down the façade in pairs and cross, over and under, as the strands of a Coast Salish weaving do, a white
+   * slab edge at every floor.
+   */
+  weave: { layer: 26, bay: 2.4, floor: 1.9, glass: true },
+  /**
+   * After Coast Salish cedar-bark basketry: strips plaited on the diagonal in a twill, over two and under two, in two
+   * shades of the tower's cedar (its tint), the glass of its rooms showing dark through the gaps.
+   */
+  basket: { layer: 27, bay: 2.4, floor: 1.9, glass: false },
+  roof: { layer: 28, bay: 3, floor: 3, glass: false },
+  copper: { layer: 29, bay: 3, floor: 3, glass: false },
+  garden: { layer: 30, bay: 3, floor: 3, glass: false },
+  shingle: { layer: 31, bay: 3, floor: 3, glass: false },
+  tile: { layer: 32, bay: 3, floor: 3, glass: false },
+  pad: { layer: 33, bay: 3, floor: 3, glass: false },
 };
-const LAYERS = 32;
-const FACADE_LAYERS = 26;
+const LAYERS = 34;
+const FACADE_LAYERS = 28;
 
 /**
  * `wins` are the window rects of a bay-floor cell (256 px) that light at night; a façade whose windows differ from
@@ -230,6 +243,101 @@ function paintLayer(kind: FamilyId, P: Painter, R: Rng): void {
         }
       }
     }
+  } else if (kind === "weave") {
+    // the glass, lighter up each pane, a slab edge at every floor
+    both("#a9bccb", wall, 0, 0, 512, 512);
+    for (let x = 0; x < 512; x += 64) {
+      rect(g, "rgba(255,255,255,0.08)", x, 0, 30, 512);
+      rect(g, "#3d4d5c", x + 62, 0, 2, 512);
+    }
+    for (let y = 0; y < 512; y += 256) both("#f2f0ea", keep, 0, y + 246, 512, 10);
+    // two pairs of strands to a tile, each pair crossing at every slab: one strand over between crossings, the other
+    // under, then the other way round
+    const strand = (cx: number, sgn: number, y0: number, y1: number) => {
+      for (const [ctx, cols] of [
+        [g, ["#7a3f1c", "#c8743a", "#e8a066"]],
+        [m, [keep, keep, keep]],
+      ] as const) {
+        const path = (off: number) => {
+          ctx.beginPath();
+          for (let y = y0; y <= y1; y += 8) {
+            const x = cx + sgn * 58 * Math.sin((y / 256) * Math.PI) + off;
+            if (y === y0) ctx.moveTo(x * k, y * k);
+            else ctx.lineTo(x * k, y * k);
+          }
+        };
+        // a dark edge, the copper, a highlight down its middle
+        for (const [w, col] of [
+          [32, cols[0]],
+          [25, cols[1]],
+          [7, cols[2]],
+        ] as const) {
+          ctx.strokeStyle = col;
+          ctx.lineWidth = w * k;
+          path(0);
+          ctx.stroke();
+        }
+      }
+    };
+    for (const cx of [128, 384]) {
+      for (const [y0, y1, over] of [
+        [0, 256, 1],
+        [256, 512, -1],
+      ] as const) {
+        strand(cx, -over, y0, y1);
+        strand(cx, over, y0, y1);
+      }
+    }
+    P.wins.push([14, 30, 228, 200]);
+  } else if (kind === "basket") {
+    // the rooms' glass, dark, behind the plaits
+    both("#26303a", keep, 0, 0, 512, 512);
+    const S2 = 64;
+    const band = 34;
+    // a strip on one diagonal through (c, 0): dir 1 along x + y = c, -1 along x - y = c
+    const strip = (ctx: CanvasRenderingContext2D, dir: 1 | -1, c: number, col: string) => {
+      ctx.save();
+      ctx.scale(k, k);
+      ctx.translate(c, 0);
+      ctx.rotate((dir * Math.PI) / 4);
+      ctx.fillStyle = col;
+      ctx.fillRect(-band / 2, -800, band, 1600);
+      ctx.fillStyle = "rgba(40,22,8,0.35)";
+      ctx.fillRect(-band / 2, -800, 2.5, 1600);
+      ctx.fillRect(band / 2 - 2.5, -800, 2.5, 1600);
+      ctx.restore();
+    };
+    // the strips one way, then the other way over them, then the first way again where it goes over (a twill: each
+    // strip over two, under two)
+    for (const ctx of [g, m]) {
+      const light = ctx === g ? "#efe2cf" : wall;
+      const dark = ctx === g ? "#cdb596" : wall;
+      for (let c = -1024; c <= 1536; c += S2) strip(ctx, 1, c, (c / S2) % 2 ? light : dark);
+      for (let c = -1024; c <= 1536; c += S2) strip(ctx, -1, c, (c / S2) % 2 ? dark : light);
+      for (let i = -12; i < 20; i++) {
+        for (let j = -12; j < 20; j++) {
+          if ((((i + j) % 4) + 4) % 4 >= 2) continue;
+          // the crossing of strip i (one way: x + y = i S2) and strip j (the other: x - y = j S2)
+          const x = ((i + j) * S2) / 2;
+          const y = ((i - j) * S2) / 2;
+          if (x < -64 || x > 576 || y < -64 || y > 576) continue;
+          ctx.save();
+          ctx.beginPath();
+          ctx.moveTo(x * k, (y - band * 0.72) * k);
+          ctx.lineTo((x + band * 0.72) * k, y * k);
+          ctx.lineTo(x * k, (y + band * 0.72) * k);
+          ctx.lineTo((x - band * 0.72) * k, y * k);
+          ctx.closePath();
+          ctx.clip();
+          strip(ctx, 1, i * S2, (i % 2 ? light : dark));
+          ctx.restore();
+        }
+      }
+    }
+    cells((x, y) => {
+      rect(g, "rgba(250,240,225,0.5)", x, y + 250, 256, 6);
+    });
+    P.wins.push([96, 4, 64, 60], [32, 68, 64, 60], [160, 68, 64, 60], [96, 132, 64, 60]);
   } else if (kind === "jali") {
     // the stone screen, a fine joint at every floor, and its stars cut through it in rows, each row half a star along
     both("#ece0c8", wall, 0, 0, 512, 512);
@@ -709,7 +817,7 @@ export function paintFacadeArrays(lowEnd: boolean): FacadeArrays {
     e.fillStyle = "#000";
     e.fillRect(0, 0, E, E);
     if (L < FACADE_LAYERS) {
-      const share = kind === "jali" ? 0.7 : kind === "exo" ? 0.6 : kind === "dark" || kind === "mullion" ? 0.4 : kind === "warehouse" ? 0.45 : kind === "pixel" || kind === "vancouver" || kind === "ribbon" ? 0.38 : 0.32;
+      const share = kind === "jali" ? 0.7 : kind === "basket" ? 0.55 : kind === "exo" ? 0.6 : kind === "dark" || kind === "mullion" ? 0.4 : kind === "warehouse" ? 0.45 : kind === "pixel" || kind === "vancouver" || kind === "ribbon" ? 0.38 : 0.32;
       const ke = E / 1024;
       for (let cy = 0; cy < 8; cy++) {
         for (let cx = 0; cx < 8; cx++) {

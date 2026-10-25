@@ -6,7 +6,8 @@
  * - big sculpted forms in orange and white across their facets, a stem splitting into two arms (Culture.tsx draws them,
  *   placed on the facets here);
  * - planted podiums between the streets, a round glass pavilion on one, planted roofs.
- * The city's lots on the two podiums are built into its scratch sink, so the rest of the city is as it was.
+ * The city's lots on the two podiums are built into its scratch sink, so the rest of the city is as it was. senákw
+ * itself stands on its own ground at the south end of the Burrard Bridge (developments.ts).
  */
 import { groundAt, surfaceAt } from "../terrain";
 import type { Poly } from "./parts";

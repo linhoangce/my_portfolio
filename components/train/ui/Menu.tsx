@@ -4,13 +4,10 @@ import { Keyboard, X } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useEffect, useRef } from "react";
 
-import { landAcknowledgement } from "@/data";
-
 import { EVENT_IDS, EVENT_META, type EventId, SEASONS, WEATHERS } from "../lookTypes";
 import { MONUMENTS } from "../monumentData";
 import { useTrain } from "../store";
 import { eventSwatch } from "./MonumentBar";
-import { MAP_SOURCES } from "../mapSources";
 
 const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
 
@@ -107,23 +104,6 @@ export function Menu() {
             </button>
           ))}
         </div>
-      </section>
-      <section>
-        <h3>The land</h3>
-        <p className="land-ack">{landAcknowledgement}</p>
-      </section>
-      <section>
-        <h3>Map data</h3>
-        <ul className="map-sources">
-          {MAP_SOURCES.map((m) => (
-            <li key={m.label}>
-              <a href={m.href} target="_blank" rel="noreferrer noopener">
-                {m.label}
-              </a>
-              : {m.note}
-            </li>
-          ))}
-        </ul>
       </section>
       <button type="button" className="btn" onClick={() => setUi("help")}>
         <Keyboard className="h-4 w-4" aria-hidden="true" />

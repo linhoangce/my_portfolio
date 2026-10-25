@@ -217,6 +217,29 @@
   .role span {
     @apply text-sm text-fg3;
   }
+  /* the Inspirations: each a bold name, then why it is there */
+  .inspo {
+    @apply mt-3 flex list-none flex-col gap-1.5 p-0 text-sm text-fg3;
+  }
+  .inspo b {
+    @apply font-semibold text-fg;
+  }
+  /* the acknowledgements under them: quieter, each part under its own label */
+  .ack-h {
+    @apply mb-0 mt-3 text-[13px] font-semibold text-fg2;
+  }
+  .panel p.ack {
+    @apply mt-1 text-[13px] text-muted;
+  }
+  .acks {
+    @apply mt-1.5 flex list-none flex-col gap-1 p-0 text-[13px] text-muted;
+  }
+  .acks b {
+    @apply font-medium text-fg2;
+  }
+  .acks a {
+    @apply text-fg2 underline underline-offset-[3px];
+  }
   .more {
     @apply mt-2 flex flex-col;
   }
@@ -533,9 +556,11 @@
   z-index: 11;
   width: min(560px, 46vw);
   display: flex;
+  /* the column is as tall as its words and stands at the foot, on the stop buttons, so the scene stays clear above it;
+     a long section reaches no higher than below the wordmark and the buttons */
+  align-items: flex-end;
+  padding-top: 62px;
   pointer-events: none;
-  /* the scrim: the frame darkens toward the column, the scene stays bright beside it */
-  background: linear-gradient(90deg, rgb(var(--bg) / 0.94) 0%, rgb(var(--bg) / 0.82) 62%, rgb(var(--bg) / 0) 100%);
   opacity: 0;
   transition: opacity 0.5s;
 }
@@ -548,21 +573,27 @@
 .scene-ov .col {
   display: flex;
   flex-direction: column;
-  width: min(440px, 38vw);
-  /* the scrim runs up to the top; the copy starts below the wordmark and the buttons */
-  padding: 86px 0 16px 32px;
+  /* the text keeps min(440px, 38vw) less its insets; the extra 60px is the scrim's fade to the right */
+  width: calc(min(440px, 38vw) + 60px);
+  max-height: 100%;
+  padding: 0 0 16px;
   pointer-events: none;
 }
 .scene-ov.open .col {
   pointer-events: auto;
 }
-/* scrolls when the section is longer than the column, without a scrollbar */
+/* scrolls when the section is longer than the column, without a scrollbar. The scrim sits behind the words only: it
+   fades out to the right, and its mask fades the top and bottom padding (the words scroll out through it) */
 .scene-ov .col-body {
-  flex: 1;
+  flex: 0 1 auto;
+  min-height: 0;
   overflow: auto;
-  padding-right: 12px;
+  padding: 24px 72px 32px 32px;
   overscroll-behavior: contain;
   scrollbar-width: none;
+  background: linear-gradient(90deg, rgb(var(--bg) / 0.92) 0%, rgb(var(--bg) / 0.84) calc(100% - 72px), rgb(var(--bg) / 0) 100%);
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 24px, #000 calc(100% - 32px), transparent 100%);
+  mask-image: linear-gradient(180deg, transparent 0, #000 24px, #000 calc(100% - 32px), transparent 100%);
 }
 .scene-ov .col-body::-webkit-scrollbar {
   display: none;
@@ -1084,6 +1115,7 @@
   .scene-ov {
     top: auto;
     width: 100%;
+    padding-top: 0;
     background: none;
     transform: translateY(16px);
     transition:
@@ -1104,6 +1136,14 @@
   }
   .scene-ov.expanded .col {
     max-height: 72dvh;
+  }
+  /* the sheet is its own ground: no scrim, no fade */
+  .scene-ov .col-body {
+    flex: 1;
+    padding: 0 12px 0 0;
+    background: none;
+    -webkit-mask-image: none;
+    mask-image: none;
   }
   .scene-ov:not(.expanded) .col-body {
     overflow: hidden;
@@ -1126,7 +1166,7 @@
   .scene-ov .col-foot {
     min-height: 0;
   }
-  /* above the map's credit, which keeps the very bottom */
+  /* a little above the very bottom, clear of the home indicator */
   .stop-nav {
     left: 12px;
     right: 12px;
@@ -1214,9 +1254,6 @@
   html:has(.mon-bar) .ask-fab {
     display: none;
   }
-  .map-credit {
-    right: 10px;
-  }
 }
 @media (prefers-reduced-motion: reduce) {
   .scene-ov,
@@ -1257,38 +1294,3 @@
   }
 }
 
-/* the map data's credit, bottom-right, as small as it may be and still be read */
-.map-credit {
-  position: fixed;
-  right: 76px;
-  bottom: 6px;
-  z-index: 8;
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 10px;
-  letter-spacing: 0.04em;
-  color: rgb(var(--muted));
-  opacity: 0.75;
-  text-decoration: none;
-}
-.map-credit:hover {
-  opacity: 1;
-  color: rgb(var(--fg));
-}
-.map-sources {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 12px;
-  line-height: 1.45;
-  color: rgb(var(--muted));
-}
-.land-ack {
-  font-size: 12px;
-  line-height: 1.5;
-  color: rgb(var(--muted));
-}
-.map-sources a {
-  color: rgb(var(--fg));
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}

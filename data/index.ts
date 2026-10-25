@@ -80,14 +80,47 @@ export const person = {
   url: "https://linh-hoang.vercel.app",
 };
 
-/** The land the ride's city stands on: said in the menu, the text version and on the plaque at Waterfront. */
+/** The land the ride's city stands on: said in the Inspirations' acknowledgements and on the plaque at Waterfront. */
 export const landAcknowledgement =
   "This ride's Vancouver stands on the unceded, traditional and ancestral territories of the xʷməθkʷəy̓əm (Musqueam), Sḵwx̱wú7mesh (Squamish) and səlilwətaɬ (Tsleil-Waututh) Nations.";
 
 export const depart = {
-  title: "Linh Hoang",
-  lead: "Software developer building ML systems and LLM agents that are honest about their limits: deterministic cores, models at the edges, and a human approving what goes out.",
-  meta: ["BCIT Computer Systems Technology · 2026", "Now: Co-founder, Awdon · awdon.app"],
+  title: "Foreword",
+  lead: "Honestly? I was bored, and my portfolio was overdue for an update. I didn't want another page of cards, and I'm obsessed with 3D modeling so I built something that feels inspiring and creative to me: a ride on the Expo Line through a reimagined Vancouver in 2100. Thanks for visiting and I hope you feel inspired by the beauty of this city.",
+};
+
+export type Inspiration = { title: string; copy: string };
+/** A piece of the ride's Indigenous art: what it is, where or what it is after, and the real work it follows, if one. */
+export type ArtCredit = { name: string; note: string; work?: string };
+
+/** Where the ride's new designs came from, and the city they add up to. The Foreword's button swaps it in on the ride. */
+export const inspirations: { title: string; intro: string; items: Inspiration[]; vision: string } = {
+  title: "Inspirations",
+  intro: "I wanted the Vancouver of 2100 to show whose land it stands on and everyone who made it home.",
+  items: [
+    { title: "Indigenous art", copy: "So you see whose land this is first. Each piece is named below." },
+    { title: "Hogan's Alley and Japantown plaques", copy: "To remember communities the city pushed out." },
+    { title: "Project Gallery and festival lights", copy: "To celebrate every culture that made Vancouver home." },
+    { title: "Trains", copy: "After the blue whale and Anna's hummingbird, animals of this coast." },
+    { title: "Green roofs and towers", copy: "To grow the city without losing its green: roofs make energy or gardens." },
+    { title: "Air taxis", copy: "To feed transit, not traffic: they land only at its hubs." },
+  ],
+  vision:
+    "Denser but greener: built round free transit, powered by its roofs, open to people, and shaped by the Nations whose land this is and every community that made it home.",
+};
+
+/** Under the Inspirations: the land (landAcknowledgement), the Indigenous art by name, and the map's sources (mapSources.ts). */
+export const acknowledgements: { art: string; works: ArtCredit[] } = {
+  art: "The ride's Indigenous art is inspired by Coast Salish tradition, not made by its artists: it keeps to the tradition's general forms and copies no family's or Nation's crest.",
+  works: [
+    { name: "Welcome figures", note: "Waterfront's plaza, either side of the land acknowledgement." },
+    { name: "Spindle whorl", note: "The Harbour Market at Burrard." },
+    { name: "Big house and its house posts", note: "Thornton Park, by Main Street." },
+    { name: "Woven columns", note: "After Musqueam weaver Debra Sparrow's", work: "Blanketing the City" },
+    { name: "Formline murals", note: "A salmon, an orca, a moon and a sun on the city's walls." },
+    { name: "Reconciliation monument", note: "At the canoe landing, after Lloyd Pinay's", work: "National Aboriginal Veterans Monument" },
+    { name: "Towers after senákw", note: "The Sḵwx̱wú7mesh (Squamish) Nation's development at the Burrard Bridge." },
+  ],
 };
 
 export const about = {
@@ -233,7 +266,7 @@ export const stations: Station[] = [
     km: [0, 0],
     panel: "depart",
     corpus:
-      "Waterfront station, the start of the line: Linh Hoang. Software developer and co-founder of Awdon (awdon.app). BCIT Computer Systems Technology graduate 2026 (Predictive Analytics), based in Vancouver, BC.",
+      "Waterfront station, the start of the line: Linh Hoang. Software developer and co-founder of Awdon (awdon.app). BCIT Computer Systems Technology graduate 2026 (Predictive Analytics), based in Vancouver, BC. Built this ride out of boredom with the old portfolio and an obsession with 3D modeling, to make something inspiring and creative; the Inspirations (from this stop) tell where the new designs came from, why the city's First Nations and cultures are at their centre, and the vision for Vancouver in 2100.",
   },
   {
     id: "burrard",

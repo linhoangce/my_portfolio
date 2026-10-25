@@ -10,7 +10,7 @@ import { lit, shopGlow } from "./pavilion";
 import { tunnelPortal } from "./portal";
 import { guideAt, YARD_TRACKS, yardPoint, yardTop } from "./railYard";
 import { buildYard } from "./railYardKit";
-import { SEABUS_SIGN } from "./SeaBus";
+import { SEABUS_SIGN } from "./seabusLine";
 import { paint } from "./shapes";
 import { sdfAt } from "./terrain";
 import { type Frame, UP } from "./track";
@@ -124,7 +124,7 @@ export function WestCoastExpress() {
       }
     }
     // the name on the canopy's fascia, facing the tracks; and on the same canvas and mesh, Waterfront's SeaBus sign on
-    // its float's roof (SeaBus.tsx SEABUS_SIGN), so neither costs a draw of its own
+    // its float's roof (seabusLine.ts SEABUS_SIGN), so neither costs a draw of its own
     const tex = (() => {
       const cv = document.createElement("canvas");
       cv.width = 1024;

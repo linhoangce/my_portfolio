@@ -7,6 +7,7 @@ import { BoxGeometry, CanvasTexture, CylinderGeometry, DoubleSide, Group, Instan
 import { SEA } from "./constants";
 import { merged } from "./merge";
 import { shopGlow } from "./pavilion";
+import { SEABUS_A, SEABUS_B, SEABUS_YAW, seabusAt, type SeaBusPose } from "./seabusLine";
 import { paint } from "./shapes";
 import { groundAt } from "./terrain";
 import { UP } from "./track";
@@ -15,20 +16,6 @@ import { harbourVertiport, lonsdaleVertiport } from "./vertiports";
 import { HUB_AT, HUB_DECK, HUB_GALLERY } from "./waterfrontHub";
 import { skipInMirror } from "./waterMirror";
 import { useWorld } from "./world";
-
-/** The SeaBus's two berths: the end of the hub's gallery pier at Waterfront, and Lonsdale Quay on the North Shore. */
-export const SEABUS_A: [number, number] = [HUB_AT.x + HUB_GALLERY.x, HUB_AT.z + HUB_GALLERY.z1 - 7];
-export const SEABUS_B: [number, number] = [225, -271];
-/** The crossing's heading, Waterfront to Lonsdale. */
-export const SEABUS_YAW = Math.atan2(SEABUS_B[0] - SEABUS_A[0], SEABUS_B[1] - SEABUS_A[1]);
-/**
- * Where Waterfront's name hangs on its terminal float's roof edge toward the inlet, facing out: drawn with the West
- * Coast Express's sign (WestCoastExpress.tsx), which is in view wherever this is, so it costs no draw of its own.
- */
-export const SEABUS_SIGN = { x: SEABUS_A[0] + Math.sin(SEABUS_YAW) * 4.45, y: SEA + 5.2, z: SEABUS_A[1] + Math.cos(SEABUS_YAW) * 4.45, ry: SEABUS_YAW };
-/** Seconds across, and at each berth. */
-const CROSS = 46;
-const DWELL = 16;
 
 /** Berths' names, one over the other on one canvas (each sign takes its row). */
 const labels = (rows: [string, string][]) => {
@@ -61,8 +48,9 @@ const signPlane = (w: number, h: number, k: number, n: number) => {
 
 /**
  * The SeaBus across Burrard Inlet: two catamarans on the crossing between Waterfront (a floating berth at the end of
- * the hub's gallery pier) and Lonsdale Quay (its berth, and the quay's market hall on the shore under its name), each
- * waiting at a berth while the other crosses, double-ended as the real ones are. Their windows light after dark.
+ * the hub's gallery pier) and Lonsdale Quay (its berth, and the quay's market hall on the shore under its name),
+ * double-ended as the real ones are: they cross together, passing port to port, and lie nose to their floats between
+ * crossings, on the timetable the harbour's other boats keep clear of (seabusLine.ts). Their windows light after dark.
  * Beside each berth, in the same mesh, an air taxi vertiport (vertiports.ts).
  */
 export function SeaBus() {
@@ -78,7 +66,7 @@ export function SeaBus() {
     // the berths: a floating pontoon each, with a covered gangway to the shore side
     const [ax, az] = SEABUS_A;
     const [bx, bz] = SEABUS_B;
-    const yaw = Math.atan2(bx - ax, bz - az);
+    const yaw = SEABUS_YAW;
     const pontoon = (x: number, z: number, ry: number) =>
       merged([
         { geo: paint(new BoxGeometry(9, 0.8, 5).rotateY(ry).translate(x, SEA + 0.4, z), 0x8e949b) },
@@ -137,7 +125,7 @@ export function SeaBus() {
     const sign = new Mesh(signPlane(12, 1.9, 0, 1).rotateY(ry).translate(lx + Math.sin(ry) * 5.75, lg + 5.2, lz + Math.cos(ry) * 5.75), new MeshBasicMaterial({ map: tex, toneMapped: false }));
     const g = new Group();
     g.add(solid, sign, boats, lamps);
-    return { g, boats, lamps, mat, lampMat, solid, solidMat, sign, tex, yaw };
+    return { g, boats, lamps, mat, lampMat, solid, solidMat, sign, tex };
   }, [world]);
 
   useEffect(() => skipInMirror(built.boats, built.lamps), [built]);
@@ -152,22 +140,13 @@ export function SeaBus() {
     [built],
   );
 
-  const pose = useMemo(() => ({ m4: new Matrix4(), q: new Quaternion(), p: new Vector3(), one: new Vector3(1, 1, 1) }), []);
+  const pose = useMemo(() => ({ m4: new Matrix4(), q: new Quaternion(), p: new Vector3(), one: new Vector3(1, 1, 1), at: { x: 0, z: 0, yaw: 0, v: 0 } as SeaBusPose }), []);
   useFrame(({ clock }) => {
-    const [ax, az] = SEABUS_A;
-    const [bx, bz] = SEABUS_B;
-    const cycle = 2 * (CROSS + DWELL);
+    // each where its timetable has it (seabusLine.ts), which the harbour's other boats keep clear of
     for (let k = 0; k < 2; k++) {
-      // the second sails as the first arrives: one at each berth, then crossing the other way
-      const T = (clock.elapsedTime + k * (CROSS + DWELL)) % cycle;
-      const ease = (v: number) => v * v * (3 - 2 * v);
-      const u = T < DWELL ? 0 : T < DWELL + CROSS ? ease((T - DWELL) / CROSS) : T < 2 * DWELL + CROSS ? 1 : 1 - ease((T - 2 * DWELL - CROSS) / CROSS);
-      // a gentle arc east of the straight line, so the two never meet head on
-      const bow = Math.sin(u * Math.PI) * (T < DWELL + CROSS ? 18 : -18);
-      const x = ax + (bx - ax) * u + Math.cos(built.yaw) * bow;
-      const z = az + (bz - az) * u - Math.sin(built.yaw) * bow;
-      pose.p.set(x, SEA + 0.05 + Math.sin(clock.elapsedTime * 0.8 + k) * 0.05, z);
-      built.boats.setMatrixAt(k, pose.m4.compose(pose.p, pose.q.setFromAxisAngle(UP, built.yaw), pose.one));
+      const at = seabusAt(clock.elapsedTime, k, pose.at);
+      pose.p.set(at.x, SEA + 0.05 + Math.sin(clock.elapsedTime * 0.8 + k) * 0.05, at.z);
+      built.boats.setMatrixAt(k, pose.m4.compose(pose.p, pose.q.setFromAxisAngle(UP, at.yaw), pose.one));
     }
     built.boats.instanceMatrix.needsUpdate = true;
     // white hulls take the city's night tone; the windows and running lights come on after dark
