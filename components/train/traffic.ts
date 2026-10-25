@@ -43,14 +43,17 @@ export type Car = {
   len: number;
   /** Which of CAR_KINDS it is (a bus: -1). */
   kind: number;
+  /** A commuter's bridge (its span's edge), which it keeps crossing and coming back to; -1 for the rest. */
+  home: number;
   /** A bus: its route, the step of it it is on, the stops on that step it has served, time at the current stop. */
   bus?: BusState;
   rng: Rng;
-  /** Pose: world position, the yaw that turns the body (built nose along +x) to its heading, braking. */
+  /** Pose: world position, the yaw that turns the body (built nose along +x) to its heading, nose-up pitch on a deck's grade, braking. */
   x: number;
   y: number;
   z: number;
   yaw: number;
+  pitch: number;
   brake: boolean;
 };
 
@@ -139,20 +142,59 @@ function boxSetback(k: number, end: number): number {
   return v;
 }
 
-/** An edge a car may drive: every stretch of it drawn. */
+/** An edge a car may drive: every stretch of it drawn, or a bridge's span. */
 function canDrive(k: number): boolean {
   if (!drivable) {
     const { edges } = roads();
     drivable = new Uint8Array(edges.length);
     edges.forEach((e, i) => {
-      drivable![i] = e.shown.every((v) => v === 1) && e.len > 0.2 ? 1 : 0;
+      drivable![i] = (e.span || e.shown.every((v) => v === 1)) && e.len > 0.2 ? 1 : 0;
     });
   }
   return drivable[k] === 1;
 }
 const allowed = (e: REdge, dir: 1 | -1) => e.oneway === 0 || e.oneway === dir;
 
-/** Point and unit tangent (a → b) at distance S from a. */
+/**
+ * How far each node is from a bridge's ends along the drivable streets, out to REACH (Infinity beyond): the way home
+ * for the cars that cross it (Traffic's commuters), which take the ways that bring it nearer the more readily.
+ */
+const REACH = 400;
+/** How much more readily a commuter takes a way toward its bridge. */
+const HOMING = 10;
+/** The share of the cars coming back in that come over a bridge from off the map. */
+const GATEWAY = 0.12;
+const homeDist = new Map<number, Float32Array>();
+function bridgeDist(span: number, node: number): number {
+  let d = homeDist.get(span);
+  if (!d) {
+    const { nodes, edges } = roads();
+    const dist = new Float32Array(nodes.length).fill(Infinity);
+    const open = [edges[span].a, edges[span].b];
+    for (const n of open) dist[n] = 0;
+    // a small Dijkstra (the reach is a few blocks; a sorted pick is plenty)
+    while (open.length) {
+      let bi = 0;
+      for (let i = 1; i < open.length; i++) if (dist[open[i]] < dist[open[bi]]) bi = i;
+      const n = open.splice(bi, 1)[0];
+      for (const k of nodes[n].edges) {
+        const e = edges[k];
+        if (e.span || !canDrive(k)) continue;
+        const o = e.a === n ? e.b : e.a;
+        const v = dist[n] + e.len;
+        if (v < dist[o] && v < REACH) {
+          if (dist[o] === Infinity) open.push(o);
+          dist[o] = v;
+        }
+      }
+    }
+    d = dist;
+    homeDist.set(span, d);
+  }
+  return d[node];
+}
+
+/** Point and unit tangent (a → b) at distance S from a, the deck's height there (or NaN) and its grade (a → b). */
 function frameOn(e: REdge, S: number, out: number[]): void {
   const n = e.pts.length / 2;
   let i = 0;
@@ -169,6 +211,7 @@ function frameOn(e: REdge, S: number, out: number[]): void {
   out[2] = dx / d;
   out[3] = dz / d;
   out[4] = e.deck[i] ? e.y[i] + (e.y[i + 1] - e.y[i]) * u + 0.12 : NaN;
+  out[5] = e.deck[i] ? (e.y[i + 1] - e.y[i]) / L : 0;
 }
 /** Lateral offset of a lane, right of travel: the right half of a two-way road, the whole of a one-way. */
 function laneOffset(e: REdge, lane: number): number {
@@ -178,9 +221,9 @@ function laneOffset(e: REdge, lane: number): number {
   return (c * (lane + 0.5)) / L + (e.median ? 0.3 : 0);
 }
 
-const F = [0, 0, 0, 0, 0];
-const G = [0, 0, 0, 0, 0];
-/** A car's position on its edge, `ahead` past its travelled distance, in its lane: x, z, heading x, z, deck height. */
+const F = [0, 0, 0, 0, 0, 0];
+const G = [0, 0, 0, 0, 0, 0];
+/** A car's position on its edge, `ahead` past its travelled distance, in its lane: x, z, heading x, z, deck height, grade ahead. */
 function placeOn(c: { e: number; dir: 1 | -1; lane: number }, t: number, out: number[]): void {
   const e = roads().edges[c.e];
   const S = c.dir > 0 ? t : e.len - t;
@@ -194,6 +237,7 @@ function placeOn(c: { e: number; dir: 1 | -1; lane: number }, t: number, out: nu
   out[2] = hx;
   out[3] = hz;
   out[4] = F[4];
+  out[5] = F[5] * c.dir;
 }
 
 export class Traffic {
@@ -206,6 +250,8 @@ export class Traffic {
   private acc = 0;
   /** The signals' clock: it starts 10 s before the scene's, which the settling steps below bring level. */
   time = -10;
+  /** The bridges that run off the map (the Lions Gate), which cars come in over and go off by. */
+  private portals: number[] = [];
   /** The streets the cars keep to (within sight of the line), weighted by length and class, and the far ones. */
   private pool: number[] = [];
   private weight: number[] = [];
@@ -215,18 +261,27 @@ export class Traffic {
   constructor(n: number, rng: Rng, seedRng: (i: number) => Rng, nBus = 0) {
     const { edges } = roads();
     // the cars keep to the streets the ride can see (the arterials most), where they are seen: one that drives off
-    // past them comes back in on one of them
+    // past them comes back in on one of them. The bridges are seen from all over: a car keeps on over one however far
+    // it reaches (the Lions Gate's to the North Shore)
     this.far = new Uint8Array(edges.length);
+    this.portals = edges.map((_, k) => k).filter((k) => this.portal(k));
     edges.forEach((e, k) => {
       const n = e.pts.length / 2;
       const d = trackDist(e.pts[(n >> 1) * 2], e.pts[(n >> 1) * 2 + 1]);
-      this.far[k] = d > 300 ? 1 : 0;
-      if (!canDrive(k) || d > 300) return;
+      this.far[k] = d > 300 && !e.span ? 1 : 0;
+      if (!canDrive(k) || this.far[k]) return;
       const w = e.len * (e.cls <= 1 ? 2 : 1) * (d < 200 ? 1 : 0.3);
       this.total += w;
       this.pool.push(k);
       this.weight.push(w);
     });
+    // the last of them are the commuters over the bridges within the map, a share for each, spread over it to start
+    // with (the Lions Gate's traffic comes and goes by the North Shore: respawn)
+    const homes: number[] = [];
+    edges.forEach((e, k) => {
+      if (e.span && !this.portal(k)) for (let j = Math.round(n / 90); j > 0; j--) homes.push(k);
+    });
+    const commuters = n - homes.length;
     for (let i = 0; i < n && this.pool.length; i++) {
       // its kind (from its own seed, so the spots below are the ones they always were); a clear spot: none on another car
       const kind = kindAt(seedRng(i).next());
@@ -235,7 +290,16 @@ export class Traffic {
       let dir: 1 | -1 = 1;
       let t = 0;
       let lane = 0;
-      for (let tries = 0; tries < 8; tries++) {
+      const home = i >= commuters ? homes[i - commuters] : -1;
+      if (home >= 0) {
+        const j = i - commuters - homes.indexOf(home);
+        const per = homes.lastIndexOf(home) - homes.indexOf(home) + 1;
+        k = home;
+        dir = j % 2 ? -1 : 1;
+        t = ((j + 0.5) / per) * edges[k].len;
+        lane = Math.floor(j / 2) % lanesOf(edges[k]);
+      }
+      for (let tries = 0; tries < 8 && home < 0; tries++) {
         k = this.pick(rng);
         const o = edges[k];
         dir = o.oneway ? (o.oneway as 1 | -1) : rng.next() < 0.5 ? 1 : -1;
@@ -265,11 +329,13 @@ export class Traffic {
         inBox: false,
         len,
         kind,
+        home,
         rng: seedRng(i),
         x: 0,
         y: 0,
         z: 0,
         yaw: 0,
+        pitch: 0,
         brake: false,
       };
       this.cars.push(car);
@@ -312,12 +378,14 @@ export class Traffic {
           inBox: false,
           len: LEN_BUS,
           kind: -1,
+          home: -1,
           bus: { r: ri, pi, served: 0, dwell: 0, trail: [], fx: 0, fz: 0, fyaw: 0, rx: 0, rz: 0, ryaw: 0 },
           rng: seedRng(5000 + made),
           x: 0,
           y: 0,
           z: 0,
           yaw: 0,
+          pitch: 0,
           brake: false,
         };
         this.buses.push(bus);
@@ -357,14 +425,25 @@ export class Traffic {
   private pace(c: Car): number {
     return V0[roads().edges[c.e].cls] * (0.85 + c.rng.next() * 0.3) * CAR_KINDS[c.kind].speed;
   }
-  /** Back in on one of the line's streets, on a clear spot, standing. */
+  /** Which way into the map a bridge that runs off it is driven (1 from a, -1 from b), or 0 for one within it. */
+  private portal(k: number): 0 | 1 | -1 {
+    const { nodes, edges } = roads();
+    const e = edges[k];
+    return !e.span ? 0 : nodes[e.b].deg === 1 ? -1 : nodes[e.a].deg === 1 ? 1 : 0;
+  }
+  /**
+   * Back in on one of the line's streets, on a clear spot, standing; a commuter on its bridge; and now and then over a
+   * bridge from off the map (the Lions Gate from the North Shore), from its far end, out of sight.
+   */
   private respawn(c: Car): void {
     const { edges } = roads();
+    const gate = c.home < 0 && c.rng.next() < GATEWAY ? this.portals[Math.floor(c.rng.next() * this.portals.length)] : undefined;
     for (let tries = 0; tries < 8; tries++) {
-      c.e = this.pick(c.rng);
+      c.e = c.home >= 0 ? c.home : (gate ?? this.pick(c.rng));
       const o = edges[c.e];
-      c.dir = o.oneway ? (o.oneway as 1 | -1) : c.rng.next() < 0.5 ? 1 : -1;
-      c.t = c.rng.next() * o.len * 0.5;
+      const portal = gate == null ? 0 : this.portal(c.e);
+      c.dir = portal || (o.oneway ? (o.oneway as 1 | -1) : c.rng.next() < 0.5 ? 1 : -1);
+      c.t = portal ? tries * 6 : c.rng.next() * o.len * 0.5;
       if (this.clear(c.e, c.dir, Math.min(c.lane, lanesOf(o) - 1), c.t, c.len)) break;
     }
     c.v = 0;
@@ -430,13 +509,17 @@ export class Traffic {
     let total = 0;
     const opts: [number, 1 | -1, number, number][] = [];
     for (const k of nodes[node].edges) {
-      if (k === c.e || !canDrive(k)) continue;
+      // (a commuter keeps to its own bridge: another's is as good as closed to it)
+      if (k === c.e || !canDrive(k) || (c.home >= 0 && edges[k].span && k !== c.home)) continue;
       const o = edges[k];
       const dir: 1 | -1 = o.a === node ? 1 : -1;
       if (!allowed(o, dir)) continue;
       frameOn(o, dir > 0 ? 0.01 : o.len - 0.01, F);
       const cos = F[2] * dir * hx + F[3] * dir * hz;
-      const w = (cos + 1.3) ** 2 * (o.cls <= 1 ? 3 : o.cls === 2 ? 2 : 1);
+      // a commuter takes the way back toward its bridge (or onto it) the more readily
+      const far = o.a === node ? o.b : o.a;
+      const home = c.home >= 0 && (k === c.home || bridgeDist(c.home, far) < bridgeDist(c.home, node) - 1) ? HOMING : 1;
+      const w = (cos + 1.3) ** 2 * (o.cls <= 1 ? 3 : o.cls === 2 ? 2 : 1) * home;
       total += w;
       opts.push([k, dir, w, cos]);
     }
@@ -616,7 +699,15 @@ export class Traffic {
         this.enter(c);
         continue;
       }
-      // on to the next edge
+      // on to the next edge; off the map past a bridge's far end, and back in elsewhere
+      if (c.t >= e.len && this.portal(c.e) === -c.dir && !c.bus) {
+        this.leave(c);
+        this.respawn(c);
+        c.v0 = this.pace(c);
+        c.lane = Math.min(c.lane, lanesOf(edges[c.e]) - 1);
+        this.enter(c);
+        continue;
+      }
       if (c.t >= e.len) {
         if (c.next < 0) this.choose(c);
         const over = c.t - e.len;
@@ -651,8 +742,8 @@ export class Traffic {
   /** Each car's pose: on its edge in its lane, curving through a junction from the edge it left onto the next. */
   private poses(): void {
     const { edges } = roads();
-    const A = [0, 0, 0, 0, 0];
-    const B = [0, 0, 0, 0, 0];
+    const A = [0, 0, 0, 0, 0, 0];
+    const B = [0, 0, 0, 0, 0, 0];
     for (const c of this.all) {
       const e = edges[c.e];
       const R = Math.min(TURN, e.len * 0.4);
@@ -661,6 +752,7 @@ export class Traffic {
       let hx: number;
       let hz: number;
       let deck: number;
+      let grade = 0;
       const turnIn = c.next >= 0 && c.next !== c.e && c.t > e.len - R;
       const turnOut = c.prev >= 0 && c.prev !== c.e && c.t < R;
       if (turnIn || turnOut) {
@@ -685,12 +777,13 @@ export class Traffic {
         deck = NaN;
       } else {
         placeOn(c, c.t, A);
-        [x, z, hx, hz, deck] = A;
+        [x, z, hx, hz, deck, grade] = A;
       }
       c.x = x;
       c.z = z;
       c.y = Number.isNaN(deck) ? groundAt(x, z) : deck;
       c.yaw = Math.atan2(-hz, hx);
+      c.pitch = Math.atan(grade);
     }
     // each bus's two sections: the front one ahead of the joint along its heading, the rear one along the path the
     // joint has come by

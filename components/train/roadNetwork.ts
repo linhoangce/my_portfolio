@@ -1,10 +1,11 @@
 /**
  * Vancouver's streets around the ride (streetData.ts, generalized from OpenStreetMap) as a graph the city can ask
  * questions of: how far a point is from the nearest road and which road it is; every edge's centreline, width and
- * height along it (a deck where a road crosses the Grandview Cut); where a road is not drawn (under a landmark, a hero
- * or a station's set, across the Expo's fenced right-of-way where it runs at grade); the signalled junctions and their
- * timing, which the signal heads and the cars share; and the land use under any point. Built once, on first use, after
- * the terrain has every modifier in.
+ * height along it (a deck where a road crosses the Grandview Cut, the bridges over False Creek and the First
+ * Narrows); where a road is not drawn (under a landmark, a hero or a station's set, across the Expo's fenced
+ * right-of-way where it runs at grade, over the water, into the side of a bridge's low deck); the signalled junctions
+ * and their timing, which the signal heads and the cars share; and the land use under any point. Built once, on first
+ * use, after the terrain has every modifier in.
  */
 import { TRENCH } from "./constants";
 import { BROADWAY_LINE, BROADWAY_PORTAL, cutAxis, inRailCut, MILL_LINE, profileAt } from "./rail";
@@ -12,7 +13,8 @@ import { HEROES } from "./buildings/heroes";
 import { LANDUSE } from "./landuseData";
 import { inSetZone } from "./sets/zones";
 import { inHarbourfront, inHarbourGreen } from "./harbourfront";
-import { inLandmark } from "./sites";
+import { lionsGateDeck } from "./lionsGate";
+import { BRIDGES, deckOf, inLandmark, underLowDeck } from "./sites";
 import { STREETS } from "./streetData";
 import { WCE_HALF, wceDist } from "./wce";
 import { demAt, groundAt, sdfAt } from "./terrain";
@@ -47,6 +49,11 @@ export type REdge = {
   deck: Uint8Array;
   /** Over the Broadway Subway: 0 not, 1 its distance along running west, 2 running east. */
   subway: 0 | 1 | 2;
+  /**
+   * Carried on a bridge's deck from end to end (False Creek's, the Lions Gate): drawn by the bridge, so none of it is
+   * shown as a street, yet the cars drive it, on its deck.
+   */
+  span: boolean;
 };
 export type RNode = { x: number; z: number; edges: number[]; signal: boolean; deg: number };
 export type Roads = { nodes: RNode[]; edges: REdge[]; ped: [number, number][] };
@@ -162,6 +169,7 @@ export function roads(): Roads {
       shown: new Uint8Array(n - 1).fill(1),
       deck: new Uint8Array(n - 1),
       subway: 0,
+      span: false,
     });
     nodes[a].edges.push(k);
     nodes[b].edges.push(k);
@@ -175,7 +183,22 @@ export function roads(): Roads {
   // where a road is not drawn, and how high it runs
   buildFence();
   const hidden = (x: number, z: number, half: number) =>
-    sdfAt(x, z) < 1 || inLandmark(x, z, 0) || inHarbourfront(x, z, half) || inHarbourGreen(x, z, half) || wceDist(x, z) < WCE_HALF + 1 + half || inSetZone(x, z, 0) || HEROES.some((h) => (h.x - x) ** 2 + (h.z - z) ** 2 < (h.r - 1) ** 2) || fenced(x, z, 9 + half);
+    sdfAt(x, z) < 1 ||
+    inLandmark(x, z, 0) ||
+    inHarbourfront(x, z, half) ||
+    inHarbourGreen(x, z, half) ||
+    wceDist(x, z) < WCE_HALF + 1 + half ||
+    inSetZone(x, z, 0) ||
+    HEROES.some((h) => (h.x - x) ** 2 + (h.z - z) ** 2 < (h.r - 1) ** 2) ||
+    fenced(x, z, 9 + half) ||
+    underLowDeck(x, z, half);
+  // a long stretch whose ends and middle are ashore can still cross open water (the map's own Lions Gate Bridge, at
+  // the water's level across the First Narrows)
+  const overWater = (ax: number, az: number, bx: number, bz: number) => {
+    const L = Math.hypot(bx - ax, bz - az);
+    for (let s = 3; s < L - 1; s += 3) if (sdfAt(ax + ((bx - ax) * s) / L, az + ((bz - az) * s) / L) < -1) return true;
+    return false;
+  };
   const underHero = (x: number, z: number, half: number) => HEROES.some((h) => Math.abs(h.x - x) < h.r - 1 + half - 0.4 && Math.abs(h.z - z) < h.r - 1 + half - 0.4);
   edges.forEach((e) => {
     const n = e.pts.length / 2;
@@ -183,7 +206,7 @@ export function roads(): Roads {
     for (let i = 0; i + 1 < n; i++) {
       const mx = (e.pts[i * 2] + e.pts[i * 2 + 2]) / 2;
       const mz = (e.pts[i * 2 + 1] + e.pts[i * 2 + 3]) / 2;
-      if (hidden(mx, mz, e.half) || hidden(e.pts[i * 2], e.pts[i * 2 + 1], e.half) || hidden(e.pts[i * 2 + 2], e.pts[i * 2 + 3], e.half) || underHero(mx, mz, e.half)) e.shown[i] = 0;
+      if (hidden(mx, mz, e.half) || hidden(e.pts[i * 2], e.pts[i * 2 + 1], e.half) || hidden(e.pts[i * 2 + 2], e.pts[i * 2 + 3], e.half) || underHero(mx, mz, e.half) || overWater(e.pts[i * 2], e.pts[i * 2 + 1], e.pts[i * 2 + 2], e.pts[i * 2 + 3])) e.shown[i] = 0;
     }
   });
   // over the Millennium's trench a road crosses on a bridge from one bank's lip to the other's, or ends at its rim
@@ -205,6 +228,7 @@ export function roads(): Roads {
     for (const [e, j] of ends) e.y[j] = y;
   });
   tidyFragments(nodes, edges);
+  addBridges(nodes, edges, hidden);
   // the segment hash, every segment in every cell its swept width touches
   edges.forEach((e, k) => {
     const n = e.pts.length / 2;
@@ -547,6 +571,102 @@ function tidyFragments(nodes: RNode[], edges: REdge[]): void {
     });
     if (!changed) break;
   }
+}
+
+/** How far under a deck's road the cars' deck height is given (traffic.ts lifts a car on a deck by 0.12). */
+const RIDE = 0.1;
+/**
+ * The bridges, carried into the network:
+ * - over False Creek, each from the end of the street it carries on at one end (sites.ts BRIDGES) to the other's, along
+ *   its deck at the deck's height, two lanes each way where its markings put them;
+ * - the Lions Gate, from the causeway (its junction nearest the deck's south end, short of it) up a stretch of new road
+ *   through the park to where the deck comes down to the ground, then over the First Narrows to its north end on the
+ *   North Shore, where the map ends (traffic.ts brings cars in from there and takes them off), one lane each way in
+ *   its outer lanes.
+ * A span is drawn by its bridge, not as a street; the causeway's new stretch is a street like any other.
+ */
+function addBridges(nodes: RNode[], edges: REdge[], hidden: (x: number, z: number, half: number) => boolean): void {
+  const nodeAt = (x: number, z: number, r = 1.5) => {
+    let best = -1;
+    let bd = r;
+    nodes.forEach((n, i) => {
+      const d = Math.hypot(n.x - x, n.z - z);
+      if (d < bd) {
+        bd = d;
+        best = i;
+      }
+    });
+    return best;
+  };
+  const add = (a: number, b: number, xs: number[], ys: number[], cls: RoadClass, half: number, lanes: number, name: string, span: boolean) => {
+    const pts = new Float32Array(xs);
+    const n = pts.length / 2;
+    const cum = new Float32Array(n);
+    for (let i = 1; i < n; i++) cum[i] = cum[i - 1] + Math.hypot(pts[i * 2] - pts[i * 2 - 2], pts[i * 2 + 1] - pts[i * 2 - 1]);
+    const shown = new Uint8Array(n - 1);
+    if (!span) for (let i = 0; i + 1 < n; i++) shown[i] = hidden((pts[i * 2] + pts[i * 2 + 2]) / 2, (pts[i * 2 + 1] + pts[i * 2 + 3]) / 2, half) ? 0 : 1;
+    const k = edges.length;
+    edges.push({ a, b, cls, half, oneway: 0, median: false, bridge: true, lanes, name, pts, cum, y: Float32Array.from(ys), len: cum[n - 1], shown, deck: new Uint8Array(n - 1).fill(span ? 1 : 0), subway: 0, span });
+    for (const nd of [a, b]) {
+      nodes[nd].edges.push(k);
+      nodes[nd].deg++;
+    }
+  };
+  for (const br of BRIDGES) {
+    const a = nodeAt(...br.a);
+    const b = nodeAt(...br.b);
+    if (a < 0 || b < 0) continue;
+    const d = deckOf(br);
+    const xs: number[] = [];
+    const ys: number[] = [];
+    d.T.forEach((t, i) => {
+      xs.push(...d.at(t, 0));
+      ys.push(d.deck[i] + 0.04 - RIDE);
+    });
+    // its ends on the streets' ends exactly
+    xs.splice(0, 2, nodes[a].x, nodes[a].z);
+    xs.splice(xs.length - 2, 2, nodes[b].x, nodes[b].z);
+    add(a, b, xs, ys, 0, 0.93 * br.half, 2, br.name, true);
+  }
+  const lg = lionsGateDeck();
+  let join = -1;
+  let jd = 90;
+  nodes.forEach((n, i) => {
+    const d = Math.hypot(n.x - lg.X, n.z - lg.zEndS);
+    if (d < jd && n.z > lg.zEndS + 20 && n.edges.some((k) => edges[k].name === "Stanley Park Causeway")) {
+      jd = d;
+      join = i;
+    }
+  });
+  if (join < 0) return;
+  const south = nodes.push({ x: lg.X, z: lg.zEndS, edges: [], signal: false, deg: 0 }) - 1;
+  const north = nodes.push({ x: lg.X, z: lg.zEndN, edges: [], signal: false, deg: 0 }) - 1;
+  // north out of the junction, well clear of the loop the causeway takes west, and swinging over to come onto the
+  // deck straight
+  const [jx, jz] = [nodes[join].x, nodes[join].z];
+  const reach = (jz - lg.zEndS) * 0.4;
+  const m = Math.ceil(jd / 4);
+  const ax: number[] = [];
+  const ay: number[] = [];
+  for (let k = 0; k <= m; k++) {
+    const u = k / m;
+    const [b0, b1, b2, b3] = [(1 - u) ** 3, 3 * u * (1 - u) ** 2, 3 * u * u * (1 - u), u ** 3];
+    const x = (b0 + b1) * jx + (b2 + b3) * lg.X;
+    const z = b0 * jz + b1 * (jz - reach) + b2 * (lg.zEndS + reach) + b3 * lg.zEndS;
+    ax.push(x, z);
+    ay.push(groundAt(x, z));
+  }
+  add(join, south, ax, ay, 0, HALF[0], 1, "Stanley Park Causeway", false);
+  const sx: number[] = [];
+  const sy: number[] = [];
+  for (let z = lg.zEndS; z > lg.zEndN; z -= 2) {
+    sx.push(lg.X, z);
+    sy.push(lg.deckAt(z) - RIDE);
+  }
+  sx.push(lg.X, lg.zEndN);
+  sy.push(lg.deckAt(lg.zEndN) - RIDE);
+  // one lane each way, in the outer lanes 2.4 either side of the middle
+  add(south, north, sx, sy, 0, 4.8, 1, "Lions Gate Bridge", true);
 }
 
 /** Centreline point at distance s along an edge. */

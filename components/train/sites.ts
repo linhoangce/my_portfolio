@@ -4,6 +4,7 @@
  */
 import { PARK_DATA } from "./parkData";
 import { CONVENTION, HARBOUR_GREEN } from "./harbourfront";
+import { lionsGateDeck } from "./lionsGate";
 import { SEA } from "./constants";
 import { addModifier, demAt, discPad, groundAt, inBasin, inWater, LAKE, lakeLevel, lerp, polySdf, sdfAt, SHORES, SW_POINT } from "./terrain";
 import { samples } from "./track";
@@ -375,22 +376,24 @@ const PATH_BOXES = PARKS.flatMap((p) => p.paths ?? []).map((path) => ({
 }));
 
 /**
- * The bridges over False Creek, centrelines end to end (on land at both ends), their decks' half width and clearance
- * over the water: Cambie, a low concrete girder on twin columns, on its street west of BC Place; Granville, high on
- * a steel deck truss over Granville Island; Burrard, across the mouth, a steel through truss between concrete towers.
- * Lots and trees keep clear of them.
+ * The bridges over False Creek, centrelines end to end, their decks' half width and clearance over the water: Cambie,
+ * a low concrete girder on twin columns, on its street west of BC Place; Granville, high on a steel deck truss over
+ * Granville Island; Burrard, across the mouth, a steel through truss between concrete towers. Each end is where a
+ * street the water cut short ends (the map's ends of them, roadNetwork.ts), and the bridge carries it on: Cambie from
+ * Pacific Boulevard to 6th Avenue, Granville from Harwood Street to 6th Avenue by Granville Street, Burrard from Bute
+ * Street to Cornwall Avenue. The street network takes the cars over them; lots and trees keep clear of them.
  */
 export type Bridge = { name: string; a: XZ; b: XZ; half: number; clear: number; kind: "girder" | "deckTruss" | "throughTruss" };
 export const BRIDGES: Bridge[] = [
-  { name: "Cambie Bridge", a: [-76, 148], b: [-76, 252], half: 3.3, clear: 7, kind: "girder" },
-  { name: "Granville Bridge", a: [-170, 98], b: [-186, 236], half: 4.2, clear: 12, kind: "deckTruss" },
-  { name: "Burrard Bridge", a: [-196, 84], b: [-266, 168], half: 3.6, clear: 9, kind: "throughTruss" },
+  { name: "Cambie Bridge", a: [-73.7, 148.2], b: [-82.4, 247.7], half: 3.3, clear: 7, kind: "girder" },
+  { name: "Granville Bridge", a: [-168.7, 88.1], b: [-190.7, 244.9], half: 4.2, clear: 12, kind: "deckTruss" },
+  { name: "Burrard Bridge", a: [-199.2, 84.0], b: [-271.9, 168.0], half: 3.6, clear: 9, kind: "throughTruss" },
 ];
 /**
  * A bridge's deck, sampled about every 2 units along its centreline (t from a): the unit way along it (ux, uz) and
  * to its right (rx, rz), whether each sample is over the water, the ground under it (its highest across the deck) and
- * the road's height. The deck rises from the ground at each end to its clearance over the water (no steeper than a road
- * should be; Granville's a little gentler). The bridge (landmarkKit.ts) and its traffic (bridgeTraffic.ts) both stand on it.
+ * the road's height. The deck rises from the street at each end to its clearance over the water (no steeper than a road
+ * should be; Granville's a little gentler). The bridge (landmarkKit.ts) and the cars on it (roadNetwork.ts) both stand on it.
  */
 export type BridgeDeck = { L: number; ux: number; uz: number; rx: number; rz: number; T: number[]; wet: boolean[]; ground: number[]; deck: number[]; at: (t: number, lat: number) => XZ };
 export function bridgeDeck(br: Bridge): BridgeDeck {
@@ -410,20 +413,55 @@ export function bridgeDeck(br: Bridge): BridgeDeck {
   const i0 = wet.indexOf(true);
   const i1 = wet.lastIndexOf(true);
   const ground = T.map((t) => Math.max(...[-h, 0, h].map((l) => groundAt(...at(t, l)))));
-  const raw = T.map((_, i) => (wet[i] ? SEA + br.clear * (0.88 + 0.12 * Math.sin((Math.PI * (i - i0)) / Math.max(1, i1 - i0))) : ground[i] + 0.4));
+  const raw = T.map((_, i) => (wet[i] ? SEA + br.clear * (0.88 + 0.12 * Math.sin((Math.PI * (i - i0)) / Math.max(1, i1 - i0))) : ground[i] + 0.05));
   // no steeper than the grade from any high point
   const grade = br.kind === "deckTruss" ? 0.11 : 0.13;
   const deck = T.map((t) => Math.max(...raw.map((r, j) => r - grade * Math.abs(t - T[j]))));
   return { L, ux, uz, rx, rz, T, wet, ground, deck, at };
 }
+const decks = new Map<Bridge, BridgeDeck>();
+/** A bridge's deck, worked out once (after the ground is in: it reads the ground). */
+export const deckOf = (br: Bridge): BridgeDeck => {
+  let d = decks.get(br);
+  if (!d) {
+    d = bridgeDeck(br);
+    decks.set(br, d);
+  }
+  return d;
+};
 
-/** Within `pad` of a bridge deck's edge (in plan). */
+/** Under a deck too low for a street to pass beneath: a street there would run into its side. */
+const UNDER = 4.5;
+/**
+ * Where a street would run into a bridge deck: within `pad` of the deck (and its parapets), where the deck stands less
+ * than UNDER over the ground, away from its ends (where the streets it carries on meet it).
+ */
+export function underLowDeck(x: number, z: number, pad: number): boolean {
+  for (const br of BRIDGES) {
+    const [ax, az] = br.a;
+    const [bx, bz] = br.b;
+    if (x < Math.min(ax, bx) - 20 || x > Math.max(ax, bx) + 20 || z < Math.min(az, bz) - 20 || z > Math.max(az, bz) + 20) continue;
+    const d = deckOf(br);
+    const t = (x - ax) * d.ux + (z - az) * d.uz;
+    if (t < 6 || t > d.L - 6 || Math.abs((x - ax) * d.rx + (z - az) * d.rz) > br.half + 0.3 + pad) continue;
+    const i = Math.round((t / d.L) * (d.T.length - 1));
+    if (d.deck[i] - d.ground[i] < UNDER) return true;
+  }
+  return false;
+}
+
+/** The decks in plan, end to end with their half widths: the three over False Creek and the Lions Gate's. */
+let plans: { a: XZ; b: XZ; half: number }[] | null = null;
+/** Within `pad` of a bridge deck's edge (in plan), its ends too, where it meets its streets. */
 export function nearBridge(x: number, z: number, pad: number): boolean {
-  for (const { a, b, half } of BRIDGES) {
+  if (!plans) {
+    const lg = lionsGateDeck();
+    plans = [...BRIDGES, { a: [lg.X, lg.zEndS] as XZ, b: [lg.X, lg.zEndN] as XZ, half: 3.8 }];
+  }
+  for (const { a, b, half } of plans) {
     const ex = b[0] - a[0];
     const ez = b[1] - a[1];
-    const t = ((x - a[0]) * ex + (z - a[1]) * ez) / (ex * ex + ez * ez);
-    if (t < -0.02 || t > 1.02) continue;
+    const t = Math.min(1, Math.max(0, ((x - a[0]) * ex + (z - a[1]) * ez) / (ex * ex + ez * ez)));
     if (Math.hypot(x - a[0] - ex * t, z - a[1] - ez * t) < half + pad) return true;
   }
   return false;
