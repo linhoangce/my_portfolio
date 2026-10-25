@@ -34,7 +34,7 @@ export function TextPage() {
                 className={index === 0 ? undefined : "border-t border-border pt-10"}
                 id={index === 0 ? undefined : `stop-${station.code}`}
               >
-                <PanelFor id={station.panel} code={station.code} as={index === 0 ? "h1" : "h2"} />
+                <PanelFor id={station.panel} as={index === 0 ? "h1" : "h2"} />
               </section>
             </Reveal>
             {/* not a stop: the Inspirations follow the Foreword, whose link points here */}

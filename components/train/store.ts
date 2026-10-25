@@ -75,7 +75,7 @@ export type TrainState = {
   overlay: boolean;
   scenePhase: ScenePhase;
   sceneIdx: number;
-  /** 0–4: kicker and title, lead, the beats, the rest; drives the reveal. The opening hold starts with all of it. */
+  /** 0–4: the head, the lead, the beats, the rest; drives the reveal. The opening hold starts with all of it. */
   sceneStage: number;
   /** false with ?film=0: arrivals open the overlay without the film. */
   filmOn: boolean;

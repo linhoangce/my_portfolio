@@ -10,19 +10,19 @@ import type { HeadingTag } from "./PanelShell";
 import { ProjectPanel } from "./ProjectPanel";
 
 /** Renders the panel for a section; used by the station dock and /text. */
-export function PanelFor({ id, code, as = "h2" }: { id: SectionId; code?: string; as?: HeadingTag }) {
+export function PanelFor({ id, as = "h2" }: { id: SectionId; as?: HeadingTag }) {
   switch (id) {
     case "depart":
-      return <DepartPanel code={code} as={as} />;
+      return <DepartPanel as={as} />;
     case "about":
-      return <AboutPanel code={code} as={as} />;
+      return <AboutPanel as={as} />;
     case "experience":
-      return <ExperiencePanel code={code} as={as} />;
+      return <ExperiencePanel as={as} />;
     case "more-projects":
-      return <MoreProjectsPanel code={code} as={as} />;
+      return <MoreProjectsPanel as={as} />;
     case "contact":
-      return <ContactPanel code={code} as={as} />;
+      return <ContactPanel as={as} />;
     default:
-      return <ProjectPanel project={projectById[id]} code={code} as={as} />;
+      return <ProjectPanel project={projectById[id]} as={as} />;
   }
 }

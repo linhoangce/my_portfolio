@@ -1,12 +1,12 @@
 import { ArrowUpRight } from "lucide-react";
 
 import { moreProjects } from "@/data";
-import { type HeadingTag, kickerFor, PanelShell } from "./PanelShell";
+import { type HeadingTag, PanelShell } from "./PanelShell";
 
 /** One-column list: title, one-line description, external-link arrow. */
-export function MoreProjectsPanel({ code, as = "h2" }: { code?: string; as?: HeadingTag }) {
+export function MoreProjectsPanel({ as = "h2" }: { as?: HeadingTag }) {
   return (
-    <PanelShell id="more-projects" title="Project Gallery" kicker={kickerFor(code, "More projects")} as={as}>
+    <PanelShell id="more-projects" title="Project Gallery" as={as}>
       <p className="lead">Hackathon weekends, tools I use myself and experiments that taught me something.</p>
       <div className="more">
         {moreProjects.map((item) =>

@@ -1,9 +1,9 @@
 import { roles } from "@/data";
-import { type HeadingTag, kickerFor, PanelShell } from "./PanelShell";
+import { type HeadingTag, PanelShell } from "./PanelShell";
 
-export function ExperiencePanel({ code, as = "h2" }: { code?: string; as?: HeadingTag }) {
+export function ExperiencePanel({ as = "h2" }: { as?: HeadingTag }) {
   return (
-    <PanelShell id="experience" title="Experience" kicker={kickerFor(code, "Experience")} as={as}>
+    <PanelShell id="experience" title="Experience" as={as}>
       <ol className="mt-3.5 list-none p-0">
         {roles.map((role) => (
           <li key={`${role.period}-${role.title}`} className="role">
