@@ -17,6 +17,12 @@ import { useTrain } from "./store";
 import { BLOCKERS } from "./cityModel";
 import { getCityData, getTreeData } from "./cityData";
 import { type BoatPose, Harbour } from "./harbourTraffic";
+import { inSolid } from "./harbourNav";
+import { deckY as walkDeckY, gradeAt, INLET_AIR, INLET_TOP, inletSolids, NAV, onInletWalk, PIERS, undersideY, WALK } from "./inletWalk";
+import { floatplaneAt } from "./airways";
+import { roadDist } from "./roadNetwork";
+import { SEABUS_LEN, seabusAt, type SeaBusPose } from "./seabusLine";
+import { SEA } from "./constants";
 import { sdfAt } from "./terrain";
 import { CROSSOVERS, deckY, groundAt, LEN, LOOPS, lowAt, profile, SAMPLES, samples, STATION_XZ, stationS } from "./track";
 import { useWorld } from "./world";
@@ -77,6 +83,14 @@ export type TrainDebug = {
    * trees outside `box` (x0, x1, z0, z1; by default the Inlet Walk's corridor) with the counts inside it.
    */
   digest: (box?: [number, number, number, number]) => Record<string, string | number>;
+  /**
+   * The Inlet Walk's clearances (inletWalk.ts): its highest point, the navigation span's least clearance over the sea,
+   * its steepest grade, the shore distance at its piers; how near the floatplane, the taxis and the drones come over
+   * it (least height over its tops, among samples within 6, 12 and 6 of them); how near any boat over 900 s, or the
+   * SeaBus round its timetable, comes to what it stands in the water (negative: inside); the nearest street to its
+   * ground; and the lots, houses and trees on it.
+   */
+  inlet: () => Record<string, number>;
   /** Static geometry for the headless checks: track samples, footprints, blockers, station points. */
   geometry: () => {
     samples: [number, number, number, number, number, number, number][];
@@ -350,6 +364,85 @@ export function Debug() {
           else trees.add(t.x, t.y, t.z, t.sp, t.s);
         }
         return { lowEnd: lowEnd ? 1 : 0, taxis: taxis.hex(), drones: drones.hex(), boats: boats.hex(), boatsN: harbour.hulls.length, lots: lots.hex(), lotsN: city.lots.length, lotsIn, housesIn, trees: trees.hex(), treesN: getTreeData(lowEnd).length, treesIn };
+      },
+      inlet: () => {
+        const lowEnd = st().env.lowEnd;
+        // how high something at (x, y, z) passes over the walk's boxes within `pad` of it (Infinity if none is near)
+        const over = (x: number, y: number, z: number, pad: number) => {
+          let best = Infinity;
+          for (const [x0, x1, z0, z1, top] of INLET_AIR) if (x > x0 - pad && x < x1 + pad && z > z0 - pad && z < z1 + pad) best = Math.min(best, y - top);
+          return best;
+        };
+        let navClear = Infinity;
+        for (let z = NAV.zS - 1.5; z > NAV.zN + 1.5; z -= 0.5) navClear = Math.min(navClear, undersideY(z) - SEA);
+        let maxGrade = 0;
+        for (let z = WALK.z0; z > WALK.z1; z -= 0.5) maxGrade = Math.max(maxGrade, gradeAt(z));
+        let floatplane = Infinity;
+        for (let t = 0; t < (Math.PI * 2) / 0.12; t += 0.1) {
+          const f = floatplaneAt(t);
+          floatplane = Math.min(floatplane, over(f.x, f.y, f.z, 6));
+        }
+        let taxis = Infinity;
+        for (const sv of airTaxis(lowEnd).services) for (const tr of sv.tracks) for (let i = 0; i < tr.c; i++) if (!Number.isNaN(tr.x[i])) taxis = Math.min(taxis, over(tr.x[i], tr.y[i], tr.z[i], 12));
+        let drones = Infinity;
+        for (const r of deliveryDrones(lowEnd).routes) {
+          const tr = track(r.round, () => false);
+          for (let i = 0; i < tr.c; i++) if (!Number.isNaN(tr.x[i])) drones = Math.min(drones, over(tr.x[i], tr.y[i], tr.z[i], 6));
+        }
+        // the boats against what the walk stands in the water: the least margin left, less half a beam
+        const { hard } = inletSolids();
+        const margin = (x: number, z: number, half: number) => {
+          let m = Infinity;
+          for (const o of hard) {
+            if (inSolid(o, x, z, half)) {
+              let lo = 0;
+              for (let k = 0; k < 20 && inSolid(o, x, z, half - lo); k++) lo += 0.5;
+              m = Math.min(m, -lo);
+            } else {
+              let hi = 0;
+              while (hi < 60 && !inSolid(o, x, z, half + hi + 1)) hi += 1;
+              m = Math.min(m, hi);
+            }
+          }
+          return m;
+        };
+        const harbour = new Harbour(lowEnd);
+        const bp: BoatPose = { x: 0, z: 0, yaw: 0, v: 0 };
+        let boats = Infinity;
+        for (let t = 0; t <= 900; t++) {
+          harbour.update(t, 1e9);
+          harbour.hulls.forEach((h, i) => {
+            harbour.pose(i, t, bp);
+            if (bp.x > -60 && bp.x < 60 && bp.z < -20) boats = Math.min(boats, margin(bp.x, bp.z, h.beam / 2));
+          });
+        }
+        const sp: SeaBusPose = { x: 0, z: 0, yaw: 0, v: 0 };
+        let seabus = Infinity;
+        for (let t = 0; t < 124; t += 0.5) for (const k of [0, 1]) {
+          seabusAt(t, k, sp);
+          seabus = Math.min(seabus, margin(sp.x, sp.z, SEABUS_LEN / 2));
+        }
+        let pierShore = -Infinity;
+        for (const z of PIERS) pierShore = Math.max(pierShore, sdfAt(WALK.x, z));
+        let road = Infinity;
+        for (let x = -12; x <= 28; x += 1) for (let z = WALK.z0 + 4; z >= -322; z -= 1) if (onInletWalk(x, z, 0) && sdfAt(x, z) > 0) road = Math.min(road, roadDist(x, z));
+        const city = getCityData(lowEnd);
+        return {
+          top: INLET_TOP,
+          navClear,
+          maxGrade,
+          pierShore,
+          floatplane,
+          taxis,
+          drones,
+          boats,
+          seabus,
+          road,
+          lots: city.lots.filter((l) => onInletWalk(l.x, l.z, 0)).length,
+          houses: city.houses.filter((h) => onInletWalk(h.x, h.z, 0)).length,
+          trees: getTreeData(lowEnd).filter((t) => onInletWalk(t.x, t.z, 0)).length,
+          footGround: groundAt(WALK.x, WALK.z0) - walkDeckY(WALK.z0),
+        };
       },
       geometry: () => {
         const city = getCityData(st().env.lowEnd);
