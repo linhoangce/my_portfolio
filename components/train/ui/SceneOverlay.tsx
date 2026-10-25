@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronUp } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { PanelFor } from "@/components/panels";
@@ -9,10 +9,11 @@ import { stations } from "@/data";
 import { useTrain } from "../store";
 
 /**
- * The station's section over the scene: a card bottom left on desktop, a bottom sheet on phones, both collapsed to the
- * kicker, title, lead and links until More shows the rest (Explore has nothing more on desktop). The panel is the same
- * one /text renders; its parts appear in stages as the train arrives. Hide with E or Esc (remembered for this stay). The
- * stop buttons are StopNav's, just below the card. A visually hidden status line announces each scene once.
+ * The station's section as an overlay: a left column on a gradient scrim on desktop, a bottom sheet on phones
+ * (collapsed to the kicker, title and two lines of lead until expanded). The panel is the same one /text renders; its
+ * parts appear in stages as the train arrives. Hide with E or Esc (remembered for this stay). The stop
+ * buttons are StopNav's, at the column's foot whether it is open or not. A visually hidden status line announces each
+ * scene once.
  */
 export function SceneOverlay() {
   const overlay = useTrain((s) => s.overlay);
@@ -21,7 +22,6 @@ export function SceneOverlay() {
   const phase = useTrain((s) => s.scenePhase);
   const filmOn = useTrain((s) => s.filmOn);
   const monument = useTrain((s) => s.monument);
-  const phone = useTrain((s) => s.env.phone);
   const [expanded, setExpanded] = useState(false);
   const [status, setStatus] = useState("");
   const body = useRef<HTMLDivElement>(null);
@@ -57,8 +57,6 @@ export function SceneOverlay() {
 
   const st = stations[i];
   const tab = open ? 0 : -1;
-  // collapsed, Explore shows all it has on desktop; a phone clamps its lead
-  const more = phone || st.panel !== "depart";
   return (
     <>
       <aside
@@ -73,14 +71,12 @@ export function SceneOverlay() {
           <div ref={body} className="col-body">
             <PanelFor id={st.panel} code={st.code} />
           </div>
-          {more ? (
-            <div className="col-foot">
-              <button type="button" className="btn expand" aria-expanded={expanded} onClick={() => setExpanded(!expanded)} tabIndex={tab}>
-                {expanded ? <ChevronDown className="h-4 w-4" aria-hidden="true" /> : <ChevronUp className="h-4 w-4" aria-hidden="true" />}
-                {expanded ? "Less" : "More"}
-              </button>
-            </div>
-          ) : null}
+          <div className="col-foot">
+            <button type="button" className="btn expand" aria-expanded={expanded} onClick={() => setExpanded(!expanded)} tabIndex={tab}>
+              <ChevronUp className="h-4 w-4" aria-hidden="true" />
+              {expanded ? "Less" : "More"}
+            </button>
+          </div>
         </div>
       </aside>
       <p className="sr-only" role="status">

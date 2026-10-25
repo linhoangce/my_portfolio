@@ -60,8 +60,7 @@ export function CaptionProjector() {
     const W = state.size.width;
     const H = state.size.height;
     const phone = st.env.phone;
-    // the scene's card, bottom left on a desktop
-    const left = st.overlay && !phone ? 32 + Math.min(420, W * 0.38) : 0;
+    const left = st.overlay && !phone ? Math.min(560, W * 0.46) * 0.8 : 0;
     // clear of the top bar, and on a desktop of the stop buttons and the line map along the bottom
     const bottom = phone ? H * (st.overlay ? 0.58 : 0.86) : H - 96;
     const top = phone ? 70 : 72;
