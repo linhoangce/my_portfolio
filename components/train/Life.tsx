@@ -21,7 +21,6 @@ import {
   Vector3,
 } from "three";
 
-import { bridgeTraffic } from "./bridgeTraffic";
 import { Rng } from "./cityModel";
 import { getLifeData } from "./cityData";
 import { PEOPLE_WIDTH, SEA } from "./constants";
@@ -199,8 +198,6 @@ export function Life() {
     const nCanoe = lowEnd ? 1 : 2;
     const cars = data.traffic.cars;
     const nb = data.traffic.buses.length;
-    // and over the bridges, each lane its own stream (bridgeTraffic.ts)
-    const bridges = bridgeTraffic(new Rng(9), lowEnd);
     const vehGlow = { value: 0.6 };
     const vehMat = new MeshStandardMaterial({ vertexColors: true, roughness: 0.36, metalness: 0.2, envMap: world.envTex, envMapIntensity: 0.55 });
     vehMat.onBeforeCompile = (sh) => {
@@ -215,7 +212,7 @@ export function Life() {
     };
     vehMat.customProgramCacheKey = () => "vehicles";
     const vehicles = new BatchedMesh(
-      cars.length + 2 * nb + nCanoe + bridges.cars.length,
+      cars.length + 2 * nb + nCanoe,
       geos.reduce((s, g) => s + g.attributes.position.count, 0),
       0,
       vehMat,
@@ -223,22 +220,18 @@ export function Life() {
     const geoIds = geos.map((g) => vehicles.addGeometry(g));
     for (const g of geos) g.dispose();
     const c = new Color();
-    const addCar = (kind: number, r: Rng) => {
-      const id = vehicles.addInstance(geoIds[kind]);
+    const carIds = cars.map((car) => {
+      const id = vehicles.addInstance(geoIds[car.kind]);
       // the trucks in their stainless steel, the vans in delivery liveries, the rest from the street's palette
-      const hex = kind === 4 ? r.pick([0xc3c8ce, 0xaab0b7, 0x2b2f36]) : kind === 3 ? r.pick([0xffffff, 0xf2f3f5, 0x2563eb, 0xf59e0b, 0x0f766e]) : r.pick(CAR_COLOURS);
+      const hex = car.kind === 4 ? rng.pick([0xc3c8ce, 0xaab0b7, 0x2b2f36]) : car.kind === 3 ? rng.pick([0xffffff, 0xf2f3f5, 0x2563eb, 0xf59e0b, 0x0f766e]) : rng.pick(CAR_COLOURS);
       vehicles.setColorAt(id, c.setHex(hex));
       return id;
-    };
-    const carIds = cars.map((car) => addCar(car.kind, rng));
+    });
     const busIds = data.traffic.buses.map(() => [vehicles.addInstance(geoIds[BUS_F]), vehicles.addInstance(geoIds[BUS_R])]);
     for (const [f, r] of busIds) {
       vehicles.setColorAt(f, c.setHex(0xffffff));
       vehicles.setColorAt(r, c.setHex(0xffffff));
     }
-    // (their paint from a draw of their own, so the boats below are where they always were)
-    const paintRng = new Rng(13);
-    const bridgeIds = bridges.cars.map((car) => addCar(car.kind, paintRng));
     const canoeIds = Array.from({ length: nCanoe }, () => {
       const id = vehicles.addInstance(geoIds[CANOE]);
       vehicles.setColorAt(id, c.setHex(0x221a16));
@@ -321,7 +314,7 @@ export function Life() {
       m.frustumCulled = false;
       return m;
     });
-    return { vehicles, vehMat, vehGlow, carIds, busIds, bridges, bridgeIds, canoeIds, peopleMesh, boats, boatMeshes, boatLamps, boatMat, lightMat, docks, plane };
+    return { vehicles, vehMat, vehGlow, carIds, busIds, canoeIds, peopleMesh, boats, boatMeshes, boatLamps, boatMat, lightMat, docks, plane };
   }, [data, mats, lowEnd, world.envTex]);
 
   // cars and people are too small to show in the water
@@ -350,7 +343,8 @@ export function Life() {
     data.traffic.advance(dt, state.clock.elapsedTime);
     data.traffic.cars.forEach((c, i) => {
       p.set(c.x, c.y, c.z);
-      q.setFromAxisAngle(UP, c.yaw);
+      // turned to its heading, nose up or down a deck's grade (the bridges' ramps)
+      q.setFromEuler(e.set(0, c.yaw, c.pitch, "YXZ"));
       built.vehicles.setMatrixAt(built.carIds[i], m4.compose(p, q, one));
     });
     data.traffic.buses.forEach((c, i) => {
@@ -361,16 +355,6 @@ export function Life() {
       p.set(b.rx, c.y, b.rz);
       q.setFromAxisAngle(UP, b.ryaw);
       built.vehicles.setMatrixAt(built.busIds[i][1], m4.compose(p, q, one));
-    });
-    built.bridges.advance(dt);
-    built.bridges.cars.forEach((c, i) => {
-      const id = built.bridgeIds[i];
-      built.vehicles.setVisibleAt(id, c.s > 0);
-      if (c.s <= 0) return;
-      p.set(c.x, c.y, c.z);
-      // up and down the decks' grades: nose up about its own width, then turned to its heading
-      q.setFromEuler(e.set(0, c.yaw, c.pitch, "YXZ"));
-      built.vehicles.setMatrixAt(id, m4.compose(p, q, sc.setScalar(c.s)));
     });
     for (const h of data.people) {
       if (h.move) {
