@@ -1711,8 +1711,8 @@ function buildBridge(br: Bridge, world: World): Group {
   const section: [number, number][] = [
     [-h - 0.3, 0.9],
     [-h, 0.9],
-    [-h, 0.02],
-    [h, 0.02],
+    [-h, -0.04],
+    [h, -0.04],
     [h, 0.9],
     [h + 0.3, 0.9],
     [h + 0.3, -depth],
@@ -1722,10 +1722,12 @@ function buildBridge(br: Bridge, world: World): Group {
   const shell = new Mesh(ribbon(T.map((t, i) => section.map(([l, v]) => P(t, l, deck[i] + v)))), concrete);
   shell.castShadow = !lowEnd;
   shell.receiveShadow = true;
+  // the road's four lanes and their markings, a little over the girder's floor; each row runs from the right of a → b
+  // to its left, so the strip faces up
   const road = new Mesh(
     ribbon(
-      T.map((t, i) => [P(t, -h, deck[i] + 0.04), P(t, h, deck[i] + 0.04)]),
-      (i, k) => [k, T[i] / 8],
+      T.map((t, i) => [P(t, h, deck[i] + 0.04), P(t, -h, deck[i] + 0.04)]),
+      (i, k) => [1 - k, T[i] / 8],
     ),
     cityToned(world, new MeshStandardMaterial({ map: roadTexture(), roughness: 0.9 }), 0),
   );
