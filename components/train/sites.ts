@@ -417,6 +417,40 @@ export function bridgeDeck(br: Bridge): BridgeDeck {
   return { L, ux, uz, rx, rz, T, wet, ground, deck, at };
 }
 
+/** How far apart a bridge's piers stand along its deck (landmarkKit.ts stands a pair every half that many samples). */
+export const PIER_EVERY: Record<Bridge["kind"], number> = { deckTruss: 14, throughTruss: 11, girder: 9 };
+/** A through truss's towers stand this share of its water span in from either end. */
+export const TRUSS_TOWERS = 0.28;
+
+/**
+ * What of the bridges stands in the water, for the boats to keep clear of (harbourTraffic.ts): every pier pair's
+ * columns where the deck is over the creek, and the through truss's towers, as discs a little wider than they are.
+ */
+export function wetPiers(): { x: number; z: number; r: number }[] {
+  const out: { x: number; z: number; r: number }[] = [];
+  for (const br of BRIDGES) {
+    const { T, wet, at } = bridgeDeck(br);
+    const every = Math.round(PIER_EVERY[br.kind] / 2);
+    for (let i = 0; i < T.length; i += every) {
+      if (!wet[i]) continue;
+      for (const s of [-1, 1]) {
+        const [x, z] = at(T[i], s * (br.half - 0.9));
+        out.push({ x, z, r: 1.1 });
+      }
+    }
+    const i0 = wet.indexOf(true);
+    const i1 = wet.lastIndexOf(true);
+    if (br.kind !== "throughTruss" || i0 < 0) continue;
+    for (const i of [i0 + Math.round((i1 - i0) * TRUSS_TOWERS), i1 - Math.round((i1 - i0) * TRUSS_TOWERS)]) {
+      for (const s of [-1, 1]) {
+        const [x, z] = at(T[i], s * (br.half + 1.5));
+        out.push({ x, z, r: 1.8 });
+      }
+    }
+  }
+  return out;
+}
+
 /** Within `pad` of a bridge deck's edge (in plan). */
 export function nearBridge(x: number, z: number, pad: number): boolean {
   for (const { a, b, half } of BRIDGES) {
@@ -431,6 +465,8 @@ export function nearBridge(x: number, z: number, pad: number): boolean {
 
 /** Science World's base roof height, and the trees in the garden on its water side (world positions). */
 export const SW_ROOF = 7.4;
+/** Science World's promenade deck over the water (its radius, in its own frame) and its little pier: its angle and how far out. */
+export const SW_DECK = { r: 18.5, pierA: 2.45, pierAt: 20.4 };
 export function scienceWorldTrees(): { x: number; y: number; z: number; sp: "cherry" | "smaple" | "dogwood"; s: number }[] {
   const sw = LANDMARKS.find((l) => l.key === "scienceWorld");
   if (!sw) return [];
