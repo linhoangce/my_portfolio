@@ -15,7 +15,15 @@ import { orbitBy, zoomBy } from "./scene/view";
 import type { MonumentKey } from "./monumentData";
 import { useTrain } from "./store";
 import { BLOCKERS } from "./cityModel";
-import { getCityData } from "./cityData";
+import { getCityData, getTreeData } from "./cityData";
+import { type BoatPose, Harbour } from "./harbourTraffic";
+import { standY } from "./harbourfront";
+import { inSolid } from "./harbourNav";
+import { ABUTMENT, deckY as walkDeckY, gradeAt, INLET_AIR, INLET_TOP, inletSolids, NAV, onInletWalk, PIERS, undersideY, WALK } from "./inletWalk";
+import { floatplaneAt } from "./airways";
+import { roadDist } from "./roadNetwork";
+import { SEABUS_LEN, seabusAt, type SeaBusPose } from "./seabusLine";
+import { SEA } from "./constants";
 import { sdfAt } from "./terrain";
 import { CROSSOVERS, deckY, groundAt, LEN, LOOPS, lowAt, profile, SAMPLES, samples, STATION_XZ, stationS } from "./track";
 import { useWorld } from "./world";
@@ -29,6 +37,8 @@ export type TrainDebug = {
   view: (pos: [number, number, number], look: [number, number, number]) => void;
   unview: () => void;
   ground: (x: number, z: number) => number;
+  /** Where something standing at (x, z) stands: the dock's rim or quay there, else the ground (harbourfront.ts standY). */
+  stand: (x: number, z: number) => number;
   /** Triangles per object (instanced meshes multiplied by their count), largest first. */
   budget: () => [string, number][];
   /** The next frame's draw calls by source (nearest named ancestor, else material and vertex count). */
@@ -70,6 +80,21 @@ export type TrainDebug = {
   state: () => Record<string, unknown>;
   /** The water's signed distance at a point (negative on water), for the shore checks. */
   sdf: (x: number, z: number) => number;
+  /**
+   * Fingerprints of what is generated, for the determinism checks: the air taxis' tracks and timetable, the drones'
+   * rounds, a fresh harbour's sailings over its first 900 s (every boat's pose every 5 s), and the lots, houses and
+   * trees outside `box` (x0, x1, z0, z1; by default the Inlet Walk's corridor) with the counts inside it.
+   */
+  digest: (box?: [number, number, number, number]) => Record<string, string | number>;
+  /**
+   * The Inlet Walk's clearances (inletWalk.ts): its highest point, the navigation span's least clearance over the sea,
+   * its steepest grade, the shore distance at its piers; how near the floatplane, the taxis and the drones come over
+   * it (least height over its tops, among samples within 6, 12 and 6 of them); how near any boat over 900 s, or the
+   * SeaBus round its timetable, comes to what it stands in the water (negative: inside); the nearest street to its
+   * ground; the lots, houses and trees on it; and, past its abutment, its underside's least height over the dock's rim,
+   * the quay or the ground.
+   */
+  inlet: () => Record<string, number>;
   /** Static geometry for the headless checks: track samples, footprints, blockers, station points. */
   geometry: () => {
     samples: [number, number, number, number, number, number, number][];
@@ -87,6 +112,23 @@ declare global {
   interface Window {
     __train?: TrainDebug;
   }
+}
+
+/** A running FNV-1a hash of numbers to a thousandth, for `digest`. */
+function digester() {
+  let h = 0x811c9dc5;
+  const one = (v: number) => {
+    const n = Number.isFinite(v) ? Math.round(v * 1000) : Number.isNaN(v) ? 0x7fffffff : 0x7ffffffe;
+    h = Math.imul(h ^ (n & 0xffff), 0x01000193);
+    h = Math.imul(h ^ ((n >>> 16) & 0xffff), 0x01000193);
+  };
+  return {
+    add: (...v: number[]) => v.forEach(one),
+    adds: (...arrs: ArrayLike<number>[]) => {
+      for (const a of arrs) for (let i = 0; i < a.length; i++) one(a[i]);
+    },
+    hex: () => (h >>> 0).toString(16).padStart(8, "0"),
+  };
 }
 
 /** `window.__train`: a debug handle for the headless checks (frames, draw calls, simulation state, jumps). */
@@ -110,6 +152,7 @@ export function Debug() {
         st().sim.freeCam = null;
       },
       ground: (x, z) => groundAt(x, z),
+      stand: (x, z) => standY(x, z),
       budget: () => {
         const out: [string, number][] = [];
         world.scene.traverse((o) => {
@@ -282,6 +325,134 @@ export function Debug() {
         return out;
       },
       sdf: (x, z) => sdfAt(x, z),
+      digest: (box = [-14, 34, -330, -16]) => {
+        const lowEnd = st().env.lowEnd;
+        const inBox = (x: number, z: number) => x > box[0] && x < box[1] && z > box[2] && z < box[3];
+        const taxis = digester();
+        for (const s of airTaxis(lowEnd).services) {
+          taxis.add(s.n, s.c, ...s.offsets);
+          for (const tr of s.tracks) taxis.adds(tr.x, tr.y, tr.z);
+        }
+        const drones = digester();
+        for (const r of deliveryDrones(lowEnd).routes) {
+          const tr = track(r.round, () => false);
+          drones.add(r.port, r.c, ...r.offsets);
+          drones.adds(tr.x, tr.y, tr.z);
+        }
+        const boats = digester();
+        const harbour = new Harbour(lowEnd);
+        const pose: BoatPose = { x: 0, z: 0, yaw: 0, v: 0 };
+        for (let t = 0; t <= 900; t++) {
+          harbour.update(t, 1e9);
+          if (t % 5) continue;
+          for (let i = 0; i < harbour.hulls.length; i++) {
+            harbour.pose(i, t, pose);
+            boats.add(pose.x, pose.z, pose.yaw);
+          }
+        }
+        const city = getCityData(lowEnd);
+        const lots = digester();
+        let lotsIn = 0;
+        for (const l of city.lots) {
+          if (inBox(l.x, l.z)) lotsIn++;
+          else lots.add(l.x, l.z, l.w, l.d, l.top);
+        }
+        let housesIn = 0;
+        for (const h of city.houses) {
+          if (inBox(h.x, h.z)) housesIn++;
+          else lots.add(h.x, h.y, h.z, h.ry);
+        }
+        const trees = digester();
+        let treesIn = 0;
+        for (const t of getTreeData(lowEnd)) {
+          if (inBox(t.x, t.z)) treesIn++;
+          else trees.add(t.x, t.y, t.z, t.sp, t.s);
+        }
+        return { lowEnd: lowEnd ? 1 : 0, taxis: taxis.hex(), drones: drones.hex(), boats: boats.hex(), boatsN: harbour.hulls.length, lots: lots.hex(), lotsN: city.lots.length, lotsIn, housesIn, trees: trees.hex(), treesN: getTreeData(lowEnd).length, treesIn };
+      },
+      inlet: () => {
+        const lowEnd = st().env.lowEnd;
+        // how high something at (x, y, z) passes over the walk's boxes within `pad` of it (Infinity if none is near)
+        const over = (x: number, y: number, z: number, pad: number) => {
+          let best = Infinity;
+          for (const [x0, x1, z0, z1, top] of INLET_AIR) if (x > x0 - pad && x < x1 + pad && z > z0 - pad && z < z1 + pad) best = Math.min(best, y - top);
+          return best;
+        };
+        let navClear = Infinity;
+        for (let z = NAV.zS - 1.5; z > NAV.zN + 1.5; z -= 0.5) navClear = Math.min(navClear, undersideY(z) - SEA);
+        let maxGrade = 0;
+        for (let z = WALK.z0; z > WALK.z1; z -= 0.5) maxGrade = Math.max(maxGrade, gradeAt(z));
+        let floatplane = Infinity;
+        for (let t = 0; t < (Math.PI * 2) / 0.12; t += 0.1) {
+          const f = floatplaneAt(t);
+          floatplane = Math.min(floatplane, over(f.x, f.y, f.z, 6));
+        }
+        let taxis = Infinity;
+        for (const sv of airTaxis(lowEnd).services) for (const tr of sv.tracks) for (let i = 0; i < tr.c; i++) if (!Number.isNaN(tr.x[i])) taxis = Math.min(taxis, over(tr.x[i], tr.y[i], tr.z[i], 12));
+        let drones = Infinity;
+        for (const r of deliveryDrones(lowEnd).routes) {
+          const tr = track(r.round, () => false);
+          for (let i = 0; i < tr.c; i++) if (!Number.isNaN(tr.x[i])) drones = Math.min(drones, over(tr.x[i], tr.y[i], tr.z[i], 6));
+        }
+        // the boats against what the walk stands in the water: the least margin left, less half a beam
+        const { hard } = inletSolids();
+        const margin = (x: number, z: number, half: number) => {
+          let m = Infinity;
+          for (const o of hard) {
+            if (inSolid(o, x, z, half)) {
+              let lo = 0;
+              for (let k = 0; k < 20 && inSolid(o, x, z, half - lo); k++) lo += 0.5;
+              m = Math.min(m, -lo);
+            } else {
+              let hi = 0;
+              while (hi < 60 && !inSolid(o, x, z, half + hi + 1)) hi += 1;
+              m = Math.min(m, hi);
+            }
+          }
+          return m;
+        };
+        const harbour = new Harbour(lowEnd);
+        const bp: BoatPose = { x: 0, z: 0, yaw: 0, v: 0 };
+        let boats = Infinity;
+        for (let t = 0; t <= 900; t++) {
+          harbour.update(t, 1e9);
+          harbour.hulls.forEach((h, i) => {
+            harbour.pose(i, t, bp);
+            if (bp.x > -60 && bp.x < 60 && bp.z < -20) boats = Math.min(boats, margin(bp.x, bp.z, h.beam / 2));
+          });
+        }
+        const sp: SeaBusPose = { x: 0, z: 0, yaw: 0, v: 0 };
+        let seabus = Infinity;
+        for (let t = 0; t < 124; t += 0.5) for (const k of [0, 1]) {
+          seabusAt(t, k, sp);
+          seabus = Math.min(seabus, margin(sp.x, sp.z, SEABUS_LEN / 2));
+        }
+        // past the abutment, how far the deck's underside stands over whatever it passes (the rim, the quay, the ground)
+        let footClear = Infinity;
+        for (let z = ABUTMENT.z1; z > ABUTMENT.z1 - 40; z -= 0.5) for (let x = WALK.x - WALK.beam; x <= WALK.x + WALK.beam; x += 0.5) footClear = Math.min(footClear, undersideY(z) - standY(x, z));
+        let pierShore = -Infinity;
+        for (const z of PIERS) pierShore = Math.max(pierShore, sdfAt(WALK.x, z));
+        let road = Infinity;
+        for (let x = -12; x <= 28; x += 1) for (let z = WALK.z0 + 4; z >= -322; z -= 1) if (onInletWalk(x, z, 0) && sdfAt(x, z) > 0) road = Math.min(road, roadDist(x, z));
+        const city = getCityData(lowEnd);
+        return {
+          top: INLET_TOP,
+          navClear,
+          maxGrade,
+          pierShore,
+          floatplane,
+          taxis,
+          drones,
+          boats,
+          seabus,
+          road,
+          lots: city.lots.filter((l) => onInletWalk(l.x, l.z, 0)).length,
+          houses: city.houses.filter((h) => onInletWalk(h.x, h.z, 0)).length,
+          trees: getTreeData(lowEnd).filter((t) => onInletWalk(t.x, t.z, 0)).length,
+          footGround: groundAt(WALK.x, WALK.z0) - walkDeckY(WALK.z0),
+          footClear,
+        };
+      },
       geometry: () => {
         const city = getCityData(st().env.lowEnd);
         return {

@@ -8,6 +8,7 @@
 import { district, type Rng } from "../cityModel";
 import { nearBusStop } from "../buses";
 import { inDock, inHarbourfront, onGreenCafe, rimTopAt } from "../harbourfront";
+import { onInletWalk } from "../inletWalk";
 import { nearWce } from "../wce";
 import { railNear } from "../rail";
 import { junction, type Near, pointAt, roadDist, roadNear, roads, WALK } from "../roadNetwork";
@@ -59,10 +60,10 @@ const VERGE = {
 
 export function placeTrees(rng: Rng, lowEnd: boolean, lots: LotBox[]): TreeInst[] {
   // planted on the ground as baked, Deadman's Island standing (terrain.ts carves it to water) and the harbourfront's
-  // dock still filled, so every tree draws its numbers as before; the island's trees, with the rail yard's and the
-  // dock's, are taken out after (those on the dock's rim stand on it)
+  // dock still filled, so every tree draws its numbers as before; the island's trees, with the rail yard's, those on
+  // the Inlet Walk's ground and the dock's, are taken out after (those on the dock's rim stand on it)
   return asBaked(() => plant(rng, lowEnd, lots))
-    .filter((t) => !inYard(t.x, t.z) && !inIslet(t.x, t.z))
+    .filter((t) => !inYard(t.x, t.z) && !inIslet(t.x, t.z) && !onInletWalk(t.x, t.z, 1.2))
     .flatMap((t) => {
       if (!inDock(t.x, t.z)) return [t];
       const rim = rimTopAt(t.x, t.z);

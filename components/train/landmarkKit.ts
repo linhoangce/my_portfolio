@@ -88,7 +88,7 @@ const rect = (w: number, d: number, x = 0, z = 0): P2[] => [
   [x - w / 2, z + d / 2],
 ];
 /** A light that is full at night (level 1) and off by day (level about a third). */
-const nightOf = (level: number) => Math.max(0, (level - 0.4) / 0.6);
+export const nightOf = (level: number) => Math.max(0, (level - 0.4) / 0.6);
 
 /** A façade texture and its lit-window twin (black except the windows). */
 type Facade = { map: CanvasTexture; glow: CanvasTexture };
@@ -112,7 +112,7 @@ const WARM = ["#ffd9a0", "#ffe7c0", "#f6c98a", "#fff1d8"];
  * After dusk the city's façades take a darker tone and light their windows: these materials follow it, and their
  * environment reflections fade so nothing glows that should not.
  */
-function cityToned(world: World, mat: MeshStandardMaterial, lights = 0.9): MeshStandardMaterial {
+export function cityToned(world: World, mat: MeshStandardMaterial, lights = 0.9): MeshStandardMaterial {
   const env = mat.envMapIntensity;
   const day = mat.color.clone();
   world.events.followers.push((level) => {
@@ -2098,7 +2098,7 @@ const latticeTexture = () =>
   );
 
 /** A space frame seen from above: a square grid with its diagonals, in `line` over glass of opacity `glass`. */
-const spaceFrameTexture = (line: string, glass: number) => {
+export const spaceFrameTexture = (line: string, glass: number) => {
   const t = canvasTexture(128, 128, (g) => {
     g.clearRect(0, 0, 128, 128);
     if (glass > 0) {

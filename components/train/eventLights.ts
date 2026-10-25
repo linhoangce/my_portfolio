@@ -100,3 +100,11 @@ export function registerPattern(L: EventLights, mesh: InstancedMesh, kind: LitPa
   });
   L.patterns.push({ mesh, kind, heights, angles });
 }
+
+/**
+ * Register an instanced mesh whose instances run along a line (a bridge's handrail), `along` each one's share of the
+ * way (0 to 1): the patterns that climb a tower run along it, and those that sweep round a ring chase down it.
+ */
+export function registerLine(L: EventLights, mesh: InstancedMesh, along: number[]): void {
+  L.patterns.push({ mesh, kind: "ring", heights: Float32Array.from(along), angles: Float32Array.from(along, (u) => u * Math.PI * 2 - Math.PI) });
+}

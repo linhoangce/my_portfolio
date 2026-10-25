@@ -15,6 +15,7 @@
 import { Rng } from "./cityModel";
 import { SEA } from "./constants";
 import { inSolid, keepRight, rounded, type Solid, speeds, times, WaterGrid, type Way, type XZ } from "./harbourNav";
+import { inletSolids } from "./inletWalk";
 import { YARD_BOX } from "./railYard";
 import { SEABUS_A, SEABUS_B, SEABUS_BEAM, SEABUS_LEN, SEABUS_STOP_A, SEABUS_STOP_B, SEABUS_YAW, seabusAt, type SeaBusPose } from "./seabusLine";
 import { LANDMARKS, SW_DECK, wetPiers } from "./sites";
@@ -495,7 +496,7 @@ export class Harbour {
       if (L.docks[d].slots.length >= 4 && L.slots[sl].owner < 0) moored(sl, hull(rng.next() < 0.5 ? 1 : 2, 1));
     }
     // what stands in the inlet: the hub, the piers and the yard (waterfrontHub.ts NO_SAIL), the SeaBus's floats and
-    // where the boats lie at them, and the water each crossing sweeps near its berths
+    // where the boats lie at them, the water each crossing sweeps near its berths, and the Inlet Walk and its stage
     for (const [x0, x1, z0, z1] of NO_SAIL) {
       const o: Solid = { x: (x0 + x1) / 2, z: (z0 + z1) / 2, hw: (x1 - x0) / 2, hl: (z1 - z0) / 2, yaw: 0 };
       L.solids[0].push(o);
@@ -504,6 +505,10 @@ export class Harbour {
     L.solids[0].push({ x: SEABUS_A[0], z: SEABUS_A[1], hw: 7.6, hl: 4.6, yaw: SEABUS_YAW }, { x: SEABUS_B[0], z: SEABUS_B[1], hw: 5, hl: 3, yaw: SEABUS_YAW });
     L.hard[0].push({ x: SEABUS_A[0], z: SEABUS_A[1], hw: 7.3, hl: 4.3, yaw: SEABUS_YAW }, { x: SEABUS_B[0], z: SEABUS_B[1], hw: 4.7, hl: 2.7, yaw: SEABUS_YAW });
     for (const [x, z] of [SEABUS_STOP_A, SEABUS_STOP_B]) L.solids[0].push({ x, z, hw: SEABUS_BEAM / 2 + 3, hl: SEABUS_LEN / 2 + 4, yaw: SEABUS_YAW });
+    // the Inlet Walk's piers, its deck where it is low near either shore, and the stage with its terraces' front
+    const inlet = inletSolids();
+    L.solids[0].push(...inlet.soft);
+    L.hard[0].push(...inlet.hard);
     // the docks' floats, fingers and gangways
     for (const d of L.boxes) {
       const w = WATERS.findIndex(({ box }) => d.x > box[0] && d.x < box[1] && d.z > box[2] && d.z < box[3]);

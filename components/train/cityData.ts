@@ -35,7 +35,8 @@ export function getTreeData(lowEnd: boolean): TreeInst[] {
   let data = treeCache.get(lowEnd);
   if (!data) {
     const city = getCityData(lowEnd);
-    data = placeTrees(new Rng(4), lowEnd, city.lots);
+    // round the lots left unbuilt for the Inlet Walk too, as if they stood (buildings/city.ts walkLots)
+    data = placeTrees(new Rng(4), lowEnd, [...city.lots, ...city.walkLots]);
     const harbour = [...harbourfrontTrees(), ...squareTrees(), ...commonsGround(city, lowEnd).trees].map((t) => ({ ...t, y: standY(t.x, t.z) }));
     for (const t of [...city.terrace, ...hubTrees(), ...scienceWorldTrees(), ...harbour]) data.push({ x: t.x, y: t.y - 0.05, z: t.z, sp: SPECIES_INDEX[t.sp], s: (t.s * 6) / SPECIES[SPECIES_INDEX[t.sp]].size[1] });
     treeCache.set(lowEnd, data);

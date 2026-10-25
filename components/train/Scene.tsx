@@ -24,6 +24,7 @@ import { WestCoastExpress } from "./WestCoastExpress";
 import { SeaBus } from "./SeaBus";
 import { Signals } from "./Signals";
 import { Landmarks } from "./Landmarks";
+import { InletCrowd, InletWalk } from "./InletWalk";
 import { AirTaxis } from "./AirTaxis";
 import { Life } from "./Life";
 import { Lights } from "./Lights";
@@ -117,10 +118,12 @@ function Stage({ n, children }: { n: number; children: ReactNode }) {
  * the opening shot needs first, so the ride shows within moments and fills in rather than waiting for everything:
  * 0. the train (its headlights are lights: there from the start, so no shader compiles again for them), the sky, the
  *    mountains, the water and the land;
- * 1. the line: guideway, sets, landmarks, the hub, the other rail lines and ferries, the scene's captions;
+ * 1. the line: guideway, sets, landmarks, the Inlet Walk and its stage, the hub, the other rail lines and ferries, the
+ *    scene's captions;
  * 2. the city: buildings, streets, stations (their entrances keep clear of its lots), downtown's places and its art;
  * 3. trees, nature and the weather;
- * 4. life: traffic, people, boats, the freighters in English Bay and the air taxis, signals, bus stops, the events;
+ * 4. life: traffic, people (the Inlet Walk's too), boats, the freighters in English Bay and the air taxis, signals, bus
+ *    stops, the events;
  * 5. reflections, the water's mirror, the quality watch, the monument picker and the debug hook.
  * The lights, the look, the drive, the camera and the bloom are there from the start: the shaders compile for the
  * lights and the target the scene is drawn into.
@@ -167,6 +170,7 @@ export default function Scene({ onContextLost }: { onContextLost?: () => void })
           <Guideway />
           <Sets />
           <Landmarks />
+          <InletWalk />
           <Hub />
           <Millennium />
           <WestCoastExpress />
@@ -187,6 +191,7 @@ export default function Scene({ onContextLost }: { onContextLost?: () => void })
         </Stage>
         <Stage n={4}>
           <Life />
+          <InletCrowd />
           <Freighters />
           <AirTaxis />
           <Signals />
