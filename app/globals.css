@@ -15,8 +15,10 @@
     --fg-3: 195 204 219; /* #c3ccdb */
     --muted: 154 167 187; /* #9aa7bb */
     --border: 36 48 71; /* #243047 */
-    --accent: 167 139 250; /* #a78bfa */
+    --accent: 247 168 196; /* #f7a8c4, cherry blossom */
     --accent-ink: 11 7 22; /* #0b0716 */
+    /* the accent as text and icons: blossom itself reads on the night ground */
+    --accent-text: 247 168 196;
     --glass-a: 0.94;
     --shadow: 0 30px 80px -30px rgba(0, 0, 0, 0.9);
     --scrim: rgba(7, 10, 18, 0.3);
@@ -32,8 +34,10 @@
     --fg-3: 59 69 86; /* #3b4556 */
     --muted: 91 102 120; /* #5b6678 */
     --border: 207 214 226; /* #cfd6e2 */
-    --accent: 91 63 209; /* #5b3fd1 */
-    --accent-ink: 255 255 255;
+    --accent: 247 168 196; /* #f7a8c4, cherry blossom, with dark text on it */
+    --accent-ink: 11 7 22;
+    /* blossom is too pale to read as text on the light ground: a dusty rose for text and icons */
+    --accent-text: 158 90 112; /* #9e5a70 */
     --glass-a: 0.93;
     --shadow: 0 30px 80px -40px rgba(20, 30, 60, 0.35);
     --scrim: rgba(243, 245, 249, 0.25);
@@ -50,8 +54,9 @@
       --fg-3: 59 69 86;
       --muted: 91 102 120;
       --border: 207 214 226;
-      --accent: 91 63 209;
-      --accent-ink: 255 255 255;
+      --accent: 247 168 196;
+      --accent-ink: 11 7 22;
+      --accent-text: 158 90 112;
       --glass-a: 0.93;
         --shadow: 0 30px 80px -40px rgba(20, 30, 60, 0.35);
       --scrim: rgba(243, 245, 249, 0.25);
@@ -76,7 +81,7 @@
   }
 
   :focus-visible {
-    outline: 2px solid rgb(var(--accent));
+    outline: 2px solid rgb(var(--accent-text));
     outline-offset: 2px;
     border-radius: 6px;
   }
@@ -161,23 +166,10 @@
     grid-template-columns: 84px minmax(0, 1fr);
   }
   .par dt {
-    @apply pt-[3px] font-mono text-[11px] uppercase tracking-[0.12em] text-accent;
+    @apply pt-[3px] font-mono text-[11px] uppercase tracking-[0.12em] text-accentText;
   }
   .par dd {
     @apply m-0 text-sm text-fg2;
-  }
-  .metrics {
-    @apply mt-[18px] grid grid-cols-3 gap-2;
-  }
-  .metric {
-    @apply min-w-0 rounded-xl border border-border bg-surface2 p-3;
-  }
-  /* a figure, or a feature in two or three words: it wraps rather than cut off */
-  .metric .v {
-    @apply font-mono text-lg leading-[1.15] [overflow-wrap:anywhere];
-  }
-  .metric .k {
-    @apply mt-[5px] text-[11px] uppercase tracking-[0.05em] text-muted;
   }
   .tags {
     @apply mt-4 flex flex-wrap gap-1.5;
@@ -237,16 +229,13 @@
     @apply mt-0.5 block text-[13px] text-muted;
   }
   .email {
-    @apply mt-2.5 inline-block font-serif text-[28px] text-accent underline underline-offset-[7px];
-    text-decoration-color: rgb(var(--accent) / 0.45);
+    @apply mt-2.5 inline-block font-serif text-[28px] text-accentText underline underline-offset-[7px];
+    text-decoration-color: rgb(var(--accent-text) / 0.45);
   }
   @media (max-width: 860px) {
     .panel h2,
     .panel h1 {
       font-size: 32px;
-    }
-    .metric .v {
-      font-size: 15px;
     }
   }
 }
@@ -321,20 +310,18 @@
   transform: none;
 }
 
-/* the line map, bottom centre, as tall as the stop buttons beside it: ten stops on a rail, the train's position, the
-   current stop ringed, the next one pulsing. Centred on the screen where there is room, else moved right (and
-   narrowed) to stay clear of the stop buttons and the scene's column at its left and the map credit at its right */
+/* the line map, bottom centre, as tall as the stop buttons beside it and straight on the scene: ten stops on a rail,
+   the train's position, the current stop ringed, the next one pulsing. Centred on the screen where there is room, else moved right (and
+   narrowed) to stay clear of the stop buttons and the scene's column at its left and the map credit and the
+   attendant's button at its right */
 .linemap {
   --linemap-clear: max(417px, calc(min(440px, 38vw) + 16px));
   position: fixed;
   bottom: 16px;
   left: max(calc(50% - 280px), var(--linemap-clear));
   z-index: 12;
-  width: min(560px, calc(100% - var(--linemap-clear) - 200px));
-  padding: 3px 10px;
-  border-radius: 999px;
-  border: 1px solid rgb(var(--border));
-  background: rgb(var(--surface) / var(--glass-a));
+  width: min(560px, calc(100% - var(--linemap-clear) - 270px));
+  padding: 4px 10px;
 }
 .linemap ol {
   position: relative;
@@ -352,8 +339,10 @@
   top: 50%;
   height: 2px;
   margin-top: -1px;
-  background: rgb(var(--border));
+  /* white with a soft shadow, so the rail and its stops read over any part of the scene, by day or night */
+  background: rgb(255 255 255 / 0.9);
   border-radius: 2px;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.45);
 }
 .linemap .train-mark {
   position: absolute;
@@ -387,6 +376,7 @@
   border-radius: 50%;
   background: rgb(var(--surface));
   border: 2px solid rgb(var(--muted));
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.45);
   transition:
     transform 0.2s,
     border-color 0.2s;
@@ -415,7 +405,8 @@
     box-shadow: 0 0 0 6px rgb(var(--accent) / 0);
   }
 }
-.linemap .tip {
+.linemap .tip,
+.mon-events .tip {
   position: absolute;
   bottom: calc(100% + 10px);
   left: 50%;
@@ -471,9 +462,6 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-.menu .menu-text {
-  justify-content: flex-start;
 }
 .toggle {
   display: flex;
@@ -568,12 +556,16 @@
 .scene-ov.open .col {
   pointer-events: auto;
 }
+/* scrolls when the section is longer than the column, without a scrollbar */
 .scene-ov .col-body {
   flex: 1;
   overflow: auto;
   padding-right: 12px;
   overscroll-behavior: contain;
-  scrollbar-width: thin;
+  scrollbar-width: none;
+}
+.scene-ov .col-body::-webkit-scrollbar {
+  display: none;
 }
 .scene-ov .panel h2 {
   font-size: 40px;
@@ -622,11 +614,6 @@
   opacity: 1;
   transform: none;
 }
-/* the attendant moves to the right while a scene's column is on the left */
-html:has(.scene-ov.open) .ask {
-  left: auto;
-  right: 16px;
-}
 /* below 1200 px there is no room for both: with Ask open the column folds to its kicker and title */
 @media (max-width: 1200px) {
   html:has(.ask.open) .scene-ov .panel > :nth-child(n + 3),
@@ -667,7 +654,7 @@ html:has(.scene-ov.open) .ask {
   height: 8px;
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 0 0 3px rgb(167 139 250 / 0.45);
+  box-shadow: 0 0 0 3px rgb(247 168 196 / 0.5);
 }
 .cap .stem {
   position: absolute;
@@ -697,7 +684,7 @@ html:has(.scene-ov.open) .ask {
 /* Contact's captions are its content: bigger chips that read as links */
 .caps.content .chip-c {
   padding: 10px 14px;
-  border-color: rgb(167 139 250 / 0.55);
+  border-color: rgb(247 168 196 / 0.6);
 }
 .caps.content .chip-c b {
   font-size: 24px;
@@ -708,8 +695,8 @@ html:has(.scene-ov.open) .ask {
 }
 .caps.content a.chip-c:hover,
 .caps.content a.chip-c:focus-visible {
-  background: rgb(91 63 209 / 0.85);
-  border-color: rgb(196 181 253);
+  background: rgb(194 53 107 / 0.85);
+  border-color: rgb(251 207 222);
 }
 /* on a phone, Contact's links sit in a grid along the bottom, above the stop buttons, instead of on the signposts */
 .caps.docked {
@@ -752,7 +739,7 @@ html:has(.scene-ov.open) .ask {
   pointer-events: auto;
 }
 .cap a.chip-c:hover {
-  border-color: rgb(167 139 250);
+  border-color: rgb(247 168 196);
 }
 .cap .chip-c b {
   font-family: var(--font-serif), Georgia, serif;
@@ -771,40 +758,96 @@ html:has(.scene-ov.open) .ask {
   text-overflow: ellipsis;
 }
 
-.mon-card {
+/* a landmark's view, with no card: the way back where the stop buttons stand, and bottom centre the landmark's name
+   with the events' lights as stops along a line, straight on the scene like the line map */
+.mon-back {
   position: fixed;
-  right: 16px;
+  left: 32px;
   bottom: 16px;
-  z-index: 11;
-  width: min(400px, calc(100% - 32px));
-  padding: 20px;
-  border-radius: 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  z-index: 12;
 }
-.mon-card h2 {
-  margin: 0;
-  font-size: 30px;
-  line-height: 1.1;
-}
-.mon-card .lit {
-  margin: 0;
-  color: rgb(var(--fg-2));
-  font-size: 14px;
-}
-.mon-card .row {
+.mon-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  z-index: 12;
+  transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
+  gap: 20px;
 }
-.hint-inline {
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: rgb(var(--muted));
+.mon-name {
+  margin: 0;
+  font-size: 26px;
+  line-height: 1;
+  white-space: nowrap;
+  color: #fff;
+  text-shadow:
+    0 1px 3px rgb(0 0 0 / 0.6),
+    0 0 14px rgb(0 0 0 / 0.35);
+}
+.mon-events {
+  position: relative;
+  display: flex;
+  gap: 6px;
+}
+.mon-events .rail {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  top: 50%;
+  height: 2px;
+  margin-top: -1px;
+  border-radius: 2px;
+  background: rgb(255 255 255 / 0.9);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.45);
+}
+.mon-events .ev {
+  position: relative;
+  width: 28px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  padding: 0;
+  background: none;
+}
+.mon-events .ev i {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.45);
+  transition: transform 0.2s;
+}
+.mon-events .ev:hover i {
+  transform: scale(1.2);
+}
+.mon-events .ev[aria-pressed="true"] i {
+  width: 20px;
+  height: 20px;
+  box-shadow:
+    0 0 0 4px rgb(255 255 255 / 0.35),
+    0 1px 3px rgb(0 0 0 / 0.45);
+}
+.mon-events .ev:hover .tip,
+.mon-events .ev:focus-visible .tip,
+.mon-events .ev[aria-pressed="true"] .tip {
+  opacity: 1;
+}
+/* the lit event's name gives way to the one under the pointer */
+.mon-events:hover .ev[aria-pressed="true"]:not(:hover) .tip {
+  opacity: 0;
+}
+/* on a narrower desktop, centred in the room between the way back and the chat button */
+@media (max-width: 1100px) {
+  .mon-bar {
+    left: 232px;
+    right: 80px;
+    transform: none;
+    justify-content: center;
+  }
 }
 .chips {
   display: flex;
@@ -827,8 +870,8 @@ html:has(.scene-ov.open) .ask {
   border-color: rgb(var(--accent));
 }
 .chip-btn[aria-pressed="true"] {
-  border-color: rgb(var(--accent));
-  background: rgb(var(--accent) / 0.16);
+  border-color: rgb(var(--accent-text) / 0.6);
+  background: rgb(var(--accent) / 0.3);
   color: rgb(var(--fg));
 }
 .chip-btn i {
@@ -838,13 +881,35 @@ html:has(.scene-ov.open) .ask {
   flex: none;
 }
 
+/* the attendant's chat button, bottom right in the row of the stop buttons and the line map */
+.ask-fab {
+  position: fixed;
+  right: 16px;
+  bottom: 12px;
+  z-index: 12;
+  width: 48px;
+  height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(var(--accent));
+  color: rgb(var(--accent-ink));
+  box-shadow: 0 8px 22px -8px rgb(0 0 0 / 0.55);
+  transition: transform 0.15s;
+}
+.ask-fab:hover {
+  transform: scale(1.06);
+}
+/* the attendant's panel opens above its button */
 .ask {
   position: fixed;
-  left: 16px;
-  bottom: 16px;
+  right: 16px;
+  bottom: 72px;
   z-index: 13;
   width: min(410px, calc(100% - 32px));
-  height: min(600px, calc(100dvh - 96px));
+  height: min(600px, calc(100dvh - 144px));
   display: flex;
   flex-direction: column;
   border-radius: 18px;
@@ -993,7 +1058,7 @@ html:has(.scene-ov.open) .ask {
   .brand .name {
     font-size: 20px;
   }
-  /* three round icon buttons on the right: Ask, the resume, day and night */
+  /* two round icon buttons on the right: Resume (the text version), day and night */
   .top .right {
     gap: 8px;
   }
@@ -1088,12 +1153,43 @@ html:has(.scene-ov.open) .ask {
   .cap .chip-c span {
     max-width: 140px;
   }
-  .mon-card {
+  /* a landmark's view: the way back and the events' line share the bottom row, the name stands above them */
+  .mon-back {
+    left: 12px;
+    bottom: calc(max(env(safe-area-inset-bottom), 8px) + 18px);
+    padding: 0 12px;
+  }
+  .mon-back .long {
+    display: none;
+  }
+  .mon-bar {
+    left: 12px;
+    right: 12px;
+    bottom: calc(max(env(safe-area-inset-bottom), 8px) + 18px);
+    flex-direction: column;
+    align-items: stretch;
+    gap: 40px;
+    pointer-events: none;
+  }
+  .mon-bar > * {
+    pointer-events: auto;
+  }
+  .mon-name {
+    align-self: center;
+    font-size: 24px;
+  }
+  .mon-events {
+    align-self: flex-end;
+    gap: 4px;
+  }
+  .mon-events .ev {
+    width: 26px;
+  }
+  /* the last stop sits at the screen's edge: its name hangs left of it */
+  .mon-events .ev:last-child .tip {
+    left: auto;
     right: 0;
-    bottom: 0;
-    width: 100%;
-    border-radius: 18px 18px 0 0;
-    padding-bottom: max(env(safe-area-inset-bottom), 16px);
+    transform: none;
   }
   .ask {
     left: 0;
@@ -1102,6 +1198,24 @@ html:has(.scene-ov.open) .ask {
     width: 100%;
     height: min(78dvh, 640px);
     border-radius: 18px 18px 0 0;
+  }
+  /* the chat button stands above the stop buttons, and above Contact's links when they are up; it steps aside while a
+     scene's sheet or a landmark's view is up */
+  .ask-fab {
+    right: 12px;
+    bottom: calc(max(env(safe-area-inset-bottom), 8px) + 70px);
+    width: 44px;
+    height: 44px;
+  }
+  html:has(.caps.docked .cap.on) .ask-fab {
+    bottom: calc(max(env(safe-area-inset-bottom), 8px) + 252px);
+  }
+  html:has(.scene-ov.open) .ask-fab,
+  html:has(.mon-bar) .ask-fab {
+    display: none;
+  }
+  .map-credit {
+    right: 10px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -1146,7 +1260,7 @@ html:has(.scene-ov.open) .ask {
 /* the map data's credit, bottom-right, as small as it may be and still be read */
 .map-credit {
   position: fixed;
-  right: 10px;
+  right: 76px;
   bottom: 6px;
   z-index: 8;
   font-family: var(--font-mono), ui-monospace, monospace;

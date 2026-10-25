@@ -48,8 +48,9 @@ function blendFor(from: Mode, to: Mode): number {
 }
 
 /**
- * Chase (360° orbit and zoom around the train), the cab and the monument view. The chase keeps one pose whether the
- * train runs or stands at a stop, so arriving, leaving or ending a scene never moves the camera. The chase and cab
+ * Chase (360° orbit and zoom around the train), the cab and the monument view. The chase keeps its distance and height
+ * whether the train runs or stands at a stop, so arriving, leaving or ending a scene never zooms; while a stop's scene
+ * is on it turns slowly round the standing train, and swings back behind it once the train moves off. The chase and cab
  * poses are damped as offsets from the lead car, so there is no lag at speed; a change of mode blends from a snapshot
  * of the last pose. Last come the constraints: above the ground, out of building boxes (rise fast, settle slowly) and
  * clear of the landmarks the view does not own. A view offset keeps the train clear of the scene overlay.
@@ -131,6 +132,9 @@ export function CameraRig() {
       // look down the line ahead of the train; as the visitor turns the view to the side or the front, back to the train
       const ahead = c.ahead * Math.max(0, Math.cos(sim.orbit.yaw));
       wantLook.copy(head).addScaledVector(fA.t, ahead * dir).addScaledVector(UP, 1.6);
+      // standing at a stop with its scene on, the view turns slowly round the train
+      const ph = sim.film.phase;
+      if ((ph === "establish" || ph === "hold") && Math.abs(sim.v) < 0.5 && !reduced && !sim.dragging) sim.orbit.yaw += real * 0.025;
       // the view swings back behind the train after 3 s without input, once it is moving; the height and distance a
       // visitor chose stay as they are
       if (!sim.dragging && !sim.held) {
