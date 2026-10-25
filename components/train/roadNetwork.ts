@@ -8,6 +8,7 @@
  */
 import { TRENCH } from "./constants";
 import { BROADWAY_LINE, BROADWAY_PORTAL, cutAxis, inRailCut, MILL_LINE, profileAt } from "./rail";
+import { onPeninsula } from "./buildings/eras";
 import { HEROES } from "./buildings/heroes";
 import { LANDUSE } from "./landuseData";
 import { inSetZone } from "./sets/zones";
@@ -21,6 +22,12 @@ import { frameAt, LEN, lowAt, makeFrame } from "./track";
 export type RoadClass = 0 | 1 | 2 | 3;
 /** Half-width with the sidewalks, per class (motorway, arterial, collector, local), as the ride has always drawn them. */
 export const HALF = [4.2, 3.44, 2.9, 2.41];
+/**
+ * On the downtown peninsula (downtown, the West End, Yaletown) the streets are drawn narrower, their sidewalks as wide
+ * (a lane less on a two-way arterial): the blocks between them are bigger, and the city fills them in (city.ts). The
+ * motorways and the bridges keep their width.
+ */
+export const HALF_PENINSULA = [4.2, 2.75, 2.3, 1.95];
 /** Sidewalk width inside that half-width (none beside a motorway). */
 export const WALK = [0, 0.85, 0.8, 0.7];
 
@@ -28,7 +35,13 @@ export type REdge = {
   a: number;
   b: number;
   cls: RoadClass;
+  /** Half-width as drawn (and driven, walked and planted). */
   half: number;
+  /**
+   * Half-width the city was laid out against (HALF): its lots, its bus stops and its hidden stretches are where they
+   * were before the peninsula's streets were drawn narrower, so none of them moved.
+   */
+  lay: number;
   /** 1 one-way from a to b, -1 from b to a, 0 both ways. */
   oneway: -1 | 0 | 1;
   median: boolean;
@@ -144,16 +157,22 @@ export function roads(): Roads {
     const n = pts.length / 2;
     const cum = new Float32Array(n);
     for (let i = 1; i < n; i++) cum[i] = cum[i - 1] + Math.hypot(pts[i * 2] - pts[i * 2 - 2], pts[i * 2 + 1] - pts[i * 2 - 1]);
+    const bridge = !!((f >> 5) & 1);
+    // the peninsula's streets narrower, by where the street's middle is
+    const mid = Math.max(0, cum.findIndex((c) => c >= cum[n - 1] / 2));
+    const [mx, mz] = [pts[mid * 2], pts[mid * 2 + 1]];
+    const half = !bridge && onPeninsula(mx, mz) ? HALF_PENINSULA[cls] : HALF[cls];
     edges.push({
       a,
       b,
       cls,
-      half: HALF[cls],
+      half,
+      lay: HALF[cls],
       oneway: ow === 1 ? 1 : ow === 2 ? -1 : 0,
       median: !!((f >> 4) & 1),
-      bridge: !!((f >> 5) & 1),
+      bridge,
       // no more lanes than the drawn carriageway holds a car's width each (1.25)
-      lanes: Math.max(1, Math.min(((f >> 6) & 3) + 1, Math.floor(((HALF[cls] - WALK[cls]) * (ow ? 2 : 1)) / 1.25))),
+      lanes: Math.max(1, Math.min(((f >> 6) & 3) + 1, Math.floor(((half - WALK[cls]) * (ow ? 2 : 1)) / 1.25))),
       name: names[ni] ?? "",
       pts,
       cum,
@@ -172,7 +191,7 @@ export function roads(): Roads {
   const ped: [number, number][] = [];
   for (let i = 0; i < P.length / 2; i++) ped.push(displace(P[i * 2] / 10, P[i * 2 + 1] / 10));
 
-  // where a road is not drawn, and how high it runs
+  // where a road is not drawn (by its laid-out width, so the stretches hidden stay as they were), and how high it runs
   buildFence();
   const hidden = (x: number, z: number, half: number) =>
     sdfAt(x, z) < 1 || inLandmark(x, z, 0) || inHarbourfront(x, z, half) || inHarbourGreen(x, z, half) || wceDist(x, z) < WCE_HALF + 1 + half || inSetZone(x, z, 0) || HEROES.some((h) => (h.x - x) ** 2 + (h.z - z) ** 2 < (h.r - 1) ** 2) || fenced(x, z, 9 + half);
@@ -183,7 +202,7 @@ export function roads(): Roads {
     for (let i = 0; i + 1 < n; i++) {
       const mx = (e.pts[i * 2] + e.pts[i * 2 + 2]) / 2;
       const mz = (e.pts[i * 2 + 1] + e.pts[i * 2 + 3]) / 2;
-      if (hidden(mx, mz, e.half) || hidden(e.pts[i * 2], e.pts[i * 2 + 1], e.half) || hidden(e.pts[i * 2 + 2], e.pts[i * 2 + 3], e.half) || underHero(mx, mz, e.half)) e.shown[i] = 0;
+      if (hidden(mx, mz, e.lay) || hidden(e.pts[i * 2], e.pts[i * 2 + 1], e.lay) || hidden(e.pts[i * 2 + 2], e.pts[i * 2 + 3], e.lay) || underHero(mx, mz, e.lay)) e.shown[i] = 0;
     }
   });
   // over the Millennium's trench a road crosses on a bridge from one bank's lip to the other's, or ends at its rim
@@ -205,7 +224,7 @@ export function roads(): Roads {
     for (const [e, j] of ends) e.y[j] = y;
   });
   tidyFragments(nodes, edges);
-  // the segment hash, every segment in every cell its swept width touches
+  // the segment hash, every segment in every cell its swept width (as laid out, the wider) touches
   edges.forEach((e, k) => {
     const n = e.pts.length / 2;
     for (let i = 0; i + 1 < n; i++) {
@@ -216,7 +235,7 @@ export function roads(): Roads {
       const s = segEdge.length;
       segEdge.push(k);
       segIdx.push(i);
-      const pad = e.half + 1;
+      const pad = e.lay + 1;
       for (let ci = Math.floor((Math.min(ax, bx) - pad) / H); ci <= Math.floor((Math.max(ax, bx) + pad) / H); ci++) {
         for (let cj = Math.floor((Math.min(az, bz) - pad) / H); cj <= Math.floor((Math.max(az, bz) + pad) / H); cj++) {
           const key = ci * 100000 + cj;
@@ -590,8 +609,11 @@ export function heightAt(e: REdge, s: number): number {
 }
 
 export type Near = { edge: number; seg: number; t: number; d: number; s: number; side: number };
-/** The nearest road centreline within 14 units: edge, segment, parameter, distance, distance along, side (+1 right of a→b). */
-export function roadNear(x: number, z: number, out: Near): Near | null {
+/**
+ * The nearest road centreline within 14 units: edge, segment, parameter, distance, distance along, side (+1 right of
+ * a→b); nearest by kerb, each road at its drawn width (or `laid`, its laid-out width).
+ */
+export function roadNear(x: number, z: number, out: Near, laid = false): Near | null {
   const { edges } = roads();
   const c = hash.get(Math.floor(x / H) * 100000 + Math.floor(z / H));
   if (!c) return null;
@@ -608,7 +630,7 @@ export function roadNear(x: number, z: number, out: Near): Near | null {
     const dx = x - ax - t * ex;
     const dz = z - az - t * ez;
     // measured from the road's edge, so a wide road counts as near as its kerb
-    const d = Math.hypot(dx, dz) - e.half;
+    const d = Math.hypot(dx, dz) - (laid ? e.lay : e.half);
     if (d < best) {
       best = d;
       out.edge = segEdge[si];
@@ -657,6 +679,11 @@ export function roadDist(x: number, z: number): number {
   const n = roadNear(x, z, scratch);
   return n ? n.d - roads().edges[n.edge].half : 99;
 }
+/** As roadDist, each road at the width the city was laid out against (REdge.lay). */
+export function layDist(x: number, z: number): number {
+  const n = roadNear(x, z, scratch, true);
+  return n ? n.d - roads().edges[n.edge].lay : 99;
+}
 export const isRoad = (x: number, z: number, pad = 0): boolean => roadDist(x, z) < pad;
 
 /* ------------------------------------------------------------------ junctions */
@@ -666,9 +693,9 @@ export type Junction = { x: number; z: number; poly: [number, number][]; setback
 /**
  * A junction where three or more drawn roads meet: each road's kerbs run in to meet its neighbours' (the corner where
  * one road's left kerb crosses the next one's right), each road stops short of the junction by its corners' distance,
- * and the junction itself is one asphalt polygon through those points.
+ * and the junction itself is one asphalt polygon through those points. `laid`: as the roads were laid out (REdge.lay).
  */
-export function junction(node: number): Junction | null {
+export function junction(node: number, laid = false): Junction | null {
   const { nodes, edges } = roads();
   const nd = nodes[node];
   const arms: { k: number; ux: number; uz: number; h: number; ang: number; len: number }[] = [];
@@ -680,7 +707,7 @@ export function junction(node: number): Junction | null {
     if (!(atA ? e.shown[0] : e.shown[n - 2])) continue;
     const [x0, z0, x1, z1] = atA ? [e.pts[0], e.pts[1], e.pts[2], e.pts[3]] : [e.pts[n * 2 - 2], e.pts[n * 2 - 1], e.pts[n * 2 - 4], e.pts[n * 2 - 3]];
     const L = Math.hypot(x1 - x0, z1 - z0) || 1;
-    arms.push({ k, ux: (x1 - x0) / L, uz: (z1 - z0) / L, h: e.half, ang: Math.atan2(z1 - z0, x1 - x0), len: e.len });
+    arms.push({ k, ux: (x1 - x0) / L, uz: (z1 - z0) / L, h: laid ? e.lay : e.half, ang: Math.atan2(z1 - z0, x1 - x0), len: e.len });
   }
   if (arms.length < 3) return null;
   arms.sort((a, b) => a.ang - b.ang);

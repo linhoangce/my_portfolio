@@ -4,7 +4,7 @@
  * heritage / current / 2100 buildings, their height ranges (units above the street), how blocks split into lots and
  * whether heritage lots are houses. Pure.
  */
-import { inPark } from "../sites";
+import { inPark, inPoly } from "../sites";
 import { sdfAt } from "../terrain";
 import { cutNear } from "../track";
 
@@ -52,6 +52,22 @@ export function hood(x: number, z: number): Hood {
   if (Math.hypot(x - 860, z - 728) < 65) return "metrotown";
   return "residential";
 }
+
+/** The downtown peninsula, east of English Bay and north of False Creek (Stanley Park is a park: no lots, no streets). */
+const PENINSULA: [number, number][] = [
+  [-340, -130],
+  [70, -130],
+  [70, 185],
+  [-40, 196],
+  [-118, 168],
+  [-186, 122],
+  [-236, 80],
+  [-285, 42],
+  [-340, 24],
+];
+const TOWERS_HOODS = new Set<Hood>(["downtown", "westend", "yaletown"]);
+/** On the downtown peninsula, in its towers' districts (downtown, the West End, Yaletown). */
+export const onPeninsula = (x: number, z: number): boolean => inPoly(PENINSULA, x, z) && TOWERS_HOODS.has(hood(x, z));
 
 export type Zone = {
   /** Share of heritage, current and 2100 buildings. */
