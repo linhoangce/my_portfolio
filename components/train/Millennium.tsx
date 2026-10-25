@@ -6,7 +6,7 @@ import { BoxGeometry, BufferGeometry, CatmullRomCurve3, Color, CylinderGeometry,
 
 import { BALLAST, GAP, LANE, PLATFORM_LEN, SLIM, TRENCH } from "./constants";
 import { GAUGE, mirror, ribbon, SLEEPER, slimRibbon } from "./Guideway";
-import { acrossStation } from "./slim";
+import { acrossStation, bendAlong, bendGeometry } from "./slim";
 import { MILLENNIUM } from "./liveries";
 import { bedProfile, clearHeights, resample } from "./bedLift";
 import { merged, type Part } from "./merge";
@@ -250,17 +250,25 @@ export function Millennium() {
     const ribs: Part[] = [];
     const dark: Part[] = [];
     const blue: Part[] = [];
+    // the Millennium's frame at arc length s
+    const onMill = (s: number, out: Frame) => {
+      const u = Math.min(1, Math.max(0, s / MILL_LINE.len));
+      MILL_LINE.curve.getPointAt(u, out.p);
+      MILL_LINE.curve.getTangentAt(u, out.t).normalize();
+      out.r.crossVectors(out.t, UP).normalize();
+    };
     MILL_LINE.stationS.forEach((ss, k) => {
       const st = MILL_LINE.stations[k];
       const fr = framesOf(MILL_LINE, ss, ss + 0.5, 1)[0];
       const tH = fr.t.clone().setY(0).normalize();
+      // the station's frame bent along the track (slim.ts), so on a curve its platforms keep their distance from the rails
+      const bend = bendAlong(onMill, ss, 24);
       // world point of local (x left of travel, y up from the deck, z ahead)
-      const W = (x: number, y: number, z: number) => fr.p.clone().addScaledVector(fr.r, -x).addScaledVector(tH, z).addScaledVector(UP, y);
-      const put = (list: Part[], geo: BufferGeometry, x: number, y: number, z: number) => {
-        const w = W(x, y, z);
-        geo.rotateY(Math.atan2(tH.x, tH.z));
-        list.push({ geo, position: at(w.x, w.y, w.z) });
+      const W = (x: number, y: number, z: number) => {
+        const [wx, wz] = bend.point(x, z);
+        return new Vector3(wx, fr.p.y + y, wz);
       };
+      const put = (list: Part[], geo: BufferGeometry, x: number, y: number, z: number) => list.push({ geo: bendGeometry(geo.translate(x, y, z), bend, fr.p.y) });
       const drop = (x: number, z: number) => {
         const w = W(x, 0, z);
         return fr.p.y - groundAt(w.x, w.z);

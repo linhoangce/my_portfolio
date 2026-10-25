@@ -28,6 +28,7 @@ import { SET_SIDE, toStation } from "./sets/zones";
 import { LANDMARKS } from "./sites";
 import { groundAt, sdfAt } from "./terrain";
 import { frameAt, makeFrame, stationS } from "./track";
+import { bendAlong } from "./slim";
 import { nearWce } from "./wce";
 
 /** The stair's slope (rise over run), its width and its centre's distance out from the track; the lift beside it. */
@@ -66,13 +67,11 @@ const STATION_NEAR: [number, number][] = stationS.map((s) => {
   frameAt(s, f);
   return [f.p.x, f.p.z];
 });
+/** Each station's frame bent along its track (slim.ts), as Stations.tsx draws it. */
+const BENDS = stationS.map((s) => bendAlong((t, o) => frameAt(t, o), s));
 /** Station i's local (x, z) in the world. */
 export function stationPoint(i: number, x: number, z: number): [number, number] {
-  frameAt(stationS[i], f);
-  const tx = f.t.x;
-  const tz = f.t.z;
-  const L = Math.hypot(tx, tz) || 1;
-  return [f.p.x - f.r.x * x + (tx / L) * z, f.p.z - f.r.z * x + (tz / L) * z];
+  return BENDS[i].point(x, z);
 }
 
 /**

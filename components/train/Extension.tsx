@@ -6,7 +6,7 @@ import { BoxGeometry, BufferGeometry, CatmullRomCurve3, CylinderGeometry, Float3
 
 import { CAR, GAP, LANE, SLIM } from "./constants";
 import { ARM_OUT, ARM_TILT, GAUGE, HEDGE, LED_STRIP, mirror, PARAPET, ribbon, SLEEPER, slimRibbon, SOFFIT, TROUGH } from "./Guideway";
-import { acrossStation } from "./slim";
+import { acrossStation, bendAlong, bendGeometry } from "./slim";
 import { EXPO } from "./liveries";
 import { merged, type Part } from "./merge";
 import { isRoad } from "./roadNetwork";
@@ -14,8 +14,6 @@ import { groundAt, RASTER } from "./terrain";
 import { buildExtension, EXT_GAP, EXT_JOIN, type Frame, frameAt, LEN, makeFrame, UP } from "./track";
 import { bogieSpacing, carGeometry } from "./trainGeometry";
 import { useWorld } from "./world";
-
-const at = (v: Vector3): [number, number, number] => [v.x, v.y, v.z];
 
 /**
  * The Expo past the turnback loop (track.ts buildExtension): the line's own white girder with its planters, hedges,
@@ -141,16 +139,21 @@ export function Extension({ heightAt }: { heightAt: (x: number, z: number) => nu
     const roof: Part[] = [];
     const pane: Part[] = [];
     const edge: Part[] = [];
+    const onExt = (s: number, out: Frame) => {
+      const u = Math.min(1, Math.max(0, s / ext.L));
+      ext.curve.getPointAt(u, out.p);
+      ext.curve.getTangentAt(u, out.t).normalize();
+      out.r.crossVectors(out.t, UP).normalize();
+    };
     for (const st of ext.stationT) {
       const f = ext.samples[Math.round((st / ext.L) * (n - 1))];
-      const tH = f.t.clone().setY(0).normalize();
-      const ry = Math.atan2(tH.x, tH.z);
-      const W = (x: number, y: number, z: number) => f.p.clone().addScaledVector(f.r, x).addScaledVector(tH, z).addScaledVector(UP, y);
-      const put = (list: Part[], geo: BufferGeometry, x: number, y: number, z: number) => list.push({ geo: geo.rotateY(ry), position: at(W(x, y, z)) });
-      // a box from x0 to x1 across (the station's first numbers), drawn across as the line's own stations are (slim.ts)
+      // the station's frame bent along the track (slim.ts), x left of travel
+      const bend = bendAlong(onExt, st, 24);
+      // a box from x0 to x1 across (the station's first numbers, + right of travel here), drawn across as the line's own
+      // stations are and bent with the track
       const across = (list: Part[], x0: number, x1: number, h: number, len: number, y: number, z: number) => {
         const [a, b] = [acrossStation(x0), acrossStation(x1)];
-        put(list, new BoxGeometry(Math.abs(b - a), h, len), (a + b) / 2, y, z);
+        list.push({ geo: bendGeometry(new BoxGeometry(Math.abs(b - a), h, len).translate(-(a + b) / 2, y, z), bend, f.p.y) });
       };
       for (const side of [1, -1]) {
         across(plat, side * 6.3, side * 11.5, 0.9, 26, 0.95, 0);

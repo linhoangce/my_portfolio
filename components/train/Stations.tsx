@@ -33,7 +33,7 @@ import { accessParts } from "./accessKit";
 import { CANOPY, canopyParts, FIN, turbineBlades } from "./canopies";
 import { inRailCut } from "./rail";
 import { getCityData } from "./cityData";
-import { acrossStation, slimStation } from "./slim";
+import { acrossStation, bendAlong, bendGeometry, slimStation } from "./slim";
 import { setBridges, stationAccess, TOWER } from "./stationAccess";
 import { isRoad } from "./roadNetwork";
 import { frameAt, groundAt, makeFrame, stationS } from "./track";
@@ -158,11 +158,16 @@ export function Stations() {
     const groups = stations.map((st, i) => {
       frameAt(stationS[i], f);
       const g = new Group();
-      g.position.copy(f.p);
-      const tH = f.t.clone().setY(0).normalize();
-      g.lookAt(f.p.clone().add(tH));
-      // local +x = left of the track, +z = ahead; platforms at x ±8.9, top at y 1.4
-      const local = (x: number, z: number) => f.p.clone().addScaledVector(f.r, -x).addScaledVector(tH, z);
+      // local +x = left of the track, +z = ahead; platforms at x ±8.9, top at y 1.4; the frame bent along the track, so
+      // on a curve the platforms keep their distance from the rails (slim.ts), everything built in it baked into place
+      const bend = bendAlong((s, o) => frameAt(s, o), stationS[i]);
+      const deckY = f.p.y;
+      const local = (x: number, z: number) => {
+        const [wx, wz] = bend.point(x, z);
+        return new Vector3(wx, deckY, wz);
+      };
+      const place = (geo: BufferGeometry) => bendGeometry(geo, bend, deckY);
+      const turnAt = (z: number) => new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), bend.heading(z));
       const dropTo = (x: number, z: number) => {
         const w = local(x, z);
         return f.p.y - groundAt(w.x, w.z);
@@ -229,8 +234,10 @@ export function Stations() {
       steel.push(...roof.steel);
       painted.push(...roof.painted);
       if (roof.fins.length) {
-        g.updateMatrixWorld();
-        for (const c of roof.fins) fins.push({ p: c.clone().setX(acrossStation(c.x)).applyMatrix4(g.matrixWorld), q: g.quaternion.clone(), t: tH.clone() });
+        for (const c of roof.fins) {
+          const h = bend.heading(c.z);
+          fins.push({ p: local(acrossStation(c.x), c.z).setY(deckY + c.y), q: turnAt(c.z), t: new Vector3(Math.sin(h), 0, Math.cos(h)) });
+        }
       }
       // a pair of small wind turbines on masts beside the left platform, turning in the wind off the inlet, clear of
       // the ways in (the interchange has none)
@@ -247,8 +254,7 @@ export function Stations() {
           const w = local(tx, tz);
           if (isRoad(w.x, w.z, 1) || inRailCut(w.x, w.z, 1)) continue;
           steel.push({ geo: new CylinderGeometry(0.09, 0.14, 5.4 - gy, 6), position: at(tx, (5.4 + gy) / 2, tz) });
-          g.updateMatrixWorld();
-          rotors.push({ p: new Vector3(tx, 5.4, tz).applyMatrix4(g.matrixWorld), q: g.quaternion.clone(), a: i + dz });
+          rotors.push({ p: local(tx, tz).setY(deckY + 5.4), q: turnAt(tz), a: i + dz });
         }
       }
       const edgeMat = new MeshStandardMaterial({ color: 0x1b1530, emissive: 0xa78bfa, emissiveIntensity: 0.7 });
@@ -270,7 +276,7 @@ export function Stations() {
       for (const [parts, mat, cast] of meshes) {
         if (!parts.length) continue;
         // drawn across the track as the slimmer guideway and trains (slim.ts)
-        const m = new Mesh(slimStation(merged(parts)), mat);
+        const m = new Mesh(place(slimStation(merged(parts))), mat);
         m.castShadow = cast && !lowEnd;
         m.receiveShadow = !([mats.pane, mats.lamp, lanternMat, pvGlassMat] as Material[]).includes(mat);
         g.add(m);
@@ -279,10 +285,12 @@ export function Stations() {
       const label = doorLabel(st, fonts);
       labels.push({ canvas: label.canvas, texture: label.texture, index: i });
       const labelMesh = new Mesh(
-        slimStation(
+        place(
+          slimStation(
           merged(
           // 1024 × 60 px, so 8 units wide is 0.47 tall: a strip just under the doors' light line
-            [1, -1].map((side) => ({ geo: new PlaneGeometry(8, 0.47), position: at(side * 6.5, 3.58, side * -4), rotation: [0, -side * (Math.PI / 2), 0] as [number, number, number] })),
+              [1, -1].map((side) => ({ geo: new PlaneGeometry(8, 0.47), position: at(side * 6.5, 3.58, side * -4), rotation: [0, -side * (Math.PI / 2), 0] as [number, number, number] })),
+            ),
           ),
         ),
         new MeshBasicMaterial({ map: label.texture, toneMapped: false }),
