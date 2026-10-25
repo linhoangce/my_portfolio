@@ -1,17 +1,13 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
-import { BoxGeometry, BufferAttribute, BufferGeometry, CatmullRomCurve3, CylinderGeometry, InstancedMesh, Matrix4, MeshStandardMaterial, Object3D, Quaternion, TubeGeometry, Vector3 } from "three";
+import { BoxGeometry, BufferAttribute, BufferGeometry, CatmullRomCurve3, CylinderGeometry, InstancedMesh, Matrix4, Quaternion, TubeGeometry, Vector3 } from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
-import { CAR, CROSS_LEN, GAP, LANE, PLATFORM_LEN } from "./constants";
-import { EXPO } from "./liveries";
-import { merged } from "./merge";
+import { CROSS_LEN, LANE, PLATFORM_LEN } from "./constants";
 import { inRailCut, railNear } from "./rail";
 import { isRoad } from "./roadNetwork";
-import { paint } from "./shapes";
 import { CROSSOVERS, EXT_JOIN, frameAt, type Frame, groundAt, LEN, LOOPS, makeFrame, NEAR_LOOP, SAMPLES, samples, smoothstep01, stationS, UP } from "./track";
-import { carGeometry } from "./trainGeometry";
 import { useWorld } from "./world";
 import { nearWce } from "./wce";
 
@@ -159,8 +155,6 @@ export function pierAt(i: number, f: Frame): { gy: number; topY: number; colTop:
 export function Guideway() {
   const world = useWorld();
   const { mats, lowEnd } = world;
-  const parkedMat = useMemo(() => new MeshStandardMaterial({ vertexColors: true, roughness: 0.4, metalness: 0.2 }), []);
-  useEffect(() => () => parkedMat.dispose(), [parkedMat]);
 
   const built = useMemo(() => {
     // every frame, or every other on low-end devices (the curve is smooth enough at twice the spacing)
@@ -256,28 +250,6 @@ export function Guideway() {
     const paneParts: BufferGeometry[] = [];
     const platParts: BufferGeometry[] = [];
     const lampParts: BufferGeometry[] = [];
-    const layover: { body: BufferGeometry[]; glass: BufferGeometry[]; line: BufferGeometry[] } = { body: [], glass: [], line: [] };
-    const cars: { geo: ReturnType<typeof carGeometry> | null } = { geo: null };
-    // a train of three standing out of service on a track (its frames), its middle car `at` along it (by length; by
-    // default its middle), a nose at each end
-    const park = (path: Frame[], at?: number) => {
-      const geo = (cars.geo ??= carGeometry(CAR, true, false, lowEnd ? 14 : 22, EXPO));
-      const cum = [0];
-      for (let k = 1; k < path.length; k++) cum.push(cum[k - 1] + path[k].p.distanceTo(path[k - 1].p));
-      const mid = at ?? cum[cum.length - 1] / 2;
-      const dummy = new Object3D();
-      for (let k = -1; k <= 1; k++) {
-        const j = cum.findIndex((c) => c >= mid + k * (CAR + GAP));
-        const f = path[j < 0 ? path.length - 1 : j];
-        dummy.position.copy(f.p).addScaledVector(UP, 0.98);
-        dummy.lookAt(dummy.position.clone().add(f.t));
-        if (k === 1) dummy.rotateY(Math.PI);
-        dummy.updateMatrix();
-        layover.body.push(geo.body.clone().applyMatrix4(dummy.matrix));
-        layover.glass.push(geo.glass.clone().applyMatrix4(dummy.matrix));
-        layover.line.push(geo.line.clone().applyMatrix4(dummy.matrix));
-      }
-    };
     for (const loop of [LOOPS.near, LOOPS.far]) {
       const fr = loop.samples;
       const n = fr.length;
@@ -287,7 +259,7 @@ export function Guideway() {
       const stop0 = loop.L / 2 - (PLATFORM_LEN / 2 - 1.5);
       const stop1 = loop.L / 2 + (PLATFORM_LEN / 2 - 1.5);
       // at Waterfront the loop is double-tracked round its circle: a layover track inside the running one, where a
-      // train waits out of service, easing away from it and back over the circle's two halves (so it bends about
+      // train can wait out of service, easing away from it and back over the circle's two halves (so it bends about
       // as tightly all the way round); its deck widens inward to carry it
       const [lcx, lcz] = NEAR_LOOP.c;
       const onArc = loop.end === "near" ? fr.map((f) => Math.abs(Math.hypot(f.p.x - lcx, f.p.z - lcz) - NEAR_LOOP.r) < 0.1) : [];
@@ -386,42 +358,27 @@ export function Guideway() {
           const pts = lay.map((f) => f.p.clone().addScaledVector(f.r, side * 0.72).addScaledVector(UP, 0.98));
           tubes.push(new TubeGeometry(new CatmullRomCurve3(pts, false, "catmullrom", 0), Math.ceil(pts.length * (lowEnd ? 0.7 : 1.4)), 0.07, 4, false));
         }
-        // the train standing on it, at the middle of the circle
-        park(lay);
       }
       if (A) {
         // the approach: the line's deck carried on round the curve from its end to where its tracks part, the
-        // running tracks side by side down its middle; on the curve's inside a passing siding, off the inner running
-        // track by a switch at the line's end and back on by one where the tracks part (three tracks abreast
-        // between), a spare train standing on it; the deck widens on that side as it stands out (the curve's outside
-        // keeps clear of the blocks there), on round columns of its own. The siding eases out over the whole curve,
-        // so it bends about as tightly all the way round it, and back in on the straight.
+        // running tracks side by side down its middle, on round columns of its own
         const cum = [0];
         for (let k = 1; k < A.length; k++) cum.push(cum[k - 1] + A[k].p.distanceTo(A[k - 1].p));
         const La = cum[cum.length - 1];
-        const SIDING = 8.2;
         const EASE = 19;
-        // the inside: the way the curve bends from its start
-        const mid = A[Math.floor(A.length / 2)];
-        const inside = Math.sign((mid.p.x - A[0].p.x) * A[0].r.x + (mid.p.z - A[0].p.z) * A[0].r.z) || -1;
-        // where the curve ends: the first frame heading as the last does
-        const bent = cum[A.findIndex((f) => f.t.dot(A[A.length - 1].t) > 0.99999)];
-        const away = cum.map((c) => Math.min(smoothstep01(c / bent), ease((La - c) / EASE)));
         // the deck's edges: the line's where it leaves the line's end, the girders' outer ones (LANE + 3.6) where its
-        // tracks part, the inside standing out with the siding; toward the parting its sides take the girders' shape
-        // too (PARTED), so the one runs on into the other
+        // tracks part; toward the parting its sides take the girders' shape too (PARTED), so the one runs on into the
+        // other
         const parting = cum.map((c) => ease(1 - (La - c) / EASE));
         const V = parting.map((u) => 6.3 - (6.3 - LANE - 3.6) * u);
-        const W = away.map((u, k) => V[k] + (SIDING - LANE) * u);
-        const edgeOf = (l: number, k: number) => (Math.sign(l) === inside ? W[k] : V[k]);
-        // the line's own sections, the inside pushed out to the widened edge
-        const out = (prof: [number, number][], k: number): [number, number][] => prof.map(([l, v]) => [l + Math.sign(l) * (edgeOf(l, k) - 6.3), v]);
+        // the line's own sections, their edges brought in to the deck's
+        const out = (prof: [number, number][], k: number): [number, number][] => prof.map(([l, v]) => [l + Math.sign(l) * (V[k] - 6.3), v]);
         loopDeck.push(
           ribbon(
             (k) =>
               SOFFIT.map(([l, v], j): [number, number] => {
                 const [gl, gv] = PARTED[j];
-                const a = (l * edgeOf(l, k)) / 6.3;
+                const a = (l * V[k]) / 6.3;
                 return [a + (gl - a) * parting[k], v + (gv - v) * parting[k]];
               }),
             A,
@@ -443,8 +400,8 @@ export function Guideway() {
         loopBed.push(
           ribbon(
             (k) => [
-              [edgeOf(1, k) - 0.28, 0.955],
-              [-(edgeOf(-1, k) - 0.28), 0.955],
+              [V[k] - 0.28, 0.955],
+              [-(V[k] - 0.28), 0.955],
             ],
             A,
             false,
@@ -461,45 +418,17 @@ export function Guideway() {
             A,
           ),
         );
-        {
-          const path = A.flatMap((f, k): Frame[] => (away[k] > 0 ? [{ p: f.p.clone().addScaledVector(f.r, inside * (LANE + (SIDING - LANE) * away[k])), t: f.t, r: f.r }] : []));
-          loopSleepers.push(ribbon([[1.3, 0.96], [-1.3, 0.96]], path, false, 0.65));
-          loopPlates.push(
-            ribbon(
-              [
-                [-0.3, 0.96],
-                [0.3, 0.96],
-                [0.3, 1.02],
-                [-0.3, 1.02],
-              ],
-              path,
-            ),
-          );
-          for (const rail of [-1, 1]) {
-            const pts = path.map((f) => f.p.clone().addScaledVector(f.r, rail * 0.72).addScaledVector(UP, 0.98));
-            tubes.push(new TubeGeometry(new CatmullRomCurve3(pts, false, "catmullrom", 0), Math.ceil(pts.length * (lowEnd ? 0.7 : 1.4)), 0.07, 4, false));
-          }
-          // the spare train in the middle of where the siding stands clear of the running track (two thirds out)
-          const clear = cum.filter((_, k) => away[k] >= 2 / 3);
-          park(path, (clear[0] + clear[clear.length - 1]) / 2 - cum[away.findIndex((u) => u > 0)]);
-        }
-        // round columns every 14 units, a second under the siding where it stands out, none on a street or the other
-        // rail
+        // round columns every 14 units, none on a street or the other rail
         for (let c = 7; c < La - 3; c += 14) {
-          const k = cum.findIndex((v) => v >= c);
-          const f = A[k];
-          for (const lat of W[k] > 8 ? [0, inside * (W[k] - 3)] : [0]) {
-            const x = f.p.x + f.r.x * lat;
-            const z = f.p.z + f.r.z * lat;
-            if (isRoad(x, z, 1) || nearWce(x, z, -2) || railNear(x, z, 2)) continue;
-            const gy = groundAt(x, z);
-            const h = f.p.y - 1.9 - gy;
-            if (h < 0.5) continue;
-            const col = new CylinderGeometry(0.85, 1.2, h + 0.3, lowEnd ? 8 : 12);
-            col.deleteAttribute("uv");
-            col.translate(x, gy - 0.3 + (h + 0.3) / 2, z);
-            loopDeck.push(col);
-          }
+          const { x, z } = A[cum.findIndex((v) => v >= c)].p;
+          if (isRoad(x, z, 1) || nearWce(x, z, -2) || railNear(x, z, 2)) continue;
+          const gy = groundAt(x, z);
+          const h = A[0].p.y - 1.9 - gy;
+          if (h < 0.5) continue;
+          const col = new CylinderGeometry(0.85, 1.2, h + 0.3, lowEnd ? 8 : 12);
+          col.deleteAttribute("uv");
+          col.translate(x, gy - 0.3 + (h + 0.3) / 2, z);
+          loopDeck.push(col);
         }
       }
       const trough: [number, number][] = [
@@ -607,7 +536,6 @@ export function Guideway() {
         canopyParts.push(rib);
       }
     }
-    if (cars.geo) for (const g of [cars.geo.body, cars.geo.glass, cars.geo.line]) g.dispose();
     const rails = mergeAll(tubes);
 
     const m4 = new Matrix4();
@@ -655,21 +583,12 @@ export function Guideway() {
     const panes = mergeAll(paneParts);
     const plats = mergeAll(platParts);
     const lamps = mergeAll(lampParts);
-    // the parked train in one painted mesh: the body in its own colours, smoked glass, the cyan line
-    const parked = layover.body.length
-      ? merged([
-          ...layover.body.map((geo) => ({ geo })),
-          ...layover.glass.map((g) => ({ geo: paint(g, 0x0d1218) })),
-          ...layover.line.map((g) => ({ geo: paint(g, 0x3ddcf5) })),
-        ])
-      : null;
-    return { deck, planters, hedges, bed, sleepers, leds, walk, plates, rails, col, arm, canopy, panes, plats, lamps, parked };
+    return { deck, planters, hedges, bed, sleepers, leds, walk, plates, rails, col, arm, canopy, panes, plats, lamps };
   }, [mats, lowEnd]);
 
   useEffect(
     () => () => {
       for (const g of [built.deck, built.planters, built.hedges, built.bed, built.sleepers, built.leds, built.walk, built.plates, built.rails, built.canopy, built.panes, built.plats, built.lamps]) g.dispose();
-      built.parked?.dispose();
       for (const o of [built.col, built.arm]) {
         o.geometry.dispose();
         o.dispose();
@@ -693,7 +612,6 @@ export function Guideway() {
       <mesh geometry={built.panes} material={mats.pane} />
       <mesh geometry={built.plats} material={mats.plat} receiveShadow />
       <mesh geometry={built.lamps} material={mats.lamp} />
-      {built.parked ? <mesh geometry={built.parked} material={parkedMat} /> : null}
       <primitive object={built.col} />
       <primitive object={built.arm} />
     </>
