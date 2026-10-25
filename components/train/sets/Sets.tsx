@@ -51,7 +51,7 @@ export function Sets() {
     sets.forEach((s, i) => {
       const on = (playing && st.sceneIdx === i) || s.focus.distanceTo(cam) < reach;
       s.group.visible = on;
-      if (on) s.update?.(t);
+      if (on) s.update?.(t, cam);
     });
   });
 

@@ -20,6 +20,7 @@ import {
   Group,
   IcosahedronGeometry,
   LatheGeometry,
+  InstancedBufferAttribute,
   InstancedMesh,
   type Material,
   Matrix4,
@@ -46,6 +47,7 @@ import {
 
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { busNetwork } from "../buses";
+import { PEOPLE_WIDTH } from "../constants";
 import { isRoad } from "../roadNetwork";
 import { moreProjects, roles, stations } from "@/data";
 
@@ -67,7 +69,7 @@ import { along, inCbSquare, lineLength, MARKET_HALF, MARKET_STREET, type Square,
 import { fromStation, MAIN_COLUMN, SET_RECT, SET_SHIFT, SET_SIDE, SET_TREES, STATION_FRAMES, toStation } from "./zones";
 
 type V3 = [number, number, number];
-export type BuiltSet = { group: Group; anchors: Vector3[]; focus: Vector3; update?: (t: number) => void };
+export type BuiltSet = { group: Group; anchors: Vector3[]; focus: Vector3; update?: (t: number, cam: Vector3) => void };
 
 type Ctx = {
   i: number;
@@ -1545,11 +1547,394 @@ function detectionsTexture(): CanvasTexture {
 }
 
 /**
+ * The coast as the room watches it, 1024 × 224, for the video wall: the camera's frame with the detector's boxes over
+ * it and, under it, its thermal channel and the detections' log; three of SAHI's tiles blown up, each round a skiff
+ * too small to find in the whole frame; and the map of Burrard Inlet with the cameras' sites and what they look at.
+ */
+function watchWallTexture(day: CanvasTexture, heat: CanvasTexture, dets: CanvasTexture): CanvasTexture {
+  const fonts = fontOf();
+  const dayC = day.image as HTMLCanvasElement;
+  const heatC = heat.image as HTMLCanvasElement;
+  const detC = dets.image as HTMLCanvasElement;
+  return canvasTex(1024, 224, (g) => {
+    g.fillStyle = "#0b0f14";
+    g.fillRect(0, 0, 1024, 224);
+    const label = (text: string, x: number, y: number, col = "#e8ecef") => {
+      g.font = `600 10px ${fonts.mono}`;
+      g.textBaseline = "top";
+      g.fillStyle = "rgba(11,15,20,0.75)";
+      g.fillRect(x, y, g.measureText(text).width + 8, 13);
+      g.fillStyle = col;
+      g.fillText(text, x + 4, y + 2);
+    };
+    // the whole frame, its boxes over it
+    for (const src of [dayC, detC]) g.drawImage(src, 0, 0, 1024, 256, 8, 8, 512, 128);
+    // its thermal channel, and the log
+    g.drawImage(heatC, 0, 0, 1024, 256, 8, 144, 252, 63);
+    g.fillStyle = "#101820";
+    g.fillRect(268, 144, 252, 72);
+    g.font = `500 10px ${fonts.mono}`;
+    g.textBaseline = "top";
+    const log = [...FEED_BOATS].sort((p, q) => q.score - p.score);
+    log.forEach((b, k) => {
+      g.fillStyle = k % 2 ? "#9fe8b4" : "#3ee86a";
+      g.fillText(`07:42:${String(8 + k).padStart(2, "0")}  boat ${b.score.toFixed(2)}  ${b.kind.padEnd(9)} ${b.kind === "skiff" ? "TILE" : "FRAME"}`, 276, 150 + k * 9.4);
+    });
+    label("DETECTIONS", 268, 207 - 13, "#c4b5fd");
+    // the tiles that found the skiffs, blown up
+    FEED_BOATS.filter((b) => b.kind === "skiff").forEach((b, k) => {
+      const [x0, y0, x1, y1] = boatBox(b);
+      const cx = (x0 + x1) / 2;
+      const cy = (y0 + y1) / 2 - 3;
+      const sw = 84;
+      const sh = 28;
+      for (const src of [dayC, detC]) g.drawImage(src, cx - sw / 2, cy - sh / 2, sw, sh, 528, 8 + k * 70, 192, 64);
+      g.strokeStyle = "#c4b5fd";
+      g.lineWidth = 1.5;
+      g.strokeRect(528.75, 8.75 + k * 70, 190.5, 62.5);
+      label(`TILE ${String(1 + k * 4).padStart(2, "0")} · ${(b.len * 0.8).toFixed(0)} PX`, 532, 12 + k * 70, "#c4b5fd");
+    });
+    // the map: the North Shore along the top, Stanley Park and the downtown peninsula, the south shore and False Creek
+    const mx = 728;
+    const my = 8;
+    const mw = 288;
+    const mh = 208;
+    g.save();
+    g.beginPath();
+    g.rect(mx, my, mw, mh);
+    g.clip();
+    g.fillStyle = "#0b2f47";
+    g.fillRect(mx, my, mw, mh);
+    const land = (pts: [number, number][]) => {
+      g.beginPath();
+      pts.forEach(([u, v], k) => (k ? g.lineTo(mx + u * mw, my + v * mh) : g.moveTo(mx + u * mw, my + v * mh)));
+      g.closePath();
+      g.fillStyle = "#1c2833";
+      g.fill();
+      g.strokeStyle = "rgba(95,216,255,0.6)";
+      g.lineWidth = 1;
+      g.stroke();
+    };
+    land([[0, 0], [1, 0], [1, 0.24], [0.8, 0.27], [0.62, 0.22], [0.42, 0.25], [0.22, 0.2], [0, 0.24]]);
+    land([[0, 0.48], [0.06, 0.38], [0.16, 0.35], [0.24, 0.4], [0.36, 0.42], [0.52, 0.41], [0.66, 0.44], [0.78, 0.43], [1, 0.45], [1, 0.62], [0.6, 0.62], [0.5, 0.66], [0.32, 0.64], [0.2, 0.6], [0, 0.6]]);
+    land([[0, 0.8], [0.3, 0.76], [0.42, 0.72], [0.5, 0.7], [0.62, 0.71], [1, 0.7], [1, 1], [0, 1]]);
+    g.fillStyle = "rgba(95,216,255,0.75)";
+    g.font = `600 9px ${fonts.mono}`;
+    g.textBaseline = "middle";
+    g.fillText("BURRARD INLET", mx + 0.42 * mw, my + 0.32 * mh);
+    g.fillText("ENGLISH BAY", mx + 0.04 * mw, my + 0.7 * mh);
+    g.fillText("FALSE CREEK", mx + 0.56 * mw, my + 0.66 * mh);
+    // the cameras: a mark and a faint cone over the water each looks at
+    for (const [u, v, dir, name] of [
+      [0.14, 0.36, -1.9, "03"],
+      [0.5, 0.41, -1.5, "07"],
+      [0.88, 0.44, -1.7, "11"],
+    ] as const) {
+      const x = mx + u * mw;
+      const y = my + v * mh;
+      g.fillStyle = "rgba(167,139,250,0.22)";
+      g.beginPath();
+      g.moveTo(x, y);
+      g.arc(x, y, 46, dir - 0.45, dir + 0.45);
+      g.closePath();
+      g.fill();
+      g.fillStyle = "#c4b5fd";
+      g.beginPath();
+      g.moveTo(x, y - 5);
+      g.lineTo(x + 5, y + 4);
+      g.lineTo(x - 5, y + 4);
+      g.closePath();
+      g.fill();
+      g.fillText(name, x + 7, y + 3);
+    }
+    g.restore();
+    g.strokeStyle = "#2a3a48";
+    g.lineWidth = 2;
+    g.strokeRect(mx, my, mw, mh);
+    label("COAST · 3 CAMERAS · LIVE", mx + 4, my + mh - 17, "#5fd8ff");
+    label("CAM 07 · BURRARD INLET", 12, 12);
+    label("THERMAL", 12, 148);
+  });
+}
+
+/** The video wall's panes (x0, y0, x1, y1 of its 1024 × 224), in the order the duty officer's frame steps through. */
+const WALL_PANES: [number, number, number, number][] = [
+  [8, 8, 520, 136],
+  [528, 8, 720, 72],
+  [528, 78, 720, 142],
+  [528, 148, 720, 212],
+  [8, 144, 260, 207],
+  [728, 8, 1016, 216],
+];
+/** Boats crossing the map (start and end, as shares of the map's width and height), each at its own pace. */
+const MAP_TRACKS: [number, number, number, number, number][] = [
+  [0.12, 0.31, 0.92, 0.3, 0.012],
+  [0.88, 0.36, 0.18, 0.35, 0.016],
+  [0.58, 0.26, 0.61, 0.39, 0.03],
+  [0.06, 0.66, 0.34, 0.74, 0.02],
+  [0.3, 0.3, 0.55, 0.36, 0.025],
+];
+
+/**
+ * The city's people (world.ts's atlas material) lit by a room's lights as well as the sky: their figure glows a little,
+ * so they read under a roof by day and in a lit room after dark.
+ */
+function indoorPeople(people: MeshStandardMaterial): MeshStandardMaterial {
+  const m = new MeshStandardMaterial({ map: people.map, emissive: 0xffffff, emissiveMap: people.map, emissiveIntensity: 0.5, alphaTest: 0.5, side: DoubleSide, roughness: 1 });
+  m.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader
+      .replace("#include <common>", "#include <common>\nattribute float aCell;")
+      .replace("#include <uv_vertex>", "#include <uv_vertex>\nvec2 cell = vec2(mod(aCell, 4.0), 3.0 - floor(aCell / 4.0));\nvMapUv = (vMapUv + cell) * 0.25;\nvEmissiveMapUv = (vEmissiveMapUv + cell) * 0.25;");
+  };
+  m.customProgramCacheKey = () => "people-atlas-indoor";
+  return m;
+}
+
+/**
+ * Coast Watch's inside, a room two storeys high behind its glass, in the set's frame:
+ * - the video wall across the inside of its wall to the square: the camera's frame with its boxes, its thermal channel,
+ *   the detections' log, the tiles that found the far skiffs blown up, the map of the inlet with the cameras' sites and
+ *   boats moving across it, the duty officer's frame stepping from pane to pane;
+ * - the watch floor before it, dark: three rows of desks facing it, two screens on each, the operators at them, the
+ *   duty officer walking the front; glass between it and the public;
+ * - the public's: the lobby under a gallery along the glass to Broadway, the reception desk by the door from the
+ *   bridge, a stair up at its far end; on the gallery, people at its rail watching the wall, a guide with a group, and
+ *   kiosks where anyone can try the detector on a photo of their own (the Space it runs as); visitors coming in from
+ *   the bridge, along the lobby, up the stair and along the gallery.
+ * The people are the city's own (its atlas, turned to the camera every frame). Returns the per-frame update.
+ */
+function watchInterior(c: Ctx, vc: Material, top: number, WH: number, bridgeA: number, day: CanvasTexture, heat: CanvasTexture, dets: CanvasTexture): (t: number, cam: Vector3) => void {
+  const { mats } = c.world;
+  const H = WATCH;
+  // glass inside the room all but clear, so the room reads through the façade's
+  const glass = new MeshStandardMaterial({ color: 0xd6e6f0, roughness: 0.05, transparent: true, opacity: 0.08, depthWrite: false, side: DoubleSide });
+  const zs = c.L(1, 0, 0)[2];
+  const turn = (f: [number, number]) => Math.atan2(f[1], f[0] * zs);
+  // the gallery along the glass to Broadway, a storey up; under it the lobby
+  const GA = { a0: H.a0 + 0.1, a1: H.a0 + 4.4, l0: H.l0 + 0.1, l1: H.l1 - 0.3, y: top + 3.2 };
+  const gm = (GA.a0 + GA.a1) / 2;
+  const glm = (GA.l0 + GA.l1) / 2;
+  const STAIR = { a0: GA.a1 + 0.1, a1: GA.a1 + 1.3, l0: GA.l1 - 6.3, l1: GA.l1 - 0.2 };
+  // floors: timber in the lobby, dark under the watch floor
+  c.add(vc, paint(new BoxGeometry(GA.l1 - GA.l0, 0.04, GA.a1 - GA.a0), 0xb98a5a), c.L(gm, glm, top + 0.02));
+  c.add(vc, paint(new BoxGeometry(GA.l1 - GA.l0, 0.04, H.a1 - 0.4 - GA.a1), 0x2c3540), c.L((GA.a1 + H.a1 - 0.4) / 2, glm, top + 0.02));
+  // the gallery: its slab, timber floor, glass rail with a timber handrail (open where the stair comes up), its columns
+  c.add(vc, paint(new BoxGeometry(GA.l1 - GA.l0, 0.25, GA.a1 - GA.a0), 0xe9e6df), c.L(gm, glm, GA.y - 0.125));
+  c.add(vc, paint(new BoxGeometry(GA.l1 - GA.l0, 0.04, GA.a1 - GA.a0), 0xb98a5a), c.L(gm, glm, GA.y + 0.02));
+  for (const [r0, r1] of [
+    [GA.l0, STAIR.l0 - 0.2],
+    [STAIR.l0 + 1.6, GA.l1],
+  ]) {
+    c.add(glass, new BoxGeometry(r1 - r0, 0.85, 0.05), c.L(GA.a1, (r0 + r1) / 2, GA.y + 0.43));
+    c.add(mats.timber, new BoxGeometry(r1 - r0, 0.07, 0.12), c.L(GA.a1, (r0 + r1) / 2, GA.y + 0.88));
+  }
+  for (const l of [GA.l0 + 5, GA.l0 + 12, GA.l0 + 19]) c.add(vc, paint(new CylinderGeometry(0.12, 0.12, GA.y - top, 8), 0xf3f4f6), c.L(GA.a1 - 0.2, l, (GA.y + top) / 2));
+  // glass between the lobby and the watch floor, open at the door's end and at the stair
+  const partL0 = H.l0 + 2.6;
+  c.add(glass, new BoxGeometry(STAIR.l0 - 0.1 - partL0, GA.y - 0.25 - top, 0.05), c.L(GA.a1, (partL0 + STAIR.l0 - 0.1) / 2, top + (GA.y - 0.25 - top) / 2));
+  // the stair up to the gallery at the lobby's far end, rising toward the door, glass along its open side
+  const STEPS = 13;
+  const run = (STAIR.l1 - STAIR.l0) / STEPS;
+  for (let k = 0; k < STEPS; k++) {
+    const h = ((k + 1) * (GA.y - top)) / STEPS;
+    c.add(vc, paint(new BoxGeometry(run, h, STAIR.a1 - STAIR.a0), 0xd9d4ca), c.L((STAIR.a0 + STAIR.a1) / 2, STAIR.l1 - (k + 0.5) * run, top + h / 2));
+  }
+  const pitch = Math.atan2(GA.y - top, STAIR.l1 - STAIR.l0);
+  c.add(glass, new BoxGeometry((STAIR.l1 - STAIR.l0) / Math.cos(pitch), 0.85, 0.05), c.L(STAIR.a1, (STAIR.l0 + STAIR.l1) / 2, (top + GA.y) / 2 + 0.45), [0, 0, -pitch]);
+  // the reception desk by the door, in white with a timber top
+  c.add(vc, paint(new BoxGeometry(3.2, 0.5, 0.8), 0xf1f0ec), c.L(GA.a0 + 1.3, H.l0 + 4.2, top + 0.25));
+  c.add(vc, paint(new BoxGeometry(3.3, 0.06, 0.9), 0xb98a5a), c.L(GA.a0 + 1.3, H.l0 + 4.2, top + 0.53));
+  c.add(vc, lit(paint(new BoxGeometry(0.5, 0.3, 0.04), 0x7fc8ff), 0.9), c.L(GA.a0 + 1.1, H.l0 + 4.2, top + 0.72));
+  // the watch floor: three rows of desks facing the wall, two screens on each and a chair behind each place
+  const desks: [number, number][] = [];
+  for (const a of [GA.a1 + 2.4, GA.a1 + 5.4, GA.a1 + 8.4]) for (const l of [H.l0 + 4.5, H.l0 + 8.5, H.l0 + 12.5, H.l0 + 16.5]) desks.push([a, l]);
+  for (const [a, l] of desks) {
+    c.add(vc, paint(new BoxGeometry(2.8, 0.42, 0.7), 0x4a4038), c.L(a, l, top + 0.21));
+    for (const s of [-0.62, 0.62]) {
+      c.add(vc, lit(paint(new BoxGeometry(0.6, 0.36, 0.04), 0x7fc8ff), 1.0), c.L(a + 0.22, l + s, top + 0.64));
+      c.add(vc, paint(new BoxGeometry(0.42, 0.5, 0.2), 0x30343b), c.L(a - 0.95, l + s, top + 0.25));
+    }
+  }
+  // the lights along the ceiling and under the gallery
+  for (const a of [GA.a1 + 2, GA.a1 + 6, GA.a1 + 10]) c.add(vc, lit(paint(new BoxGeometry(GA.l1 - GA.l0 - 3, 0.06, 0.22), 0xfff1d8), 1.1), c.L(a, glm, top + WH - 0.1));
+  c.add(vc, lit(paint(new BoxGeometry(GA.l1 - GA.l0 - 3, 0.05, 0.2), 0xfff1d8), 1.1), c.L(gm, glm, GA.y - 0.28));
+  // the kiosks on the gallery: a post and a screen facing the glass, the detector's page on it: a photo, a box round
+  // its boat, the button to run it
+  const fonts = fontOf();
+  const kioskTex = canvasTex(256, 160, (g) => {
+    g.fillStyle = "#101114";
+    g.fillRect(0, 0, 256, 160);
+    g.fillStyle = "#f4f4f5";
+    g.font = `600 15px ${fonts.sans}`;
+    g.textBaseline = "top";
+    g.fillText("Try Vessel Vision", 12, 10);
+    const grd = g.createLinearGradient(0, 34, 0, 116);
+    grd.addColorStop(0, "#9cc7e6");
+    grd.addColorStop(0.45, "#5f7a6c");
+    grd.addColorStop(0.5, "#4f7f9c");
+    grd.addColorStop(1, "#24506e");
+    g.fillStyle = grd;
+    g.fillRect(12, 34, 232, 82);
+    g.fillStyle = "#f4f4f2";
+    g.fillRect(118, 86, 34, 7);
+    g.fillRect(126, 80, 16, 6);
+    g.strokeStyle = "#3ee86a";
+    g.lineWidth = 2;
+    g.strokeRect(112, 74, 46, 24);
+    g.fillStyle = "#3ee86a";
+    g.fillRect(111, 64, 46, 10);
+    g.fillStyle = "#05230e";
+    g.font = `600 8px ${fonts.mono}`;
+    g.fillText("boat 0.93", 114, 65);
+    g.fillStyle = "#d9622b";
+    g.fillRect(12, 124, 232, 26);
+    g.fillStyle = "#ffffff";
+    g.font = `600 12px ${fonts.sans}`;
+    g.textAlign = "center";
+    g.fillText("Start Detection", 128, 131);
+  });
+  const kioskMat = new MeshBasicMaterial({ map: kioskTex, toneMapped: false });
+  const KIOSK_A = GA.a0 + 1.6;
+  const kiosks = [GA.l0 + 5, GA.l0 + 11, GA.l0 + 17];
+  for (const l of kiosks) {
+    c.add(vc, paint(new BoxGeometry(0.16, 0.95, 0.16), 0x3a3f46), c.L(KIOSK_A + 0.1, l, GA.y + 0.48));
+    c.add(kioskMat, new PlaneGeometry(0.8, 0.5), c.L(KIOSK_A, l, GA.y + 1.1), [0, turn([-1, 0]), 0]);
+  }
+
+  // the video wall on the inside of the wall to the square, facing the room
+  const VW = H.l1 - H.l0 - 3.4;
+  const VH = (VW * 224) / 1024;
+  const vw = new Group();
+  vw.position.set(...c.L(H.a1 - 0.4, (H.l0 + H.l1) / 2, top + 0.95 + VH / 2));
+  vw.rotation.y = turn([-1, 0]);
+  c.group.add(vw);
+  c.add(vc, paint(new BoxGeometry(VW + 0.5, VH + 0.5, 0.08), 0x15181d), c.L(H.a1 - 0.32, (H.l0 + H.l1) / 2, top + 0.95 + VH / 2));
+  vw.add(new Mesh(new PlaneGeometry(VW, VH), new MeshBasicMaterial({ map: watchWallTexture(day, heat, dets), color: 0xe6e6e6, toneMapped: false })));
+  const WX = (px: number) => (px / 1024 - 0.5) * VW;
+  const WY = (py: number) => (0.5 - py / 224) * VH;
+  // the duty officer's frame, one round each pane, shown in turn
+  const pickMat = new MeshBasicMaterial({ color: 0xffb648, toneMapped: false });
+  const picks = WALL_PANES.map(([x0, y0, x1, y1]) => {
+    const w = WX(x1) - WX(x0) + 0.1;
+    const h = WY(y0) - WY(y1) + 0.1;
+    const r = 0.06;
+    const m = new Mesh(
+      mergeGeometries([
+        new PlaneGeometry(w, r).translate(0, h / 2, 0),
+        new PlaneGeometry(w, r).translate(0, -h / 2, 0),
+        new PlaneGeometry(r, h).translate(w / 2, 0, 0),
+        new PlaneGeometry(r, h).translate(-w / 2, 0, 0),
+      ]),
+      pickMat,
+    );
+    m.position.set(WX((x0 + x1) / 2), WY((y0 + y1) / 2), 0.02);
+    m.visible = false;
+    vw.add(m);
+    return m;
+  });
+  // the boats on the map
+  const dots = new InstancedMesh(new PlaneGeometry(0.16, 0.16), new MeshBasicMaterial({ color: 0x3ee86a, toneMapped: false }), MAP_TRACKS.length);
+  dots.position.z = 0.02;
+  dots.frustumCulled = false;
+  vw.add(dots);
+
+  // the people: where each stands (a, l, height) and its figure; the operators at the desks, the duty officer, people
+  // on the gallery, the receptionist; then the visitors on their way in
+  type Stand = { a: number; l: number; u: number; cell: number };
+  const stands: Stand[] = [];
+  desks.forEach(([a, l], k) => {
+    // seated: between the chair and the desk, down to the chair's height
+    for (const s of [-0.62, 0.62]) if ((k * 2 + (s > 0 ? 1 : 0)) % 7 !== 3) stands.push({ a: a - 0.6, l: l + s, u: top - 0.32, cell: (k * 3 + (s > 0 ? 1 : 0)) % 10 });
+  });
+  stands.push({ a: GA.a0 + 0.55, l: H.l0 + 4.2, u: top, cell: 7 });
+  stands.push({ a: GA.a0 + 1.2, l: H.l0 + 8.5, u: top, cell: 10 });
+  stands.push({ a: H.a1 - 1.6, l: H.l0 + 20.5, u: top, cell: 6 });
+  for (const [l, cell] of [
+    [GA.l0 + 3, 11],
+    [GA.l0 + 8.5, 2],
+    [GA.l0 + 9.2, 5],
+    [GA.l0 + 14.5, 12],
+    [GA.l0 + 20.2, 8],
+  ])
+    stands.push({ a: GA.a1 - 0.45, l, u: GA.y, cell });
+  for (const l of kiosks) stands.push({ a: KIOSK_A - 0.75, l: l + 0.65, u: GA.y, cell: Math.round(l) % 10 });
+  // the guide and the group gathered round, at the gallery's far end past the stair's head
+  const guideL = STAIR.l0 + 3.6;
+  stands.push({ a: GA.a0 + 0.9, l: guideL, u: GA.y, cell: 4 });
+  for (const [da, dl, cell] of [
+    [1.6, -1.1, 1],
+    [1.9, 0.0, 9],
+    [1.5, 1.1, 3],
+    [2.5, -0.5, 13],
+  ])
+    stands.push({ a: GA.a0 + 0.9 + da, l: guideL + dl, u: GA.y, cell });
+  // the way in: from the bridge's door, along the lobby, up the stair, along the gallery to the kiosks
+  const path: [number, number, number][] = [
+    [bridgeA, H.l0 + 0.6, top],
+    [GA.a0 + 2.6, H.l0 + 3.2, top],
+    [GA.a0 + 2.6, STAIR.l1 - 0.6, top],
+    [(STAIR.a0 + STAIR.a1) / 2, STAIR.l1 + 0.2, top],
+    [(STAIR.a0 + STAIR.a1) / 2, STAIR.l0 - 0.2, GA.y],
+    [GA.a0 + 2.8, STAIR.l0 - 0.8, GA.y],
+    [GA.a0 + 2.8, GA.l0 + 6, GA.y],
+  ];
+  const seg = path.slice(1).map((p, k) => Math.hypot(p[0] - path[k][0], p[1] - path[k][1], p[2] - path[k][2]));
+  const pathLen = seg.reduce((s, v) => s + v, 0);
+  const WALKERS = 4;
+  const walkCells = [0, 6, 14, 3];
+  const n = stands.length + WALKERS;
+  const quad = new PlaneGeometry(0.55, 1.1).translate(0, 0.55, 0);
+  quad.setAttribute("aCell", new InstancedBufferAttribute(Float32Array.from([...stands.map((p) => p.cell), ...walkCells]), 1));
+  const folk = new InstancedMesh(quad, indoorPeople(mats.people), n);
+  folk.frustumCulled = false;
+  c.group.add(folk);
+  const inv = c.group.matrix.clone().invert();
+  const camL = new Vector3();
+  const fp = new Vector3();
+  const fq = new Quaternion();
+  const fs = new Vector3();
+  const fm = new Matrix4();
+  const place = (i: number, a: number, l: number, u: number, cell: number, s: number) => {
+    fp.set(...c.L(a, l, u));
+    fq.setFromAxisAngle(UP, Math.atan2(camL.x - fp.x, camL.z - fp.z));
+    folk.setMatrixAt(i, fm.compose(fp, fq, fs.set(PEOPLE_WIDTH[cell] * s, s, s)));
+  };
+
+  return (t, cam) => {
+    camL.copy(cam).applyMatrix4(inv);
+    stands.forEach((p, i) => place(i, p.a, p.l, p.u, p.cell, 1));
+    for (let w = 0; w < WALKERS; w++) {
+      // each a quarter of the way behind the last, growing in at the door and fading out at the kiosks
+      const gone = (((t * 0.7 + (w * pathLen) / WALKERS) % pathLen) + pathLen) % pathLen;
+      let d = gone;
+      let k = 0;
+      while (k < seg.length - 1 && d > seg[k]) d -= seg[k++];
+      const u = Math.min(1, d / seg[k]);
+      const [a0, l0, y0] = path[k];
+      const [a1, l1, y1] = path[k + 1];
+      const s = Math.min(1, gone / 1.2, (pathLen - gone) / 1.2);
+      place(stands.length + w, a0 + (a1 - a0) * u, l0 + (l1 - l0) * u, y0 + (y1 - y0) * u + Math.abs(Math.sin(t * 7 + w)) * 0.03, walkCells[w], s);
+    }
+    folk.instanceMatrix.needsUpdate = true;
+    // the wall: the duty officer's frame, and the boats crossing the map
+    const sel = Math.floor(t / 2.2) % WALL_PANES.length;
+    picks.forEach((m, k) => (m.visible = k === sel));
+    MAP_TRACKS.forEach(([u0, v0, u1, v1, speed], k) => {
+      const f = 0.5 - 0.5 * Math.cos(t * speed * Math.PI * 2 + k);
+      fp.set(WX(728 + (u0 + (u1 - u0) * f) * 288), WY(8 + (v0 + (v1 - v0) * f) * 208), 0);
+      dots.setMatrixAt(k, fm.makeTranslation(fp.x, fp.y, 0));
+    });
+    dots.instanceMatrix.needsUpdate = true;
+  };
+}
+
+/**
  * Coast Watch: the control room of the coast's cameras, inland at the interchange as a control room can be, where the
  * shore cameras' feeds come in and the detector finds every boat in them; the project at work on its face.
  * - Raised on timber columns at platform height in the station's square (sets/squares.ts), square to Broadway, its
  *   bridge from the platform's south end over Commercial Drive, cafés and restaurants in glass pavilions under it.
- * - Glass to Broadway and to the station, the watch floor's desks and screens seen through it; white to the west.
+ * - Glass to Broadway and to the station, the room two storeys high behind it (watchInterior): the video wall, the
+ *   operators at their desks, the public's gallery with its visitors and kiosks; white to the west.
  * - Its wall to the square a screen the width of the building: the camera's frame across the inlet, SAHI's tiles
  *   stepping across it one by one and a green box closing round each boat as its tile finds it, the far skiffs only a
  *   tile can find among them, scores over the boxes; by day in colour, after dark the thermal feed.
@@ -1650,10 +2035,12 @@ function vessel(c: Ctx): Partial<BuiltSet> {
   const WH = 7.2;
   const WHITE = 0xe9e6df;
   const DOOR = [bridgeA - 1.8, bridgeA + 1.8];
-  c.add(mats.pane, new BoxGeometry(H.l1 - H.l0, WH, 0.08), c.L(H.a0, lm, top + WH / 2));
-  c.add(mats.pane, new BoxGeometry(0.08, WH, DOOR[0] - H.a0), c.L((H.a0 + DOOR[0]) / 2, H.l0, top + WH / 2));
-  c.add(mats.pane, new BoxGeometry(0.08, WH, H.a1 - DOOR[1]), c.L((DOOR[1] + H.a1) / 2, H.l0, top + WH / 2));
-  c.add(mats.pane, new BoxGeometry(0.08, WH - 3, DOOR[1] - DOOR[0]), c.L(bridgeA, H.l0, top + 3 + (WH - 3) / 2));
+  // the glass clearer than the city's, low in iron, so the room inside reads from the street
+  const clear = new MeshStandardMaterial({ color: 0xd6e6f0, metalness: 0.1, roughness: 0.05, transparent: true, opacity: 0.14, depthWrite: false, side: DoubleSide, envMap: c.world.envTex, envMapIntensity: 0.35 });
+  c.add(clear, new BoxGeometry(H.l1 - H.l0, WH, 0.08), c.L(H.a0, lm, top + WH / 2));
+  c.add(clear, new BoxGeometry(0.08, WH, DOOR[0] - H.a0), c.L((H.a0 + DOOR[0]) / 2, H.l0, top + WH / 2));
+  c.add(clear, new BoxGeometry(0.08, WH, H.a1 - DOOR[1]), c.L((DOOR[1] + H.a1) / 2, H.l0, top + WH / 2));
+  c.add(clear, new BoxGeometry(0.08, WH - 3, DOOR[1] - DOOR[0]), c.L(bridgeA, H.l0, top + 3 + (WH - 3) / 2));
   for (let l = H.l0; l <= H.l1 + 0.01; l += (H.l1 - H.l0) / 12) c.add(mats.timber, new BoxGeometry(0.16, WH, 0.16), c.L(H.a0, l, top + WH / 2));
   for (let a = H.a0 + (H.a1 - H.a0) / 6; a < H.a1 - 0.01; a += (H.a1 - H.a0) / 6) c.add(mats.timber, new BoxGeometry(0.16, WH, 0.16), c.L(a, H.l0, top + WH / 2));
   c.add(vc, paint(new BoxGeometry(0.3, WH, H.a1 - H.a0), WHITE), c.L(am, H.l1 - 0.15, top + WH / 2));
@@ -1706,13 +2093,6 @@ function vessel(c: Ctx): Partial<BuiltSet> {
     c.add(vc, paint(dish, 0xf4f5f3), c.L(MA + (da / n) * r, MLat + (dl / n) * r, mb + h));
   }
   c.add(vc, lit(paint(new BoxGeometry(0.22, 0.22, 0.22), 0xff2a1f), 1.4), c.L(MA, MLat, mb + MH + 0.15));
-  // the watch floor seen through the glass: rows of desks, two screens on each
-  for (const a of [H.a0 + 3, H.a0 + 6.6, H.a0 + 10.2]) {
-    for (let l = H.l0 + 3; l < H.l1 - 6; l += 3.6) {
-      c.add(vc, paint(new BoxGeometry(2.4, 0.75, 0.9), 0x4a4038), c.L(a, l, top + 0.375));
-      for (const s of [-0.55, 0.55]) c.add(vc, lit(paint(new BoxGeometry(0.9, 0.55, 0.05), 0x7fc8ff), 0.9), c.L(a + 0.3, l + s, top + 1.1));
-    }
-  }
   // its name over the door, toward the station
   const fontsO = fontOf();
   const nameTex = canvasTex(1024, 220, (g) => {
@@ -1792,7 +2172,8 @@ function vessel(c: Ctx): Partial<BuiltSet> {
   boxes.setAttribute("position", new Float32BufferAttribute(qPos, 3));
   boxes.setAttribute("uv", new Float32BufferAttribute(qUv, 2));
   boxes.setIndex(qIdx);
-  const boxesMesh = new Mesh(boxes, new MeshBasicMaterial({ map: detectionsTexture(), transparent: true, depthWrite: false, toneMapped: false }));
+  const dets = detectionsTexture();
+  const boxesMesh = new Mesh(boxes, new MeshBasicMaterial({ map: dets, transparent: true, depthWrite: false, toneMapped: false }));
   boxesMesh.position.z = 0.03;
   boxesMesh.frustumCulled = false;
   wall.add(boxesMesh);
@@ -1811,6 +2192,9 @@ function vessel(c: Ctx): Partial<BuiltSet> {
     });
     qp.needsUpdate = true;
   };
+
+  // inside: the video wall, the watch floor, the public's gallery and the people
+  const inside = watchInterior(c, vc, top, WH, bridgeA, day, heat, dets);
 
   // ---- the Clark Park Vertiport across the square: the deck over the glass hall, on columns kept off the streets
   const V = VERTIPORT;
@@ -1944,7 +2328,8 @@ function vessel(c: Ctx): Partial<BuiltSet> {
   return {
     anchors: [new Vector3(...c.L(H.a1 + 0.5, lm, top + 0.5 + SH)), new Vector3(...c.L(Lo.a0, (Lo.l0 + Lo.l1) / 2, D + Lo.h + 1.6)), new Vector3(...c.L(MA, MLat, mb + MH))],
     focus: new Vector3(...c.L(14, 42, top + 2)),
-    update: (time) => {
+    update: (time, cam) => {
+      inside(time, cam);
       // by day the colour feed, after dark the thermal
       const map = c.world.shopGlow.value > 0.45 ? heat : day;
       if (feed.map !== map) feed.map = map;
