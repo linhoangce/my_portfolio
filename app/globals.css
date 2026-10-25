@@ -18,7 +18,6 @@
     --accent: 167 139 250; /* #a78bfa */
     --accent-ink: 11 7 22; /* #0b0716 */
     --glass-a: 0.94;
-    --bar-a: 0.72;
     --shadow: 0 30px 80px -30px rgba(0, 0, 0, 0.9);
     --scrim: rgba(7, 10, 18, 0.3);
     color-scheme: dark;
@@ -36,7 +35,6 @@
     --accent: 91 63 209; /* #5b3fd1 */
     --accent-ink: 255 255 255;
     --glass-a: 0.93;
-    --bar-a: 0.8;
     --shadow: 0 30px 80px -40px rgba(20, 30, 60, 0.35);
     --scrim: rgba(243, 245, 249, 0.25);
     color-scheme: light;
@@ -55,8 +53,7 @@
       --accent: 91 63 209;
       --accent-ink: 255 255 255;
       --glass-a: 0.93;
-      --bar-a: 0.8;
-      --shadow: 0 30px 80px -40px rgba(20, 30, 60, 0.35);
+        --shadow: 0 30px 80px -40px rgba(20, 30, 60, 0.35);
       --scrim: rgba(243, 245, 249, 0.25);
       color-scheme: light;
     }
@@ -267,33 +264,44 @@
 }
 
 /* ------------------------------------------------------------------ the DOM shell over the canvas */
+/* no bar: the wordmark and the buttons stand on the scene, which takes the clicks between them */
 .top {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
-  z-index: 10;
+  z-index: 12;
   height: 64px;
   display: flex;
   align-items: center;
   gap: 14px;
   padding: 0 16px;
-  background: rgb(var(--bg) / var(--bar-a));
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid rgb(var(--border));
+  pointer-events: none;
 }
+.top > * {
+  pointer-events: auto;
+}
+/* the wordmark as a pill like the buttons beside it, so it reads over the scene */
 .brand {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
+  display: inline-flex;
+  align-items: center;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--border));
+  background: rgb(var(--surface));
   white-space: nowrap;
   color: rgb(var(--fg));
   text-decoration: none;
+  transition: border-color 0.15s;
+}
+.brand:hover {
+  border-color: rgb(var(--accent));
 }
 .brand .name {
   font-family: var(--font-serif), Georgia, serif;
-  font-size: 24px;
+  font-size: 22px;
+  line-height: 1;
 }
 .skip {
   position: absolute;
@@ -531,7 +539,7 @@
 /* ------------------------------------------------------------------ the scene overlay */
 .scene-ov {
   position: fixed;
-  top: 64px;
+  top: 0;
   bottom: 0;
   left: 0;
   z-index: 11;
@@ -553,7 +561,8 @@
   display: flex;
   flex-direction: column;
   width: min(440px, 38vw);
-  padding: 22px 0 16px 32px;
+  /* the scrim runs up to the top; the copy starts below the wordmark and the buttons */
+  padding: 86px 0 16px 32px;
   pointer-events: none;
 }
 .scene-ov.open .col {
@@ -976,6 +985,10 @@ html:has(.scene-ov.open) .ask {
   .linemap,
   .top [data-menu-toggle] {
     display: none;
+  }
+  .brand {
+    height: 38px;
+    padding: 0 14px;
   }
   .brand .name {
     font-size: 20px;
