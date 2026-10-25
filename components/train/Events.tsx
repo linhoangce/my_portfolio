@@ -32,6 +32,8 @@ import { dotTexture } from "./textures";
 import { useWorld } from "./world";
 
 const VIOLET = new Color(0xa78bfa);
+/** The Expo's cars' light line (liveries.ts), out of an event: the cyan of the sea's own light at night. */
+const AQUA = new Color(0x3ddcf5);
 const col = new Color();
 
 
@@ -166,12 +168,12 @@ export function Events() {
     eventColour(ev, 1, c.t, B.crownB.emissive);
     mats.edge.forEach((m, i) => (ev && isNight ? eventColour(ev, i % 2, c.t, m.emissive) : m.emissive.copy(VIOLET)));
     // the guideway's LED line and the train's light line take the event's colours after dark too
-    for (const [m, i] of [
-      [mats.trainLine, 0],
-      [mats.guideLed, 1],
+    for (const [m, i, own] of [
+      [mats.trainLine, 0, AQUA],
+      [mats.guideLed, 1, VIOLET],
     ] as const) {
       if (ev && isNight) eventColour(ev, i, c.t, m.emissive);
-      else m.emissive.copy(VIOLET);
+      else m.emissive.copy(own);
     }
     mats.guideLed.emissiveIntensity = 0.3 + (world.look.cur?.edge ?? 0.4) * 1.6;
     // platform banners fly the event's two colours day and night
