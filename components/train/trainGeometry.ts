@@ -5,8 +5,10 @@
  * nose, the glass and the finish: the pearl car here, the Expo's and the Millennium's in liveries.ts. Each section is
  * swept along z with more rings near the ends, where the nose curves.
  */
-import { BufferGeometry, Color, Float32BufferAttribute } from "three";
+import { BoxGeometry, BufferGeometry, Color, Float32BufferAttribute, type Matrix4, Vector3 } from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+
+import { BEAM } from "./constants";
 
 /**
  * The cross-section: half-width a, half-height b, centre height cy above the rail head, squareness np (> 2 squares it
@@ -99,11 +101,36 @@ export function noseSection(style: CarStyle, u: number): { cy: number; hx: numbe
 }
 
 /**
- * Half the distance between a car's bogies, which ride on the rails while the rigid body spans between them: at this
+ * Half the distance between a car's bogies, which ride on the guide beam while the rigid body spans between them: at this
  * spacing a car on a curve of radius R hangs as far inside it at its middle as outside it at its ends (each len² / 16R),
  * the least it can overhang either way.
  */
 export const bogieSpacing = (len: number) => len / (2 * Math.SQRT2);
+
+/**
+ * A bogie's fairing, wrapped round the guide beam it rides (constants.ts BEAM): a cheek down either side of the beam,
+ * past its running face, and a cap over it reaching up into the car's skirt. In the world (x across, y up from the
+ * track's frame, z along it) as the beam is, not at the cars' SLIM.
+ */
+export function bogieGeometry(): BufferGeometry {
+  const len = 2.6;
+  const inner = BEAM.half + 0.05;
+  const outer = BEAM.half + 0.2;
+  const lo = BEAM.top - 0.38;
+  const hi = BEAM.top + 0.09;
+  const cheek = (side: number) => new BoxGeometry(outer - inner, hi - lo, len).translate((side * (inner + outer)) / 2, (lo + hi) / 2, 0);
+  const parts = [cheek(-1), cheek(1), new BoxGeometry(2 * outer, hi - BEAM.top - 0.01, len).translate(0, (hi + BEAM.top + 0.01) / 2, 0)];
+  const out = mergeGeometries(parts, false);
+  for (const g of parts) g.dispose();
+  return out;
+}
+
+const ORIGIN = new Vector3();
+const UPWARD = new Vector3(0, 1, 0);
+/** A bogie's matrix (into `out`): standing at `p` on its beam, its length along `ahead` (either way: it is symmetric). */
+export function bogieMatrix(out: Matrix4, p: Vector3, ahead: Vector3): Matrix4 {
+  return out.lookAt(ahead, ORIGIN, UPWARD).setPosition(p);
+}
 
 export type CarGeometry = { body: BufferGeometry; glass: BufferGeometry; line: BufferGeometry };
 

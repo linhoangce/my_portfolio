@@ -2,13 +2,13 @@
 
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo } from "react";
-import { BoxGeometry, BufferAttribute, BufferGeometry, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, PlaneGeometry, SpotLight, Vector3 } from "three";
+import { BoxGeometry, BufferAttribute, BufferGeometry, Group, InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, PlaneGeometry, SpotLight, Vector3 } from "three";
 
 import { CAR, CROSS_LEN, GAP, HEAD, SLIM, TRAIN_CARS, TRAIN_LEN, VMAX } from "./constants";
 import { EXPO } from "./liveries";
 import { type Sim, useTrain } from "./store";
 import { makeFrame, trainFrameAt, UP } from "./track";
-import { bogieSpacing, carGeometry, noseSection, sectionRing } from "./trainGeometry";
+import { bogieGeometry, bogieMatrix, bogieSpacing, carGeometry, noseSection, sectionRing } from "./trainGeometry";
 import { type World, useWorld } from "./world";
 
 type CarObj = { off: number; obj: Group };
@@ -19,7 +19,7 @@ const CY = EXPO.section.cy;
 
 /**
  * One 2100 car in the Expo's own design (liveries.ts): the painted body under its glass canopy at each cab end, the
- * panoramic glass with the cabin behind it, the cyan light seam along each side, a dark skirt hiding the running gear,
+ * panoramic glass with the cabin behind it, the cyan light seam along each side, a dark skirt over its bogies,
  * a slim lamp on each end car's snout, and a soft under-glow, light as if through water, after dark. The gangways
  * between cars are drawn separately (see Bellows), so they follow the cars round curves.
  */
@@ -157,13 +157,15 @@ export function laneAt(sim: Sim, sc: number): number {
 /** Half the distance between a car's bogies (trainGeometry.ts bogieSpacing). */
 const BOGIE = bogieSpacing(CAR);
 
+const bm = new Matrix4();
 /**
- * Each car rides on its two bogies, both on the track: the body midway between them, along the chord they make, so the
- * set sits steady on curves (no bank, no bob) and hangs over the rails no further than a real car would, even round the
- * turning loops past either end of the line.
+ * Each car rides on its two bogies, both wrapped round the beam: the body midway between them, along the chord they
+ * make, so the set sits steady on curves (no bank, no bob) and hangs over the beam no further than a real car would,
+ * even round the turning loops past either end of the line. The bogies (from `first` in `bogies`) each turn with the
+ * beam under them, along the crossover's diagonal too.
  */
-function placeTrain(list: CarObj[], sPos: number, lane: number | ((sc: number) => number), dir: number) {
-  for (const c of list) {
+function placeTrain(list: CarObj[], sPos: number, lane: number | ((sc: number) => number), dir: number, bogies: InstancedMesh, first: number) {
+  list.forEach((c, i) => {
     const sc = sPos + dir * c.off;
     const at = (x: number) => (typeof lane === "function" ? lane(x) : lane);
     trainFrameAt(sc + BOGIE * dir, dir, at(sc + BOGIE * dir), fB);
@@ -172,7 +174,13 @@ function placeTrain(list: CarObj[], sPos: number, lane: number | ((sc: number) =
     tmp.copy(fB.p).sub(fC.p).normalize();
     c.obj.lookAt(tmp2.copy(c.obj.position).add(tmp));
     c.obj.updateMatrixWorld();
-  }
+    [fB, fC].forEach((f, j) => {
+      const sb = sc + (j ? -BOGIE : BOGIE) * dir;
+      tmp.copy(f.t).addScaledVector(f.r, at(sb + 0.5) - at(sb - 0.5)).normalize();
+      bogies.setMatrixAt(first + i * 2 + j, bogieMatrix(bm, f.p, tmp));
+    });
+  });
+  bogies.instanceMatrix.needsUpdate = true;
 }
 
 /** Our three-car set on the right-hand track and the oncoming set on the left, plus a blob shadow on low-end devices. */
@@ -192,7 +200,11 @@ export function Train() {
     const blob = new Mesh(new PlaneGeometry(4 * SLIM, TRAIN_LEN + 2), new MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.3, depthWrite: false }));
     blob.rotation.x = -Math.PI / 2;
     blob.visible = world.lowEnd;
-    return { cars, cars2, bellows, bellows2, spots, blob, mats: [skirtMat, bellowsMat, blob.material] };
+    // both sets' bogies, two to a car, in the skirts' navy
+    const bogies = new InstancedMesh(bogieGeometry(), skirtMat, 4 * TRAIN_CARS);
+    bogies.frustumCulled = false;
+    bogies.receiveShadow = true;
+    return { cars, cars2, bellows, bellows2, spots, blob, bogies, mats: [skirtMat, bellowsMat, blob.material] };
   }, [world]);
 
   useEffect(() => {
@@ -207,6 +219,8 @@ export function Train() {
       built.bellows.mesh.geometry.dispose();
       built.bellows2.mesh.geometry.dispose();
       built.blob.geometry.dispose();
+      built.bogies.geometry.dispose();
+      built.bogies.dispose();
       for (const m of built.mats) m.dispose();
     };
   }, [world, built]);
@@ -214,8 +228,8 @@ export function Train() {
   useFrame(({ clock }) => {
     const { sim } = useTrain.getState();
     if (!sim.stationS.length) return;
-    placeTrain(built.cars, sim.s, (sc) => laneAt(sim, sc), sim.travelDir);
-    placeTrain(built.cars2, sim.s2, -sim.laneTo, -sim.travelDir);
+    placeTrain(built.cars, sim.s, (sc) => laneAt(sim, sc), sim.travelDir, built.bogies, 0);
+    placeTrain(built.cars2, sim.s2, -sim.laneTo, -sim.travelDir, built.bogies, 2 * TRAIN_CARS);
     built.bellows.update(built.cars);
     built.bellows2.update(built.cars2);
     // the light line brightens with speed; the under-glow only shows after dark
@@ -245,6 +259,7 @@ export function Train() {
       <primitive object={built.bellows.mesh} />
       <primitive object={built.bellows2.mesh} />
       <primitive object={built.blob} />
+      <primitive object={built.bogies} />
     </>
   );
 }

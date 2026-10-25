@@ -18,7 +18,7 @@ export const PLATFORM_FLAT = 22;
 /** Minimum deck height above the ground beside the track. */
 export const CLEAR_DECK = 7.5;
 /**
- * Where the Expo comes down (OSM's structure runs, railData.ts): its rails a ballast's depth over the ground at grade,
+ * Where the Expo comes down (OSM's structure runs, railData.ts): its track a ballast's depth over the ground at grade,
  * the floor of its cutting (and of the covered trench at 29th Avenue) this far under the ground.
  */
 export const BALLAST = 0.6;
@@ -48,8 +48,15 @@ export const SLIM = 2 / 3;
 export const LANE = 2.6 * SLIM;
 /** The tracks' offset as first laid, which the city's clearances are measured from. */
 export const LAID_LANE = 2.6;
-/** Length of a scissors crossover diagonal along the track. */
+/** Length of a crossover's diagonal along the track. */
 export const CROSS_LEN = 44;
+/**
+ * The guideways carry no rails: each track is a guide beam standing in the girder's trough, its top where the rails'
+ * heads were, and the cars' bogies wrap round it. The trough's floor and the beam (half its width across, in the world,
+ * and the depth of the dark running face along its top), up from the track's frame.
+ */
+export const FLOOR = 0.3;
+export const BEAM = { half: 0.42, top: 1.0, face: 0.07 } as const;
 
 /** An Expo car's length (liveries.ts EXPO), long enough for its long nose to sit in proportion; and between two cars. */
 export const CAR = 12;

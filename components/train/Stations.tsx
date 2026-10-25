@@ -159,7 +159,7 @@ export function Stations() {
       frameAt(stationS[i], f);
       const g = new Group();
       // local +x = left of the track, +z = ahead; platforms at x ±8.9, top at y 1.4; the frame bent along the track, so
-      // on a curve the platforms keep their distance from the rails (slim.ts), everything built in it baked into place
+      // on a curve the platforms keep their distance from the beams (slim.ts), everything built in it baked into place
       const bend = bendAlong((s, o) => frameAt(s, o), stationS[i]);
       const deckY = f.p.y;
       const local = (x: number, z: number) => {

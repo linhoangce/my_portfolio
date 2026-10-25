@@ -4,8 +4,8 @@ import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo } from "react";
 import { BoxGeometry, BufferGeometry, CatmullRomCurve3, Color, CylinderGeometry, Float32BufferAttribute, Group, InstancedMesh, Matrix4, Mesh, MeshStandardMaterial, Quaternion, TubeGeometry, Vector3 } from "three";
 
-import { BALLAST, GAP, LANE, PLATFORM_LEN, SLIM, TRENCH } from "./constants";
-import { GAUGE, mirror, ribbon, SLEEPER, slimRibbon } from "./Guideway";
+import { BALLAST, FLOOR, GAP, LANE, PLATFORM_LEN, SLIM, TRENCH } from "./constants";
+import { beam, mirror, ribbon, slimRibbon, SOFFIT } from "./Guideway";
 import { acrossStation, bendAlong, bendGeometry } from "./slim";
 import { MILLENNIUM } from "./liveries";
 import { bedProfile, clearHeights, resample } from "./bedLift";
@@ -18,7 +18,7 @@ import { paint } from "./shapes";
 import { STATION_FRAMES } from "./sets/zones";
 import { rib, vault } from "./Stations";
 import { type Frame, groundAt, makeFrame, UP } from "./track";
-import { bogieSpacing, carGeometry } from "./trainGeometry";
+import { bogieGeometry, bogieMatrix, bogieSpacing, carGeometry } from "./trainGeometry";
 import { useWorld } from "./world";
 
 /** Frames every `step` along a line between two arc lengths. */
@@ -57,18 +57,6 @@ function groundFrames(line: readonly (readonly [number, number])[], lift: number
   });
 }
 
-const SOFFIT: [number, number][] = [
-  [-3, -1.9],
-  [3, -1.9],
-  [5.1, -1.4],
-  [6.1, -0.55],
-  [6.3, 0.9],
-  [6.3, 0.95],
-  [-6.3, 0.95],
-  [-6.3, 0.9],
-  [-6.1, -0.55],
-  [-5.1, -1.4],
-];
 const PARAPET: [number, number][] = [
   [6.02, 0.95],
   [6.3, 0.95],
@@ -188,6 +176,7 @@ export function Millennium() {
     const sleepers: BufferGeometry[] = [];
     const leds: BufferGeometry[] = [];
     const rails: BufferGeometry[] = [];
+    const beamFaces: BufferGeometry[] = [];
     const piers: Matrix4[] = [];
     const m4 = new Matrix4();
     const q = new Quaternion();
@@ -215,14 +204,13 @@ export function Millennium() {
       const runs = runsOf((s) => raised(s) && !stops.some((ss) => Math.abs(s - ss) < 13.5));
       const decks = runsOf(raised);
       girder.push(...decks.map((r) => slimRibbon(SOFFIT, r)), ...runs.flatMap((r) => [slimRibbon(PARAPET, r), slimRibbon(mirror(PARAPET), r)]));
-      bed.push(slimRibbon([[6.02, 0.955], [-6.02, 0.955]], all, false));
-      for (const lane of [-LANE, LANE]) sleepers.push(ribbon([[lane + SLEEPER, 0.96], [lane - SLEEPER, 0.96]], all, false, 0.65));
+      bed.push(...decks.map((r) => slimRibbon([[6.02, FLOOR + 0.005], [-6.02, FLOOR + 0.005]], r, false)));
       leds.push(...decks.flatMap((r) => [slimRibbon(LED, r), slimRibbon(mirror(LED), r)]));
+      // a guide beam down each track: on the girder's trough floor, or down on the ground where the line runs low
       for (const lane of [-LANE, LANE]) {
-        for (const side of [-1, 1]) {
-          const pts = all.map((f) => f.p.clone().addScaledVector(f.r, lane + side * GAUGE).addScaledVector(UP, 0.98));
-          rails.push(new TubeGeometry(new CatmullRomCurve3(pts, false, "catmullrom", 0), all.length * 2, 0.07, 4, false));
-        }
+        const b = beam(all, lane, (i) => (raised(sOf(i)) ? FLOOR : -BALLAST - 0.1));
+        girder.push(b.body);
+        beamFaces.push(b.face);
       }
       // a column under the soffit every 24 units wherever the deck stands clear of the ground
       const f = makeFrame();
@@ -261,7 +249,7 @@ export function Millennium() {
       const st = MILL_LINE.stations[k];
       const fr = framesOf(MILL_LINE, ss, ss + 0.5, 1)[0];
       const tH = fr.t.clone().setY(0).normalize();
-      // the station's frame bent along the track (slim.ts), so on a curve its platforms keep their distance from the rails
+      // the station's frame bent along the track (slim.ts), so on a curve its platforms keep their distance from the beams
       const bend = bendAlong(onMill, ss, 24);
       // world point of local (x left of travel, y up from the deck, z ahead)
       const W = (x: number, y: number, z: number) => {
@@ -454,8 +442,10 @@ export function Millennium() {
     }
 
     // ------------------------------------------------------------------ trains
-    // two cars in the line's own design (liveries.ts), each over a dark skirt
+    // two cars in the line's own design (liveries.ts), each over a dark skirt and two bogies round the beam
     const skirt = new MeshStandardMaterial({ color: 0x14201c, roughness: 0.6, metalness: 0.4 });
+    const bogies = new InstancedMesh(bogieGeometry(), skirt, 8);
+    bogies.frustumCulled = false;
     const trains = [0, 1].map((k) => {
       const g = new Group();
       const cars: Group[] = [];
@@ -493,6 +483,7 @@ export function Millennium() {
       sleepers: merged(sleepers.map((geo) => ({ geo }))),
       leds: merged(leds.map((geo) => ({ geo }))),
       rails: merged(rails.map((geo) => ({ geo }))),
+      beamFaces: merged(beamFaces.map((geo) => ({ geo }))),
       ballast: merged(ballast.map((geo) => ({ geo }))),
       faces: merged(walls.faces.map((geo) => ({ geo }))),
       ledges: merged(walls.ledges.map((geo) => ({ geo }))),
@@ -517,6 +508,7 @@ export function Millennium() {
       led,
       line,
       skirt,
+      bogies,
       roundel,
       mouth,
       freightMat,
@@ -527,7 +519,7 @@ export function Millennium() {
 
   useEffect(
     () => () => {
-      for (const g of [built.girder, built.bed, built.sleepers, built.leds, built.rails, built.ballast, built.faces, built.ledges, built.white, built.plat, built.pane, built.yellow, built.canopy, built.ribs, built.dark, built.blue]) g.dispose();
+      for (const g of [built.girder, built.bed, built.sleepers, built.leds, built.rails, built.beamFaces, built.ballast, built.faces, built.ledges, built.white, built.plat, built.pane, built.yellow, built.canopy, built.ribs, built.dark, built.blue]) g.dispose();
       for (const m of [built.led, built.line, built.skirt, built.roundel, built.mouth, built.freightMat, built.concrete, built.hillMat]) m.dispose();
       built.hill.dispose();
       built.piers.geometry.dispose();
@@ -537,6 +529,8 @@ export function Millennium() {
         built.freightCars.dispose();
       }
       for (const t of built.trains) t.g.traverse((o) => (o as Mesh).isMesh && (o as Mesh).geometry.dispose());
+      built.bogies.geometry.dispose();
+      built.bogies.dispose();
     },
     [built],
   );
@@ -597,7 +591,7 @@ export function Millennium() {
   };
   useFrame(({ clock }) => {
     const t = clock.elapsedTime;
-    for (const tr of built.trains) {
+    built.trains.forEach((tr, n) => {
       const { s, dir } = where(t + tr.phase * oneWay * 2);
       tr.cars.forEach((car, k) => {
         // each car on its two bogies, as the Expo's cars ride: the body midway between them, along their chord
@@ -608,8 +602,10 @@ export function Millennium() {
         car.position.copy(fa.p).add(fb.p).multiplyScalar(0.5).addScaledVector(fc.r, dir * LANE).addScaledVector(UP, 0.98);
         look.copy(fa.p).sub(fb.p).normalize();
         car.lookAt(fp.copy(car.position).add(look));
+        [fa, fb].forEach((f, j) => built.bogies.setMatrixAt(n * 4 + k * 2 + j, bogieMatrix(fm4, fp.copy(f.p).addScaledVector(f.r, dir * LANE), f.t)));
       });
-    }
+    });
+    built.bogies.instanceMatrix.needsUpdate = true;
     if (built.freightCars && cnFrames.length > 1) {
       // 5 units a second eastbound, round again after a gap
       const L = cnFrames.length - 1;
@@ -640,6 +636,7 @@ export function Millennium() {
       <mesh geometry={built.sleepers} material={mats.sleepers} receiveShadow />
       <mesh geometry={built.leds} material={built.led} />
       <mesh geometry={built.rails} material={mats.rail} />
+      <mesh geometry={built.beamFaces} material={mats.plate} receiveShadow />
       <mesh geometry={built.ballast} material={mats.bed} receiveShadow />
       <mesh geometry={built.faces} material={built.concrete} receiveShadow castShadow={!lowEnd} />
       <mesh geometry={built.ledges} material={mats.hedge} receiveShadow />
@@ -656,6 +653,7 @@ export function Millennium() {
       {built.trains.map((t, i) => (
         <primitive key={i} object={t.g} />
       ))}
+      <primitive object={built.bogies} />
       {built.freightCars && <primitive object={built.freightCars} />}
     </>
   );

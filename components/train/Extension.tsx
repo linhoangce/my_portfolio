@@ -2,22 +2,22 @@
 
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
-import { BoxGeometry, BufferGeometry, CatmullRomCurve3, CylinderGeometry, Float32BufferAttribute, type Group, InstancedMesh, Matrix4, Quaternion, TubeGeometry, Vector3 } from "three";
+import { BoxGeometry, BufferGeometry, CylinderGeometry, Float32BufferAttribute, type Group, InstancedMesh, Matrix4, MeshStandardMaterial, Quaternion, ShapeUtils, Vector2, Vector3 } from "three";
 
-import { CAR, GAP, LANE, SLIM } from "./constants";
-import { ARM_OUT, ARM_TILT, GAUGE, HEDGE, LED_STRIP, mirror, PARAPET, ribbon, SLEEPER, slimRibbon, SOFFIT, TROUGH } from "./Guideway";
+import { CAR, FLOOR, GAP, LANE, SLIM } from "./constants";
+import { ARM_OUT, ARM_TILT, beam, framesThrough, HEDGE, LED_STRIP, mirror, openSide, PARAPET, ribbon, slimRibbon, SOFFIT, TROUGH } from "./Guideway";
 import { acrossStation, bendAlong, bendGeometry } from "./slim";
 import { EXPO } from "./liveries";
 import { merged, type Part } from "./merge";
 import { isRoad } from "./roadNetwork";
 import { groundAt, RASTER } from "./terrain";
 import { buildExtension, EXT_GAP, EXT_JOIN, type Frame, frameAt, LEN, makeFrame, UP } from "./track";
-import { bogieSpacing, carGeometry } from "./trainGeometry";
+import { bogieGeometry, bogieMatrix, bogieSpacing, carGeometry } from "./trainGeometry";
 import { useWorld } from "./world";
 
 /**
- * The Expo past the turnback loop (track.ts buildExtension): the line's own white girder with its planters, hedges,
- * violet LEDs, track and Y piers, on to Royal Oak, Edmonds, 22nd Street and New Westminster, each a pair of side
+ * The Expo past the turnback loop (track.ts buildExtension): the line's own white trough girder with its planters,
+ * hedges, violet LEDs, guide beams and Y piers, on to Royal Oak, Edmonds, 22nd Street and New Westminster, each a pair of side
  * platforms under a roof;
  * and a train running out and back between the first and the last, stopping at each. Drawn once the far terrain under
  * its far end has loaded (`heightAt`), on the city's own ground nearer in; only from within REACH of where it leaves
@@ -38,8 +38,8 @@ export function Extension({ heightAt }: { heightAt: (x: number, z: number) => nu
     const ext = buildExtension(ground);
     const all = ext.samples.filter((_, i) => !lowEnd || i % 2 === 0 || i === ext.samples.length - 1);
     const tOf = (i: number) => (i / (all.length - 1)) * ext.L;
-    // the junction's length: alongside the line's deck as one, its right side (toward the line) has no parapet,
-    // planter, hedge or LED, and its own tracks start where the switches meet them
+    // the junction's length: alongside the line's deck as one, its right side (toward the line) has no wall, parapet,
+    // planter, hedge or LED, and its own beams start where the switches meet them
     const J = EXT_JOIN.s1 - EXT_JOIN.s0;
     const runsOf = (skip: (t: number) => boolean) => {
       const out: Frame[][] = [];
@@ -58,66 +58,61 @@ export function Extension({ heightAt }: { heightAt: (x: number, z: number) => nu
     const runs = runsOf(atStop);
     const runsRight = runsOf((t) => atStop(t) || t < J + 1);
     const tracked = all.filter((_, i) => tOf(i) >= J - 2);
+    const open = openSide(SOFFIT, 1);
     const girder: BufferGeometry[] = [
-      slimRibbon(SOFFIT, all),
+      slimRibbon((i) => (tOf(i) < J + 1 ? open : SOFFIT), all),
       ...runsRight.flatMap((r) => [slimRibbon(PARAPET, r), slimRibbon(TROUGH, r)]),
       ...runs.flatMap((r) => [slimRibbon(mirror(PARAPET), r), slimRibbon(mirror(TROUGH), r)]),
     ];
     const half = (r: Frame[]) => r.filter((_, i) => i % 2 === 0 || i === r.length - 1);
     const hedges = [...runsRight.map((r) => slimRibbon(HEDGE, half(r), false, 1.6)), ...runs.map((r) => slimRibbon(mirror(HEDGE), half(r), false, 1.6))];
-    const bed = [slimRibbon([[6.02, 0.955], [-6.02, 0.955]], all, false)];
-    const sleepers = [-LANE, LANE].map((lane) => ribbon([[lane + SLEEPER, 0.96], [lane - SLEEPER, 0.96]], tracked, false, 0.65));
+    const bed = [slimRibbon([[6.02, FLOOR + 0.005], [-6.02, FLOOR + 0.005]], all, false)];
     const leds = [slimRibbon(LED_STRIP, all.filter((_, i) => tOf(i) >= J + 1)), slimRibbon(mirror(LED_STRIP), all)];
-    const rails: BufferGeometry[] = [];
-    const tube = (pts: Vector3[]) => new TubeGeometry(new CatmullRomCurve3(pts, false, "catmullrom", 0), Math.ceil(pts.length * (lowEnd ? 1 : 2)), 0.07, 4, false);
-    for (const lane of [-LANE, LANE]) for (const side of [-1, 1]) rails.push(tube(tracked.map((f) => f.p.clone().addScaledVector(f.r, lane + side * GAUGE).addScaledVector(UP, 0.98))));
-    // the open end of its girder where it leaves, closed
+    const faces: BufferGeometry[] = [];
+    const beamOf = (list: Frame[], lane: number) => {
+      const b = beam(list, lane);
+      girder.push(b.body);
+      faces.push(b.face);
+    };
+    for (const lane of [-LANE, LANE]) beamOf(tracked, lane);
+    // the open end of its girder where it leaves, closed (its section there open on the line's side)
     {
       const f = ext.samples[0];
-      const pts = SOFFIT.map(([l, v]) => f.p.clone().addScaledVector(f.r, l * SLIM).addScaledVector(UP, v));
+      const pts = open.map(([l, v]) => f.p.clone().addScaledVector(f.r, l * SLIM).addScaledVector(UP, v));
       const pos: number[] = [];
-      for (let k = 1; k + 1 < pts.length; k++) for (const q of [pts[0], pts[k + 1], pts[k], pts[0], pts[k], pts[k + 1]]) pos.push(q.x, q.y, q.z);
+      for (const tri of ShapeUtils.triangulateShape(
+        open.map(([l, v]) => new Vector2(l, v)),
+        [],
+      ))
+        for (const k of [tri[0], tri[2], tri[1], tri[0], tri[1], tri[2]]) pos.push(pts[k].x, pts[k].y, pts[k].z);
       const cap = new BufferGeometry();
       cap.setAttribute("position", new Float32BufferAttribute(pos, 3));
       cap.computeVertexNormals();
       girder.push(cap);
     }
-    // the switches, on the line's deck and the extension's side by side: the outbound track crosses over from the
-    // line's right-hand track onto the extension's, and the extension's inbound track crosses back onto the line's left
+    // the switch, on the line's deck and the extension's side by side: both the extension's beams fan off the line's
+    // left-hand one (a beam can't cross another as a rail can, so the line's right-hand beam runs on unbroken to the
+    // loop, as its left-hand one does)
     const lf = makeFrame();
     const lineAt = (s: number, lat: number) => frameAt(s, lf, lat).p.clone();
     const switchPath = (from: number, to: number): Frame[] => {
-      const out: Frame[] = [];
+      const out: Vector3[] = [];
       const a = EXT_JOIN.s0 + 1;
       const b = EXT_JOIN.s1 - 1;
       for (let s = a; s <= b + 1e-6; s += lowEnd ? 1.5 : 0.75) {
         const u = (s - a) / (b - a);
-        const k = u * u * (3 - 2 * u);
-        const p = lineAt(s, from + (to - from) * k);
-        out.push({ p, t: new Vector3(), r: new Vector3() });
+        out.push(lineAt(s, from + (to - from) * u * u * (3 - 2 * u)));
       }
-      out.forEach((f, i) => {
-        f.t.copy(out[Math.min(out.length - 1, i + 1)].p).sub(out[Math.max(0, i - 1)].p).normalize();
-        f.r.crossVectors(f.t, UP).normalize();
-      });
-      return out;
+      return framesThrough(out);
     };
-    for (const [from, to] of [
-      [LANE, -(EXT_GAP - LANE)],
-      [-LANE, -(EXT_GAP + LANE)],
-    ]) {
-      const path = switchPath(from, to);
-      for (const side of [-1, 1]) rails.push(tube(path.map((f) => f.p.clone().addScaledVector(f.r, side * GAUGE).addScaledVector(UP, 0.98))));
-      // over the joint's paving, which crosses under them
-      sleepers.push(ribbon([[SLEEPER, 0.976], [-SLEEPER, 0.976]], path, false, 0.65));
-    }
-    // the joint between the two decks, paved over with the track bed: over the girders' white tops (where the parapets
-    // stood) and a little over both beds, one colour, so the overlap never shows; raised clear of the girder tops, which
-    // it would flicker against at a distance
+    for (const to of [-(EXT_GAP - LANE), -(EXT_GAP + LANE)]) beamOf(switchPath(-LANE, to), 0);
+    // the joint between the two decks, its walls cut down there, floored over with the troughs' bed: over the girders'
+    // edges and a little over both beds, one colour, so the overlap never shows; raised clear of the beds, which it would
+    // flicker against at a distance
     const joint: Frame[] = [];
     // on to the line's end, where its left parapet stops too
     for (let s = EXT_JOIN.s0; s <= LEN + 1e-6; s += 0.75) joint.push({ ...frameAt(s, makeFrame()) });
-    bed.push(ribbon([[-5.7 * SLIM, 0.972], [-EXT_GAP + 5.6 * SLIM, 0.972]], joint, false));
+    bed.push(ribbon([[-5.7 * SLIM, FLOOR + 0.02], [-EXT_GAP + 5.6 * SLIM, FLOOR + 0.02]], joint, false));
     // Y piers every 24 units, as the line's: a tapered column to just under the soffit, two arms out to its curve
     const piers: Part[] = [];
     const n = ext.samples.length;
@@ -173,38 +168,43 @@ export function Extension({ heightAt }: { heightAt: (x: number, z: number) => nu
       new InstancedMesh(geo.glass, mats.window, 2),
       new InstancedMesh(geo.line, mats.trainLine, 2),
     ];
+    // and its four bogies round the beam, in the line's skirt navy
+    const skirt = new MeshStandardMaterial({ color: 0x12233a, roughness: 0.6, metalness: 0.4 });
+    const bogies = new InstancedMesh(bogieGeometry(), skirt, 4);
     train[0].castShadow = !lowEnd;
     // the instances run far from the meshes' origin
-    for (const m of train) m.frustumCulled = false;
+    for (const m of [...train, bogies]) m.frustumCulled = false;
     return {
       ext,
       girder: merged(girder.map((g) => ({ geo: g }))),
       hedges: merged(hedges.map((g) => ({ geo: g }))),
       bed: merged(bed.map((g) => ({ geo: g }))),
-      sleepers: merged(sleepers.map((g) => ({ geo: g }))),
       leds: merged(leds.map((g) => ({ geo: g }))),
-      rails: merged(rails.map((g) => ({ geo: g }))),
+      faces: merged(faces.map((g) => ({ geo: g }))),
       plat: merged(plat),
       roof: merged(roof),
       pane: merged(pane),
       edge: merged(edge),
       train,
+      bogies,
+      skirt,
     };
   }, [mats, lowEnd, heightAt]);
 
   useEffect(
     () => () => {
-      for (const g of [built.girder, built.hedges, built.bed, built.sleepers, built.leds, built.rails, built.plat, built.roof, built.pane, built.edge]) g.dispose();
-      for (const m of built.train) {
+      for (const g of [built.girder, built.hedges, built.bed, built.leds, built.faces, built.plat, built.roof, built.pane, built.edge]) g.dispose();
+      for (const m of [...built.train, built.bogies]) {
         m.geometry.dispose();
         m.dispose();
       }
+      built.skirt.dispose();
     },
     [built],
   );
 
   // the train: out from Royal Oak to 22nd Street and back, easing in and out of each station, a dwell at each
-  const { ext, train } = built;
+  const { ext, train, bogies } = built;
   const stops = ext.stationT;
   const legs = stops.slice(1).map((s, i) => s - stops[i]);
   const V = 16;
@@ -233,6 +233,7 @@ export function Extension({ heightAt }: { heightAt: (x: number, z: number) => nu
   const pc = new Vector3();
   const tc = new Vector3();
   const r = new Vector3();
+  const bt = new Vector3();
   const m4 = new Matrix4();
   const turn = new Matrix4().makeRotationY(Math.PI);
   const q = new Quaternion();
@@ -258,8 +259,14 @@ export function Extension({ heightAt }: { heightAt: (x: number, z: number) => nu
       // drawn at SLIM across and up, as the line's own trains are
       m4.compose(pc, q, pa.set(SLIM, SLIM, 1));
       for (const m of train) m.setMatrixAt(k, m4);
+      // its bogies, each on the beam under it
+      [sc + BOGIE * dir, sc - BOGIE * dir].forEach((sb, j) => {
+        pointAt(sb, pc);
+        ext.curve.getTangentAt(Math.min(1, Math.max(0, sb / ext.L)), bt);
+        bogies.setMatrixAt(k * 2 + j, bogieMatrix(m4, pc.addScaledVector(r.crossVectors(bt, UP).normalize(), dir * LANE), bt));
+      });
     }
-    for (const m of train) m.instanceMatrix.needsUpdate = true;
+    for (const m of [...train, bogies]) m.instanceMatrix.needsUpdate = true;
   });
 
   return (
@@ -267,9 +274,8 @@ export function Extension({ heightAt }: { heightAt: (x: number, z: number) => nu
       <mesh geometry={built.girder} material={mats.girder} castShadow={!lowEnd} receiveShadow />
       <mesh geometry={built.hedges} material={mats.hedge} receiveShadow />
       <mesh geometry={built.bed} material={mats.bed} receiveShadow />
-      <mesh geometry={built.sleepers} material={mats.sleepers} receiveShadow />
       <mesh geometry={built.leds} material={mats.guideLed} />
-      <mesh geometry={built.rails} material={mats.rail} />
+      <mesh geometry={built.faces} material={mats.plate} receiveShadow />
       <mesh geometry={built.plat} material={mats.plat} receiveShadow />
       <mesh geometry={built.roof} material={mats.canopy} castShadow={!lowEnd} />
       <mesh geometry={built.pane} material={mats.pane} />
@@ -277,6 +283,7 @@ export function Extension({ heightAt }: { heightAt: (x: number, z: number) => nu
       {built.train.map((m, i) => (
         <primitive key={i} object={m} />
       ))}
+      <primitive object={built.bogies} />
     </group>
   );
 }
