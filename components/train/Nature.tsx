@@ -29,6 +29,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 
 import { SEA } from "./constants";
 import { drape } from "./drape";
+import { onInletWalk } from "./inletWalk";
 import { merged, type Part } from "./merge";
 import { roads } from "./roadNetwork";
 import { STREAM } from "./sites";
@@ -207,7 +208,7 @@ export function Nature() {
       const x = -250 + Math.random() * 700;
       const z = -40 - Math.random() * 230;
       const sd = sdfAt(x, z);
-      if (sd > -2 || sd < -6) continue;
+      if (sd > -2 || sd < -6 || onInletWalk(x, z, 2)) continue;
       sealAt.push(new Vector3(x, SEA, z));
     }
     const sealGeo = new SphereGeometry(0.5, 10, 8);

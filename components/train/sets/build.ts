@@ -63,6 +63,7 @@ import { glassBox, nets, pad as taxiPad, windsock } from "../vertiports";
 import { barkTexture, type Conifer, coniferSkeleton, crownFromOf, DETAIL_FULL, DETAIL_LOW, frondTexture, limbGeometry, sprayCard, sprayMatrix, trunkGeometry } from "../trees/conifer";
 import type { World } from "../world";
 import { bench, bollard, festoon, foodTruck, lit, type Pieces, pavilion, planter, shopGlow, stall, umbrellaTable, warmLights } from "../pavilion";
+import { onInletWalk } from "../inletWalk";
 import { inLandmark } from "../sites";
 import { COURTS, type FrameBox, GYM, MATS, PERGOLA, RUN_PATH, YOGA_DECK } from "./wellness";
 import { type BannerArt, boardsAtlas, galleryAtlas, PLAQUE_RATIO, screenTextures } from "./galleryArt";
@@ -481,6 +482,12 @@ function canadaLineHall(c: Ctx, vc: Material, lit: Material): (t: number) => voi
   };
 }
 
+/** Whether a piece of the plaza's furniture at (a, l) would stand on the Inlet Walk's foot (inletWalk.ts), to leave it out. */
+function offWalk(c: Ctx, a: number, l: number): boolean {
+  const [x, , z] = c.L(a, l, 0);
+  return onInletWalk(x, z, 2.5);
+}
+
 /**
  * The plaza at Waterfront made the busiest place on the line: a row of market kiosks under coloured awnings, café
  * tables under umbrellas, a fountain with leaping jets, a bike-share dock, trees in planters, and a departures board
@@ -500,10 +507,11 @@ function busyPlaza(c: Ctx, vc: Material, lamps: Material): (t: number) => void {
     for (const s of [-1.2, 1.2]) c.add(mats.post, new BoxGeometry(0.08, 2.6, 0.08), c.L(a + s * 1.1, l + 1.3, g + 1.3));
     c.add(lamps, paint(new BoxGeometry(0.06, 0.06, 2.4), 0xffd7a0), c.L(a, l + 1.3, g + 2.4));
   });
-  // café tables under umbrellas
+  // café tables under umbrellas (none on the Inlet Walk's foot, inletWalk.ts)
   for (let k = 0; k < 10; k++) {
     const a = 2 + (k % 5) * 4.2;
     const l = 25 + Math.floor(k / 5) * 4.5;
+    if (offWalk(c, a, l)) continue;
     const g = G(a, l);
     c.add(mats.post, new CylinderGeometry(0.5, 0.5, 0.06, 12), c.L(a, l, g + 0.8));
     c.add(mats.post, new CylinderGeometry(0.05, 0.05, 2.4, 6), c.L(a, l, g + 1.2));
@@ -593,7 +601,7 @@ function depart(c: Ctx): Partial<BuiltSet> {
     if (a > HALL.a0 - 1 && a < HALL.a1 + 1 && l > HALL.l0 - 1 && l < HALL.l1 + 1) return null;
     return i % 5 === 0 || j % 5 === 0 ? 0xbdb6a9 : (i + j) % 2 ? 0xd3ccbf : 0xcac3b6;
   });
-  plaza(c, -24, 24, 14, 44, (a, l) => a > HALL.a0 - 3 && a < HALL.a1 + 3 && l > HALL.l0 - 3 && l < HALL.l1 + 3);
+  plaza(c, -24, 24, 14, 44, (a, l) => (a > HALL.a0 - 3 && a < HALL.a1 + 3 && l > HALL.l0 - 3 && l < HALL.l1 + 3) || offWalk(c, a, l) || offWalk(c, a + 3.2, l));
   const hall = canadaLineHall(c, vc, glow);
   const busy = busyPlaza(c, vc, glow);
   const top = Math.max(1.4, c.G(0, 24) + 0.5);

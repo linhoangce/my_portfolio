@@ -2,8 +2,8 @@
  * The air network's ground rules and how its flights are made (airways.ts flies the air taxis, droneways.ts the
  * delivery drones):
  * - what stands in the way: the city's lots, the landmarks (the Waterfront hub's towers one by one), the Skyport's
- *   towers, the Lions Gate's towers and the cruise ship at Canada Place: the highest roof near a point, and what stands
- *   under it;
+ *   towers, the Lions Gate's towers, the cruise ship at Canada Place and the Inlet Walk with its stage: the highest
+ *   roof near a point, and what stands under it;
  * - the Expo: nothing flies along it, and within 25 of it everything flies 25 over its deck;
  * - a flight: a smoothed line over the ground, raised over what stands near it and smoothed again into a glide,
  *   climbing off its ends and coming down onto them, sampled every few units; its timetable, from a speed set by its
@@ -14,6 +14,7 @@
  */
 import { HEROES, skyportAt } from "./buildings/heroes";
 import { getCityData } from "./cityData";
+import { INLET_AIR } from "./inletWalk";
 import { narrowsLine } from "./lionsGate";
 import { LANDMARKS } from "./sites";
 import { groundAt } from "./terrain";
@@ -85,7 +86,10 @@ export class Airspace {
 /** A turned lot or an axis box as an obstacle. */
 export const boxObstacle = (x0: number, x1: number, z0: number, z1: number, top: number): Obstacle => ({ x: (x0 + x1) / 2, z: (z0 + z1) / 2, c: 1, s: 0, hw: (x1 - x0) / 2, hd: (z1 - z0) / 2, top });
 
-/** The landmarks (all but those `skip` names, which the caller gives in detail) and the Lions Gate's towers and deck. */
+/**
+ * The landmarks (all but those `skip` names, which the caller gives in detail), the cruise ship, the Lions Gate's
+ * towers and deck, and the Inlet Walk and its stage (low enough that no flight need rise for them).
+ */
 export function fixedObstacles(skip: Set<string>): Obstacle[] {
   const out: Obstacle[] = [];
   for (const l of LANDMARKS) {
@@ -98,6 +102,8 @@ export function fixedObstacles(skip: Set<string>): Obstacle[] {
   const nw = narrowsLine();
   for (const z of [nw.zS - 9, nw.zN + 9]) out.push(boxObstacle(nw.x - 6, nw.x + 6, z - 2, z + 2, 45));
   out.push(boxObstacle(nw.x - 5, nw.x + 5, nw.zN - 30, nw.zS + 30, 26));
+  // the Inlet Walk across the harbour and its stage in the cove at its north end (inletWalk.ts)
+  for (const b of INLET_AIR) out.push(boxObstacle(...b));
   return out;
 }
 

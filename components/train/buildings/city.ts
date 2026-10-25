@@ -30,6 +30,7 @@ import { type MuralKind, muralsOf } from "../muralArt";
 import { BUILD, type Ctx, PAL } from "./archetypes";
 import type { FamilyId } from "./facadeArray";
 import { cap, fp, walls } from "./parts";
+import { onInletWalk } from "../inletWalk";
 import { inYard } from "../railYard";
 import { inSenakw, PAVILION, podiumLevels, PODIUMS, towerBase, towerPoly, TOWERS } from "./senakw";
 import { ARCH_BY_ERA, ARCH_DENSE, ARCH_LOWRISE, type ArchId, hood, type Hood, HOUSE_MIX, TOWERISH, ZONES } from "./eras";
@@ -122,6 +123,11 @@ export type CityGeometry = {
   neon: BufferGeometry;
   houses: HouseInst[];
   lots: Lot[];
+  /**
+   * The footprints of lots left unbuilt for the Inlet Walk's ground (inletWalk.ts): the trees keep off them as they did
+   * the buildings, so every tree draws its numbers as before (those on the walk's ground are taken out after).
+   */
+  walkLots: { x: number; z: number; w: number; d: number; ry: number; fw: number; fd: number }[];
   murals: Mural[];
   terrace: TerraceTree[];
   /** The biodomes' rooftop drone pads, where the delivery drones land (droneways.ts). */
@@ -243,6 +249,7 @@ function layOut(rng: Rng, lowEnd: boolean): CityGeometry {
     return s;
   };
   const lots: Lot[] = [];
+  const walkLots: CityGeometry["walkLots"] = [];
   const houses: HouseInst[] = [];
   const terrace: TerraceTree[] = [];
   const addTerrace = (x: number, y: number, z: number, s: number, sp: SpeciesId) => terrace.push({ x, y, z, s, sp });
@@ -374,10 +381,12 @@ function layOut(rng: Rng, lowEnd: boolean): CityGeometry {
     const yb = Math.min(...pts.map(([px, pz]) => footAt(px, pz))) - 0.6;
     const yt = Math.max(...pts.map(([px, pz]) => floorAt(px, pz)));
     const dist = Math.min(...pts.map(([px, pz]) => cor.dist(px, pz)));
-    const onSite = pts.some(([px, pz]) => inSenakw(px, pz) || inYard(px, pz) || inIslet(px, pz));
+    const onWalk = pts.some(([px, pz]) => onInletWalk(px, pz, 1.5));
+    const onSite = onWalk || pts.some(([px, pz]) => inSenakw(px, pz) || inYard(px, pz) || inIslet(px, pz));
     // the turned footprint's extent on the axes, for the city's box tests
     const aw = Math.abs(w * Math.cos(ry)) + Math.abs(d * Math.sin(ry));
     const ad = Math.abs(w * Math.sin(ry)) + Math.abs(d * Math.cos(ry));
+    if (onWalk) walkLots.push({ x, z, w: aw, d: ad, ry, fw: w, fd: d });
     const ci = Math.round(x / 9);
     const cj = Math.round(z / 9);
     const big = o.infill ? Math.min(w, d) >= 5 : dense ? Math.min(w, d) > 6.5 : w > 11 && d > 11;
@@ -1234,6 +1243,7 @@ function layOut(rng: Rng, lowEnd: boolean): CityGeometry {
     neon: shared.neon.build(),
     houses,
     lots,
+    walkLots,
     murals,
     terrace,
     pads,
