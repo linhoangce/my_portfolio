@@ -14,7 +14,7 @@
  */
 import { HEROES, skyportAt } from "./buildings/heroes";
 import { getCityData } from "./cityData";
-import { INLET_AIR } from "./inletWalk";
+import { INLET_AIR } from "./inletWalkScene";
 import { narrowsLine } from "./lionsGate";
 import { LANDMARKS } from "./sites";
 import { groundAt } from "./terrain";

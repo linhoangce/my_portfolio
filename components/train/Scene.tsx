@@ -50,9 +50,9 @@ import { WorldProvider } from "./WorldProvider";
 
 /** The room the metal and glass reflect, rendered once the first stage is up (world.ts environmentTarget). */
 function Environment() {
-  const world = useWorld();
-  useEffect(() => world.fillEnvironment(), [world]);
-  return null;
+	const world = useWorld();
+	useEffect(() => world.fillEnvironment(), [world]);
+	return null;
 }
 
 /**
@@ -65,52 +65,57 @@ let target: WebGLRenderTarget | null = null;
 const compileTarget = () => (target ??= new WebGLRenderTarget(1, 1, { type: HalfFloatType }));
 
 function Stage({ n, children }: { n: number; children: ReactNode }) {
-  const reached = useTrain((s) => s.loadStage >= n);
-  const bloomOn = useTrain((s) => !s.env.lowEnd && s.quality.bloom);
-  const group = useRef<Group>(null);
-  const [shown, setShown] = useState(false);
-  const gl = useThree((s) => s.gl);
-  const camera = useThree((s) => s.camera);
-  const scene = useThree((s) => s.scene);
-  useEffect(() => {
-    const g = group.current;
-    if (!reached || !g) return;
-    let live = true;
-    // compiled as it will be drawn, a frame after it mounts (the look has set the lights by then): its own lights
-    // counted, and into the bloom's target when the bloom draws the scene (no tone mapping there, linear colour)
-    const frame = requestAnimationFrame(() => {
-      const prev = gl.getRenderTarget();
-      if (bloomOn) gl.setRenderTarget(compileTarget());
-      // out of the scene for the call: three counts the lights of the scene and of the part compiled, so a part that is
-      // in the scene would have its own counted twice
-      const parent = g.parent;
-      const was = g.visible;
-      parent?.remove(g);
-      g.visible = true;
-      const compiled = gl.compileAsync(g, camera, scene);
-      g.visible = was;
-      parent?.add(g);
-      gl.setRenderTarget(prev);
-      compiled
-        .catch(() => undefined)
-        .then(() => {
-          if (!live) return;
-          setShown(true);
-          performance.mark(`ride:stage-${n}`);
-          requestAnimationFrame(() => requestAnimationFrame(() => live && useTrain.getState().stageIn(n)));
-        });
-    });
-    return () => {
-      live = false;
-      cancelAnimationFrame(frame);
-    };
-  }, [reached, gl, camera, scene, n, bloomOn]);
-  if (!reached) return null;
-  return (
-    <group ref={group} visible={shown}>
-      {children}
-    </group>
-  );
+	const reached = useTrain((s) => s.loadStage >= n);
+	const bloomOn = useTrain((s) => !s.env.lowEnd && s.quality.bloom);
+	const group = useRef<Group>(null);
+	const [shown, setShown] = useState(false);
+	const gl = useThree((s) => s.gl);
+	const camera = useThree((s) => s.camera);
+	const scene = useThree((s) => s.scene);
+	useEffect(() => {
+		const g = group.current;
+		if (!reached || !g) return;
+		let live = true;
+		// compiled as it will be drawn, a frame after it mounts (the look has set the lights by then): its own lights
+		// counted, and into the bloom's target when the bloom draws the scene (no tone mapping there, linear colour)
+		const frame = requestAnimationFrame(() => {
+			const prev = gl.getRenderTarget();
+			if (bloomOn) gl.setRenderTarget(compileTarget());
+			// out of the scene for the call: three counts the lights of the scene and of the part compiled, so a part that is
+			// in the scene would have its own counted twice
+			const parent = g.parent;
+			const was = g.visible;
+			parent?.remove(g);
+			g.visible = true;
+			const compiled = gl.compileAsync(g, camera, scene);
+			g.visible = was;
+			parent?.add(g);
+			gl.setRenderTarget(prev);
+			compiled
+				.catch(() => undefined)
+				.then(() => {
+					if (!live) return;
+					setShown(true);
+					performance.mark(`ride:stage-${n}`);
+					requestAnimationFrame(() =>
+						requestAnimationFrame(() => live && useTrain.getState().stageIn(n)),
+					);
+				});
+		});
+		return () => {
+			live = false;
+			cancelAnimationFrame(frame);
+		};
+	}, [reached, gl, camera, scene, n, bloomOn]);
+	if (!reached) return null;
+	return (
+		<group
+			ref={group}
+			visible={shown}
+		>
+			{children}
+		</group>
+	);
 }
 
 /**
@@ -129,83 +134,87 @@ function Stage({ n, children }: { n: number; children: ReactNode }) {
  * lights and the target the scene is drawn into.
  */
 export default function Scene({ onContextLost }: { onContextLost?: () => void }) {
-  const lowEnd = useTrain((s) => s.env.lowEnd);
-  const dpr = useTrain((s) => s.quality.dpr);
-  const bloom = useTrain((s) => s.quality.bloom);
-  // the curve exists as soon as track.ts is imported; the store needs its station positions before the first frame
-  useState(() => {
-    useTrain.getState().resetStages();
-    useTrain.getState().registerTrack(stationS, LEN);
-  });
+	const lowEnd = useTrain((s) => s.env.lowEnd);
+	const dpr = useTrain((s) => s.quality.dpr);
+	const bloom = useTrain((s) => s.quality.bloom);
+	// the curve exists as soon as track.ts is imported; the store needs its station positions before the first frame
+	useState(() => {
+		useTrain.getState().resetStages();
+		useTrain.getState().registerTrack(stationS, LEN);
+	});
 
-  return (
-    <Canvas
-      className="!fixed inset-0"
-      dpr={[1, dpr]}
-      shadows={lowEnd ? false : "soft"}
-      gl={{ antialias: !lowEnd, powerPreference: "high-performance", toneMapping: ACESFilmicToneMapping }}
-      camera={{ fov: CAM.fov, near: CAM.near, far: CAM.far, position: [0, 30, 80] }}
-      onCreated={({ gl }) => {
-        gl.domElement.addEventListener("webglcontextlost", (e) => {
-          e.preventDefault();
-          onContextLost?.();
-        });
-      }}
-    >
-      <WorldProvider lowEnd={lowEnd}>
-        <Lights />
-        <Look />
-        <Drive />
-        <CameraRig />
-        {!lowEnd && bloom ? <Effects /> : null}
-        <Stage n={0}>
-          <Train />
-          <Sky />
-          <Mountains />
-          <Water />
-          <Ground />
-        </Stage>
-        <Stage n={1}>
-          <Environment />
-          <Guideway />
-          <Sets />
-          <Landmarks />
-          <InletWalk />
-          <Hub />
-          <Millennium />
-          <WestCoastExpress />
-          <SeaBus />
-          <CaptionProjector />
-        </Stage>
-        <Stage n={2}>
-          <City />
-          <Roads />
-          <Stations />
-          <Commons />
-          <Culture />
-        </Stage>
-        <Stage n={3}>
-          <Trees />
-          <Nature />
-          <Precipitation />
-        </Stage>
-        <Stage n={4}>
-          <Life />
-          <InletCrowd />
-          <Freighters />
-          <AirTaxis />
-          <Signals />
-          <BusStops />
-          <Events />
-        </Stage>
-        <Stage n={5}>
-          <Reflections />
-          <Mirror />
-          {!lowEnd ? <Perf /> : null}
-          <MonumentPicker />
-          <Debug />
-        </Stage>
-      </WorldProvider>
-    </Canvas>
-  );
+	return (
+		<Canvas
+			className="!fixed inset-0"
+			dpr={[1, dpr]}
+			shadows={lowEnd ? false : "soft"}
+			gl={{
+				antialias: !lowEnd,
+				powerPreference: "high-performance",
+				toneMapping: ACESFilmicToneMapping,
+			}}
+			camera={{ fov: CAM.fov, near: CAM.near, far: CAM.far, position: [0, 30, 80] }}
+			onCreated={({ gl }) => {
+				gl.domElement.addEventListener("webglcontextlost", (e) => {
+					e.preventDefault();
+					onContextLost?.();
+				});
+			}}
+		>
+			<WorldProvider lowEnd={lowEnd}>
+				<Lights />
+				<Look />
+				<Drive />
+				<CameraRig />
+				{!lowEnd && bloom ? <Effects /> : null}
+				<Stage n={0}>
+					<Train />
+					<Sky />
+					<Mountains />
+					<Water />
+					<Ground />
+				</Stage>
+				<Stage n={1}>
+					<Environment />
+					<Guideway />
+					<Sets />
+					<Landmarks />
+					<InletWalk />
+					<Hub />
+					<Millennium />
+					<WestCoastExpress />
+					<SeaBus />
+					<CaptionProjector />
+				</Stage>
+				<Stage n={2}>
+					<City />
+					<Roads />
+					<Stations />
+					<Commons />
+					<Culture />
+				</Stage>
+				<Stage n={3}>
+					<Trees />
+					<Nature />
+					<Precipitation />
+				</Stage>
+				<Stage n={4}>
+					<Life />
+					<InletCrowd />
+					<Freighters />
+					<AirTaxis />
+					<Signals />
+					<BusStops />
+					<Events />
+				</Stage>
+				<Stage n={5}>
+					<Reflections />
+					<Mirror />
+					{!lowEnd ? <Perf /> : null}
+					<MonumentPicker />
+					<Debug />
+				</Stage>
+			</WorldProvider>
+		</Canvas>
+	);
 }
