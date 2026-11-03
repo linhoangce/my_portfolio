@@ -18,8 +18,6 @@ export function InspirationsPanel({ as = "h2" }: { as?: HeadingTag }) {
           </li>
         ))}
       </ul>
-      <h3 className="kicker mb-0 mt-5">The vision</h3>
-      <p>{inspirations.vision}</p>
       <h3 className="kicker mb-0 mt-6">Acknowledgements</h3>
       <h4 className="ack-h">The land</h4>
       <p className="ack">{landAcknowledgement}</p>
