@@ -116,6 +116,7 @@ export const inspirations: { title: string; intro: string; items: Inspiration[];
 			},
 			{ title: "Air taxis", copy: "Well, it's 2100 anyway!" },
 		],
+		vision: "",
 	};
 
 /** Under the Inspirations: the land (landAcknowledgement), the Indigenous art by name, and the map's sources (mapSources.ts). */
